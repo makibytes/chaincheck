@@ -1,0 +1,247 @@
+:root {
+    color-scheme: light dark;
+    font-family: "Inter", "Segoe UI", system-ui, sans-serif;
+    background: #0b0f19;
+    color: #e6e8ee;
+}
+
+body {
+    margin: 0;
+    padding: 24px;
+    background: #0b0f19;
+    color: #e6e8ee;
+}
+
+.app-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+}
+
+.header-controls {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.select-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #151a28;
+    padding: 8px 12px;
+    border-radius: 12px;
+    color: #9aa3b2;
+}
+
+.select-label select {
+    background: transparent;
+    color: #e6e8ee;
+    border: 1px solid #2a3247;
+    border-radius: 8px;
+    padding: 6px 10px;
+}
+
+.subtitle {
+    margin: 4px 0 0;
+    color: #9aa3b2;
+}
+
+.range-selector {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    background: #151a28;
+    padding: 8px 12px;
+    border-radius: 12px;
+}
+
+.range-selector a {
+    color: #8aa2ff;
+    text-decoration: none;
+    padding: 6px 10px;
+    border-radius: 8px;
+}
+
+.range-selector a.active {
+    background: #2b4cff;
+    color: #fff;
+}
+
+.summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+.card {
+    background: #121725;
+    padding: 16px;
+    border-radius: 12px;
+    border: 1px solid #1f2433;
+}
+
+.panel {
+    background: #121725;
+    padding: 16px;
+    border-radius: 12px;
+    border: 1px solid #1f2433;
+    margin-bottom: 24px;
+}
+
+.panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+table th,
+table td {
+    text-align: left;
+    padding: 10px 8px;
+    border-bottom: 1px solid #20263a;
+    font-size: 14px;
+}
+
+.muted {
+    color: #8b93a7;
+}
+
+.empty {
+    color: #8b93a7;
+}
+
+.button {
+    background: #2b4cff;
+    color: #fff;
+    padding: 8px 12px;
+    text-decoration: none;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+}
+
+.button.ghost {
+    background: transparent;
+    color: #8aa2ff;
+    border: 1px solid #2b4cff;
+}
+
+.collapsed {
+    display: none;
+}
+
+.pagination {
+    margin-top: 12px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.pagination a {
+    color: #8aa2ff;
+    text-decoration: none;
+    padding: 6px 10px;
+    border-radius: 8px;
+    border: 1px solid #2a3247;
+}
+
+.pagination a.active {
+    background: #2b4cff;
+    color: #fff;
+    border-color: #2b4cff;
+}
+
+.detail-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 12px;
+}
+
+.detail-block {
+    margin-top: 16px;
+}
+
+.label {
+    display: block;
+    color: #8b93a7;
+    font-size: 12px;
+}
+
+pre {
+    background: #0f1320;
+    padding: 12px;
+    border-radius: 8px;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.modal.hidden {
+    display: none;
+}
+
+.modal {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(4, 6, 12, 0.7);
+}
+
+.modal-card {
+    position: relative;
+    background: #121725;
+    border: 1px solid #1f2433;
+    border-radius: 12px;
+    max-width: 720px;
+    width: min(90vw, 720px);
+    padding: 16px;
+    z-index: 1;
+}
+
+.modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+
+.modal-content {
+    max-height: 60vh;
+    overflow: auto;
+}
+
+.copy-btn {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    margin-left: 8px;
+    font-size: 1.1em;
+    padding: 0 4px;
+    transition: transform 0.1s ease;
+}
+
+.copy-btn:active {
+    transform: scale(0.9);
+}
+
+.hash-container {
+    display: flex;
+    align-items: center;
+}

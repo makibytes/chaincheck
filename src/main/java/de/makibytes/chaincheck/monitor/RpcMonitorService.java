@@ -1,0 +1,434 @@
+/*
+ * Copyright (c) 2026 MakiBytes.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+package de.makibytes.chaincheck.monitor;
+
+import java.io.IOException;
+import java.math.BigInteger;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.net.http.WebSocket;
+import java.nio.ByteBuffer;
+import java.time.Instant;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletionStage;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Service;
+
+import de.makibytes.chaincheck.model.AnomalyEvent;
+import de.makibytes.chaincheck.model.MetricSample;
+import de.makibytes.chaincheck.model.MetricSource;
+import de.makibytes.chaincheck.monitor.NodeRegistry.NodeDefinition;
+import de.makibytes.chaincheck.store.InMemoryMetricsStore;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+import jakarta.annotation.PostConstruct;
+
+@Service
+public class RpcMonitorService {
+
+    private static final String JSONRPC_VERSION = "2.0";
+    private static final Logger logger = LoggerFactory.getLogger(RpcMonitorService.class);
+
+    private final NodeRegistry nodeRegistry;
+    private final InMemoryMetricsStore store;
+    private final AnomalyDetector detector;
+    private final ObjectMapper mapper = new ObjectMapper();
+    private final HttpClient httpClient = HttpClient.newHttpClient();
+    private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    private final Map<String, NodeState> nodeStates = new ConcurrentHashMap<>();
+
+    public RpcMonitorService(NodeRegistry nodeRegistry,
+                             InMemoryMetricsStore store,
+                             AnomalyDetector detector) {
+        this.nodeRegistry = nodeRegistry;
+        this.store = store;
+        this.detector = detector;
+    }
+
+    @PostConstruct
+    public void init() {
+        ensureWebSocket();
+    }
+    @Scheduled(fixedDelay = 250, initialDelay = 500)
+    public void pollNodes() {
+        long now = System.currentTimeMillis();
+        for (NodeDefinition node : nodeRegistry.getNodes()) {
+            if (node.http() == null || node.http().isBlank()) {
+                continue;
+            }
+            NodeState state = nodeStates.computeIfAbsent(node.key(), key -> new NodeState());
+            if (now - state.lastPollEpochMs < node.pollIntervalMs()) {
+                continue;
+            }
+            state.lastPollEpochMs = now;
+            executor.submit(() -> pollHttp(node, state));
+        }
+    }
+
+    private void recordFailure(NodeDefinition node, MetricSource source, String errorMessage) {
+        MetricSample sample = new MetricSample(
+                Instant.now(),
+                source,
+                false,
+                -1,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                errorMessage);
+        store.addSample(node.key(), sample);
+        NodeState state = nodeStates.get(node.key());
+        Long lastBlock = source == MetricSource.HTTP ? (state != null ? state.lastHttpBlockNumber : null) : (state != null ? state.lastWsBlockNumber : null);
+        String lastHash = source == MetricSource.HTTP ? (state != null ? state.lastHttpBlockHash : null) : (state != null ? state.lastWsBlockHash : null);
+
+        List<AnomalyEvent> anomalies = detector.detect(
+                node.key(),
+                sample,
+                node.delayThresholdMs(),
+                lastBlock,
+                lastHash);
+        for (AnomalyEvent anomaly : anomalies) {
+            store.addAnomaly(node.key(), anomaly);
+        }
+    }
+
+    private void pollHttp(NodeDefinition node, NodeState state) {
+        Instant timestamp = Instant.now();
+        long start = System.nanoTime();
+        try {
+            Long blockNumber = fetchBlockNumber(node);
+            BlockInfo info = null;
+            if (blockNumber != null) {
+                info = fetchBlock(node, blockNumber);
+            }
+            long latencyMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
+            MetricSample sample = new MetricSample(
+                    timestamp,
+                    MetricSource.HTTP,
+                    true,
+                    latencyMs,
+                    blockNumber,
+                    info == null ? null : info.blockTimestamp,
+                    info == null ? null : info.blockHash,
+                    info == null ? null : info.parentHash,
+                    info == null ? null : info.transactionCount,
+                    info == null ? null : info.gasPriceWei,
+                    null);
+            store.addSample(node.key(), sample);
+
+            List<AnomalyEvent> anomalies = detector.detect(
+                    node.key(),
+                    sample,
+                    node.delayThresholdMs(),
+                    state.lastHttpBlockNumber,
+                    state.lastHttpBlockHash);
+            for (AnomalyEvent anomaly : anomalies) {
+                store.addAnomaly(node.key(), anomaly);
+            }
+
+            state.lastHttpBlockNumber = blockNumber;
+            if (info != null) {
+                state.lastHttpBlockHash = info.blockHash;
+            }
+        } catch (HttpStatusException ex) {
+            logger.error("HTTP RPC failure ({} / http): status {} ({})", node.name(), ex.getStatusCode(), ex.getMessage());
+            recordFailure(node, MetricSource.HTTP, ex.getMessage());
+        } catch (IOException | InterruptedException ex) {
+            if (ex instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            logger.error("HTTP RPC failure ({}): {}", node.name(), ex.getMessage());
+            recordFailure(node, MetricSource.HTTP, ex.getMessage());
+        } catch (RuntimeException ex) {
+            logger.error("HTTP RPC failure ({}): {}", node.name(), ex.getMessage());
+            recordFailure(node, MetricSource.HTTP, ex.getMessage());
+        }
+    }
+
+    @Scheduled(fixedDelay = 250, initialDelay = 500)
+    public void ensureWebSocket() {
+        long now = System.currentTimeMillis();
+        for (NodeDefinition node : nodeRegistry.getNodes()) {
+            if (node.ws() == null || node.ws().isBlank()) {
+                continue;
+            }
+            NodeState state = nodeStates.computeIfAbsent(node.key(), key -> new NodeState());
+            WebSocket existing = state.webSocketRef.get();
+            if (existing != null) {
+                continue;
+            }
+            if (now - state.lastWsAttemptEpochMs < node.pollIntervalMs()) {
+                continue;
+            }
+            state.lastWsAttemptEpochMs = now;
+            httpClient.newWebSocketBuilder()
+                    .buildAsync(URI.create(node.ws()), new WsListener(node, state))
+                    .thenAccept(state.webSocketRef::set)
+                    .exceptionally(ex -> {
+                        String msg = ex.getMessage();
+                        if (ex.getCause() instanceof java.net.http.WebSocketHandshakeException handshakeEx) {
+                            try {
+                                int status = handshakeEx.getResponse().statusCode();
+                                msg = "Handshake failed (HTTP " + status + "): " + ex.getMessage();
+                            } catch (Exception ignored) {
+                                // cannot get response
+                            }
+                        }
+                        logger.error("WebSocket connection failure ({} / ws): {}", node.name(), msg);
+                        WsConnectionTracker tracker = nodeRegistry.getWsTracker(node.key());
+                        if (tracker != null) {
+                            tracker.onConnectFailure(ex);
+                        }
+                        recordFailure(node, MetricSource.WS, msg);
+                        state.webSocketRef.set(null);
+                        return null;
+                    });
+        }
+    }
+
+    private Long fetchBlockNumber(NodeDefinition node) throws IOException, InterruptedException {
+        JsonNode response = sendRpc(node.http(), "eth_blockNumber", mapper.createArrayNode());
+        if (response.has("error")) {
+            throw new IOException(response.get("error").toString());
+        }
+        JsonNode result = response.get("result");
+        if (result == null || result.isNull()) {
+            return null;
+        }
+        return parseHexLong(result.asText());
+    }
+
+    private BlockInfo fetchBlock(NodeDefinition node, long blockNumber) throws IOException, InterruptedException {
+        String hex = "0x" + Long.toHexString(blockNumber);
+        JsonNode params = mapper.createArrayNode()
+                .add(hex)
+                .add(false);
+        JsonNode response = sendRpc(node.http(), "eth_getBlockByNumber", params);
+        if (response.has("error")) {
+            throw new IOException(response.get("error").toString());
+        }
+        JsonNode result = response.get("result");
+        if (result == null || result.isNull()) {
+            return null;
+        }
+        String blockHash = result.path("hash").asText(null);
+        String parentHash = result.path("parentHash").asText(null);
+        Instant blockTimestamp = null;
+        String timestampHex = result.path("timestamp").asText(null);
+        if (timestampHex != null && !timestampHex.isBlank()) {
+            Long timestampSeconds = parseHexLong(timestampHex);
+            if (timestampSeconds != null) {
+                blockTimestamp = Instant.ofEpochSecond(timestampSeconds);
+            }
+        }
+        Long gasPriceWei = null;
+        String baseFeeHex = result.path("baseFeePerGas").asText(null);
+        if (baseFeeHex != null && !baseFeeHex.isBlank()) {
+            gasPriceWei = parseHexLong(baseFeeHex);
+        }
+        Integer txCount = null;
+        JsonNode transactions = result.path("transactions");
+        if (transactions.isArray()) {
+            txCount = transactions.size();
+        }
+        return new BlockInfo(blockHash, parentHash, txCount, gasPriceWei, blockTimestamp);
+    }
+
+    private JsonNode sendRpc(String httpUrl, String method, JsonNode params) throws IOException, InterruptedException {
+        JsonNode body = mapper.createObjectNode()
+                .put("jsonrpc", JSONRPC_VERSION)
+                .put("id", 1)
+                .put("method", method)
+                .set("params", params);
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(httpUrl))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
+                .build();
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        if (response.statusCode() != 200) {
+            throw new HttpStatusException(response.statusCode(), httpUrl);
+        }
+        return mapper.readTree(response.body());
+    }
+
+    private Long parseHexLong(String hex) {
+        if (hex == null) {
+            return null;
+        }
+        String normalized = hex.startsWith("0x") ? hex.substring(2) : hex;
+        if (normalized.isBlank()) {
+            return null;
+        }
+        return new BigInteger(normalized, 16).longValue();
+    }
+
+    private class WsListener implements WebSocket.Listener {
+
+        private final StringBuilder buffer = new StringBuilder();
+        private final NodeDefinition node;
+        private final NodeState state;
+
+        private WsListener(NodeDefinition node, NodeState state) {
+            this.node = node;
+            this.state = state;
+        }
+
+        @Override
+        public void onOpen(WebSocket webSocket) {
+            WebSocket.Listener.super.onOpen(webSocket);
+            WsConnectionTracker tracker = nodeRegistry.getWsTracker(node.key());
+            if (tracker != null) {
+                tracker.onConnect();
+            }
+            String subscribe = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"eth_subscribe\",\"params\":[\"newHeads\"]}";
+            webSocket.sendText(subscribe, true);
+        }
+
+        @Override
+        public CompletionStage<?> onText(WebSocket webSocket, CharSequence data, boolean last) {
+            buffer.append(data);
+            if (last) {
+                String payload = buffer.toString();
+                buffer.setLength(0);
+                handleWsMessage(payload);
+            }
+            return WebSocket.Listener.super.onText(webSocket, data, last);
+        }
+
+        @Override
+        public CompletionStage<?> onBinary(WebSocket webSocket, ByteBuffer data, boolean last) {
+            return WebSocket.Listener.super.onBinary(webSocket, data, last);
+        }
+
+        @Override
+        public void onError(WebSocket webSocket, Throwable error) {
+            logger.error("WebSocket error ({} / ws): {}", node.name(), error.getMessage());
+            WsConnectionTracker tracker = nodeRegistry.getWsTracker(node.key());
+            if (tracker != null) {
+                tracker.onError(error);
+            }
+            recordFailure(node, MetricSource.WS, error.getMessage());
+            state.webSocketRef.set(null);
+            WebSocket.Listener.super.onError(webSocket, error);
+        }
+
+        @Override
+        public CompletionStage<?> onClose(WebSocket webSocket, int statusCode, String reason) {
+            WsConnectionTracker tracker = nodeRegistry.getWsTracker(node.key());
+            if (tracker != null) {
+                tracker.onDisconnect();
+            }
+            state.webSocketRef.set(null);
+            return WebSocket.Listener.super.onClose(webSocket, statusCode, reason);
+        }
+
+        private void handleWsMessage(String payload) {
+            try {
+                JsonNode root = mapper.readTree(payload);
+                if (root.has("method") && "eth_subscription".equals(root.get("method").asText())) {
+                    JsonNode result = root.path("params").path("result");
+                    String blockNumberHex = result.path("number").asText(null);
+                    String blockHash = result.path("hash").asText(null);
+                    String parentHash = result.path("parentHash").asText(null);
+                    Instant blockTimestamp = null;
+                    String tsHex = result.path("timestamp").asText(null);
+                    if (tsHex != null && !tsHex.isBlank()) {
+                        Long tsSeconds = parseHexLong(tsHex);
+                        if (tsSeconds != null) {
+                            blockTimestamp = Instant.ofEpochSecond(tsSeconds);
+                        }
+                    }
+                    Long blockNumber = blockNumberHex == null ? null : parseHexLong(blockNumberHex);
+
+                    MetricSample sample = new MetricSample(
+                            Instant.now(),
+                            MetricSource.WS,
+                            true,
+                            -1,
+                            blockNumber,
+                            blockTimestamp,
+                            blockHash,
+                            parentHash,
+                            null,
+                            null,
+                            null);
+                    store.addSample(node.key(), sample);
+
+                    List<AnomalyEvent> anomalies = detector.detect(
+                            node.key(),
+                            sample,
+                            node.delayThresholdMs(),
+                            state.lastWsBlockNumber,
+                            state.lastWsBlockHash);
+                    for (AnomalyEvent anomaly : anomalies) {
+                        store.addAnomaly(node.key(), anomaly);
+                    }
+
+                    state.lastWsBlockNumber = blockNumber;
+                    if (blockHash != null) {
+                        state.lastWsBlockHash = blockHash;
+                    }
+                }
+            } catch (IOException | RuntimeException ex) {
+                logger.error("WebSocket message handling failure ({}): {}", node.name(), ex.getMessage(), ex);
+                recordFailure(node, MetricSource.WS, ex.getMessage());
+            }
+        }
+    }
+
+    private record BlockInfo(String blockHash, String parentHash, Integer transactionCount, Long gasPriceWei, Instant blockTimestamp) {
+    }
+
+    private static class HttpStatusException extends IOException {
+        private final int statusCode;
+
+        private HttpStatusException(int statusCode, String url) {
+            super("HTTP " + statusCode + " from " + url);
+            this.statusCode = statusCode;
+        }
+
+        public int getStatusCode() {
+            return statusCode;
+        }
+    }
+
+    private static class NodeState {
+        private final AtomicReference<WebSocket> webSocketRef = new AtomicReference<>();
+        private volatile long lastPollEpochMs;
+        private volatile long lastWsAttemptEpochMs;
+        private volatile Long lastHttpBlockNumber;
+        private volatile String lastHttpBlockHash;
+        private volatile Long lastWsBlockNumber;
+        private volatile String lastWsBlockHash;
+    }
+}

@@ -1,0 +1,19 @@
+spring:
+  application:
+    name: ChainCheck
+
+server:
+  port: 8080
+
+rpc:
+  nodes:
+    - name: Ethereum
+      http: http://nibbler:8545
+      ws: ws://nibbler:8546
+      poll-interval-ms: 3000
+      delay-threshold-ms: 2000
+    - name: Polygon Mainnet
+      http: https://polygon-rpc.com
+      ws: wss://polygon-rpc.com
+      poll-interval-ms: 3000
+      delay-threshold-ms: 2000

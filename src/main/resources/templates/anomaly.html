@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>ChainCheck Anomaly</title>
+    <link rel="stylesheet" th:href="@{/style.css}"/>
+</head>
+<body>
+<header class="app-header">
+    <div>
+        <h1 th:text="${appName}">ChainCheck</h1>
+        <p class="subtitle">Monitoring <span th:text="${nodeName}">Node</span></p>
+    </div>
+    <a class="button" th:href="@{/dashboard(node=${nodeKey})}">Back to dashboard</a>
+</header>
+
+<section class="panel">
+    <h2>Anomaly Details</h2>
+    <div class="detail-grid">
+        <div>
+            <span class="label">ID</span>
+            <span th:text="${event.id}">-</span>
+        </div>
+        <div>
+            <span class="label">Time</span>
+            <span th:text="${#temporals.format(event.timestamp, 'yyyy-MM-dd HH:mm:ss')}">-</span>
+        </div>
+        <div>
+            <span class="label">Type</span>
+            <span th:text="${event.type}">-</span>
+        </div>
+        <div>
+            <span class="label">Source</span>
+            <span th:text="${event.source}">-</span>
+        </div>
+        <div>
+            <span class="label">Block</span>
+            <span th:text="${event.blockNumber}">-</span>
+        </div>
+        <div>
+            <span class="label">Block Hash</span>
+            <span th:text="${event.blockHash}">-</span>
+        </div>
+        <div>
+            <span class="label">Parent Hash</span>
+            <span th:text="${event.parentHash}">-</span>
+        </div>
+        <div>
+            <span class="label">Message</span>
+            <span th:text="${event.message}">-</span>
+        </div>
+    </div>
+    <div class="detail-block">
+        <span class="label">Details</span>
+        <pre th:text="${event.details}">-</pre>
+    </div>
+</section>
+</body>
+</html>
