@@ -1,6 +1,6 @@
 # ChainCheck
 
-**ChainCheck** is a comprehensive Ethereum and Polygon node monitoring solution designed to provide real-time insights into the performance and stability of your RPC nodes.
+**ChainCheck** is a comprehensive Ethereum (and compatible) node monitoring solution designed to provide real-time insights into the performance and stability of HTTP and WebSocket connections to RPC nodes.
 
 ![Dashboard Screenshot](docs/screenshot.png)
 
@@ -11,13 +11,13 @@
 - **Anomaly Detection**: Automatically flags block skips, high latency, and connection drops.
 - **Metric Aggregation**: Efficiently stores and aggregates metrics over time using `InMemoryMetricsStore`.
 - **Dashboard**: A responsive web interface built with Thymeleaf and Chart.js.
-- **Multi-Node Support**: Easily switch between monitored nodes (e.g., Ethereum Mainnet, Polygon).
+- **Multi-Node Support**: Easily switch between monitored nodes
 
 ## Getting Started
 
 ### Prerequisites
 
-- Java 25 or higher
+- Java 21 or higher
 - Maven
 
 ### Building the Application
@@ -36,7 +36,7 @@ The dashboard will be available at `http://localhost:8080`.
 
 ## Configuration
 
-Configuration is managed via `application.properties`. You can define your nodes and monitoring intervals there.
+Configuration is managed via `application.yml`. You can define your nodes and monitoring intervals there.
 
 ## Development
 
