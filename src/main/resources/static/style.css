@@ -44,6 +44,13 @@ body {
     padding: 6px 10px;
 }
 
+.title {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 600;
+    color: #e6e8ee;
+}
+
 .subtitle {
     margin: 4px 0 0;
     color: #9aa3b2;
@@ -92,11 +99,48 @@ body {
     margin-bottom: 24px;
 }
 
+.panel-row {
+    display: flex;
+    gap: 16px;
+    flex-wrap: nowrap;
+    margin-bottom: 24px;
+}
+
+.panel-row .panel {
+    margin-bottom: 0;
+}
+
+.panel.third {
+    flex: 0 1 calc(33.333% - 10px);
+    min-width: 180px;
+}
+
+.panel.two-thirds {
+    flex: 1 1 calc(66.667% - 10px);
+    min-width: 0;
+}
+
 .panel-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     margin-bottom: 12px;
+}
+
+.count-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 22px;
+    height: 22px;
+    padding: 0 8px;
+    margin-left: 8px;
+    border-radius: 999px;
+    background: #2a3247;
+    color: #e6e8ee;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1;
 }
 
 table {
@@ -169,6 +213,67 @@ table td {
 
 .detail-block {
     margin-top: 16px;
+}
+
+.status-grid {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.status-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+    color: #e6e8ee;
+}
+
+.status-light {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #5b6478;
+}
+
+.status-http-up {
+    background: #2b4cff;
+    box-shadow: 0 0 8px rgba(43, 76, 255, 0.6);
+}
+
+.status-ws-up {
+    background: #a855f7;
+    box-shadow: 0 0 8px rgba(168, 85, 247, 0.6);
+}
+
+.status-error {
+    background: #ff5c5c;
+    box-shadow: 0 0 8px rgba(255, 92, 92, 0.6);
+}
+
+.status-off {
+    background: #5b6478;
+    box-shadow: none;
+}
+
+.rpc-columns {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 16px;
+    margin-top: 12px;
+}
+
+.rpc-column h3 {
+    margin: 0 0 8px;
+    font-size: 14px;
+    color: #9aa3b2;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.rpc-item {
+    margin-bottom: 10px;
 }
 
 .label {

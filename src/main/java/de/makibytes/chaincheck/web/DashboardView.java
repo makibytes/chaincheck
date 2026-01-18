@@ -35,6 +35,12 @@ public class DashboardView {
     private final List<Long> chartLatencies;
     private final List<Double> chartErrorRates;
     private final List<Double> chartWsErrorRates;
+    private final boolean httpConfigured;
+    private final boolean wsConfigured;
+    private final boolean httpUp;
+    private final boolean wsUp;
+    private final Long latestBlockNumber;
+    private final HttpStatus httpStatus;
     private final WsStatus wsStatus;
     private final int totalPages;
     private final int pageSize;
@@ -53,6 +59,12 @@ public class DashboardView {
                          List<Long> chartLatencies,
                          List<Double> chartErrorRates,
                          List<Double> chartWsErrorRates,
+                         boolean httpConfigured,
+                         boolean wsConfigured,
+                         boolean httpUp,
+                         boolean wsUp,
+                         Long latestBlockNumber,
+                         HttpStatus httpStatus,
                          WsStatus wsStatus,
                          int totalPages,
                          int pageSize,
@@ -70,6 +82,12 @@ public class DashboardView {
         this.chartLatencies = chartLatencies;
         this.chartErrorRates = chartErrorRates;
         this.chartWsErrorRates = chartWsErrorRates;
+        this.httpConfigured = httpConfigured;
+        this.wsConfigured = wsConfigured;
+        this.httpUp = httpUp;
+        this.wsUp = wsUp;
+        this.latestBlockNumber = latestBlockNumber;
+        this.httpStatus = httpStatus;
         this.wsStatus = wsStatus;
         this.totalPages = totalPages;
         this.pageSize = pageSize;
@@ -114,6 +132,30 @@ public class DashboardView {
 
     public List<Double> getChartWsErrorRates() {
         return chartWsErrorRates;
+    }
+
+    public boolean isHttpConfigured() {
+        return httpConfigured;
+    }
+
+    public boolean isWsConfigured() {
+        return wsConfigured;
+    }
+
+    public boolean isHttpUp() {
+        return httpUp;
+    }
+
+    public boolean isWsUp() {
+        return wsUp;
+    }
+
+    public Long getLatestBlockNumber() {
+        return latestBlockNumber;
+    }
+
+    public HttpStatus getHttpStatus() {
+        return httpStatus;
     }
 
     public WsStatus getWsStatus() {

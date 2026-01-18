@@ -10,7 +10,7 @@
 <body>
 <header class="app-header">
     <div>
-        <p class="subtitle">Monitoring</p>
+        <p class="title">ChainCheck</p>
     </div>
     <div class="header-controls">
         <label class="select-label">
@@ -36,7 +36,13 @@
 <section class="summary-grid">
     <div class="card">
         <h3>Total Samples</h3>
-        <p th:text="${view.summary.totalSamples}">0</p>
+        <p>
+            <span th:text="${view.summary.totalSamples}">0</span>
+        </p>
+        <p class="muted">
+            HTTP <span th:text="${view.summary.httpSamples}">0</span> ·
+            WS <span th:text="${view.summary.wsSamples}">0</span>
+        </p>
     </div>
     <div class="card">
         <h3>Success / Errors</h3>
@@ -81,8 +87,78 @@
 </section>
 
 <section class="panel">
+    <h2>RPC Status</h2>
+    <div class="status-grid">
+        <div class="status-item">
+            <span class="status-light"
+                  th:classappend="${view.httpConfigured} ? (${view.httpUp} ? ' status-http-up' : ' status-error') : ' status-off'"></span>
+            <span>HTTP RPC</span>
+        </div>
+        <div class="status-item">
+            <span class="status-light"
+                  th:classappend="${view.wsConfigured} ? (${view.wsUp} ? ' status-ws-up' : ' status-error') : ' status-off'"></span>
+            <span>WebSocket RPC</span>
+        </div>
+        <div class="status-item">
+            <span class="label">Latest Block</span>
+            <span th:text="${view.latestBlockNumber != null ? view.latestBlockNumber : '-'}">-</span>
+        </div>
+    </div>
+    <div class="rpc-columns">
+        <div class="rpc-column">
+            <h3>HTTP</h3>
+            <div class="rpc-item">
+                <span class="label">HTTP Connected</span>
+                <span th:text="${view.httpStatus.connectedSince != null ? #temporals.format(view.httpStatus.connectedSince, 'yyyy-MM-dd HH:mm:ss') : '-'}">-</span>
+            </div>
+            <div class="rpc-item">
+                <span class="label">HTTP Connection Errors</span>
+                <span th:text="${view.httpStatus.errorCount}">0</span>
+            </div>
+            <div class="rpc-item">
+                <span class="label">Last Error</span>
+                <span th:text="${view.httpStatus.lastError != null ? view.httpStatus.lastError : '-'}">-</span>
+            </div>
+        </div>
+        <div class="rpc-column">
+            <h3>WebSocket</h3>
+            <div class="rpc-item">
+                <span class="label">WS Connected</span>
+                <span th:text="${view.wsStatus.connectedSince != null ? #temporals.format(view.wsStatus.connectedSince, 'yyyy-MM-dd HH:mm:ss') : '-'}">-</span>
+            </div>
+            <div class="rpc-item">
+                <span class="label">WS Connection Errors</span>
+                <span th:text="${view.wsStatus.connectFailureCount}">0</span>
+            </div>
+            <div class="rpc-item">
+                <span class="label">Last Error</span>
+                <span th:text="${view.wsStatus.lastError != null ? view.wsStatus.lastError : '-'}">-</span>
+            </div>
+        </div>
+    </div>
+</section>
+
+<div id="anomalyModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-backdrop"></div>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="anomalyTitle">
+        <div class="modal-header">
+            <h2 id="anomalyTitle">Anomaly Details</h2>
+            <button type="button" class="button ghost" id="closeAnomaly">Close</button>
+        </div>
+        <div id="anomalyContent" class="modal-content">
+            <p class="muted">Loading...</p>
+        </div>
+    </div>
+</div>
+
+<section class="panel">
+    <h2>Latency & Error Rate (recent)</h2>
+    <canvas id="latencyChart" height="120"></canvas>
+</section>
+
+<section class="panel">
     <div class="panel-header">
-        <h2>Recent Anomalies</h2>
+        <h2>Recent Anomalies <span class="count-badge" th:text="${view.totalAnomalies}">0</span></h2>
         <button id="toggleAnomalies" class="button ghost" type="button">Show anomalies</button>
     </div>
     <div id="anomaliesPanel" class="collapsed">
@@ -107,61 +183,9 @@
     </div>
 </section>
 
-<div id="anomalyModal" class="modal hidden" aria-hidden="true">
-    <div class="modal-backdrop"></div>
-    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="anomalyTitle">
-        <div class="modal-header">
-            <h2 id="anomalyTitle">Anomaly Details</h2>
-            <button type="button" class="button ghost" id="closeAnomaly">Close</button>
-        </div>
-        <div id="anomalyContent" class="modal-content">
-            <p class="muted">Loading...</p>
-        </div>
-    </div>
-</div>
-
-<section class="panel">
-    <h2>Latency & Error Rate (recent)</h2>
-    <canvas id="latencyChart" height="120"></canvas>
-</section>
-
-<section class="panel">
-    <h2>WebSocket Stability</h2>
-    <div class="detail-grid">
-        <div>
-            <span class="label">Status</span>
-            <span th:text="${view.wsStatus.connected ? 'Connected' : 'Disconnected'}">-</span>
-        </div>
-        <div>
-            <span class="label">Connected Since</span>
-            <span th:text="${view.wsStatus.connectedSince != null ? #temporals.format(view.wsStatus.connectedSince, 'yyyy-MM-dd HH:mm:ss') : '-'}">-</span>
-        </div>
-        <div>
-            <span class="label">Last Disconnect</span>
-            <span th:text="${view.wsStatus.lastDisconnectedAt != null ? #temporals.format(view.wsStatus.lastDisconnectedAt, 'yyyy-MM-dd HH:mm:ss') : '-'}">-</span>
-        </div>
-        <div>
-            <span class="label">Connect Count</span>
-            <span th:text="${view.wsStatus.connectCount}">0</span>
-        </div>
-        <div>
-            <span class="label">Disconnect Count</span>
-            <span th:text="${view.wsStatus.disconnectCount}">0</span>
-        </div>
-        <div>
-            <span class="label">Connect Failures</span>
-            <span th:text="${view.wsStatus.connectFailureCount}">0</span>
-        </div>
-        <div>
-            <span class="label">Last Error</span>
-            <span th:text="${view.wsStatus.lastError != null ? view.wsStatus.lastError : '-'}">-</span>
-        </div>
-    </div>
-</section>
-
 <section class="panel">
     <div class="panel-header">
-        <h2>Recent HTTP Samples</h2>
+        <h2>Recent HTTP Samples <span class="count-badge" th:text="${view.totalSamples}">0</span></h2>
         <button id="toggleSamples" class="button ghost" type="button">Show samples</button>
     </div>
     <div id="samplesPanel" class="collapsed">
@@ -184,7 +208,6 @@
         </table>
         <div class="pagination" id="pagination"></div>
     </div>
-    <p class="muted">Generated at <span th:text="${#temporals.format(view.generatedAt, 'yyyy-MM-dd HH:mm:ss')}">-</span></p>
 </section>
 
 <script th:inline="javascript">
@@ -192,6 +215,7 @@
     const latencyData = /*[[${view.chartLatencies}]]*/ [];
     const errorRateData = /*[[${view.chartErrorRates}]]*/ [];
     const wsErrorRateData = /*[[${view.chartWsErrorRates}]]*/ [];
+    const wsConfigured = /*[[${view.wsConfigured}]]*/ false;
     const samples = /*[[${view.sampleRows}]]*/ [];
     const anomalies = /*[[${view.anomalyRows}]]*/ [];
     const pageSize = /*[[${view.pageSize}]]*/ 50;
@@ -201,35 +225,40 @@
 
     const ctx = document.getElementById('latencyChart');
     if (ctx) {
+        const datasets = [{
+            label: 'Latency (ms)',
+            data: latencyData,
+            borderColor: '#2b4cff',
+            backgroundColor: 'rgba(43, 76, 255, 0.2)',
+            spanGaps: true,
+            tension: 0.2,
+            yAxisID: 'y'
+        }, {
+            label: 'HTTP Error rate (%)',
+            data: errorRateData,
+            borderColor: '#ff5c5c',
+            backgroundColor: 'rgba(255, 92, 92, 0.2)',
+            spanGaps: true,
+            tension: 0.2,
+            yAxisID: 'y1'
+        }];
+        if (wsConfigured) {
+            datasets.push({
+                label: 'WS error rate (%)',
+                data: wsErrorRateData,
+                borderColor: '#a855f7',
+                backgroundColor: 'rgba(168, 85, 247, 0.2)',
+                spanGaps: true,
+                tension: 0.2,
+                yAxisID: 'y1'
+            });
+        }
+
         new Chart(ctx, {
             type: 'line',
             data: {
                 labels,
-                datasets: [{
-                    label: 'Latency (ms)',
-                    data: latencyData,
-                    borderColor: '#2b4cff',
-                    backgroundColor: 'rgba(43, 76, 255, 0.2)',
-                    spanGaps: true,
-                    tension: 0.2,
-                    yAxisID: 'y'
-                }, {
-                    label: 'HTTP Error rate (%)',
-                    data: errorRateData,
-                    borderColor: '#ff5c5c',
-                    backgroundColor: 'rgba(255, 92, 92, 0.2)',
-                    spanGaps: true,
-                    tension: 0.2,
-                    yAxisID: 'y1'
-                }, {
-                    label: 'WS error rate (%)',
-                    data: wsErrorRateData,
-                    borderColor: '#a855f7',
-                    backgroundColor: 'rgba(168, 85, 247, 0.2)',
-                    spanGaps: true,
-                    tension: 0.2,
-                    yAxisID: 'y1'
-                }]
+                datasets
             },
             options: {
                 responsive: true,
@@ -388,7 +417,7 @@
             const url = new URL(window.location.href);
             url.searchParams.set('node', selected);
             if (!url.searchParams.get('range')) {
-                url.searchParams.set('range', '24h');
+                url.searchParams.set('range', '2h');
             }
             window.location.href = url.toString();
         });

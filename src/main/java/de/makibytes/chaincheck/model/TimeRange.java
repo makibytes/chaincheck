@@ -21,10 +21,9 @@ import java.time.Duration;
 import java.util.Locale;
 
 public enum TimeRange {
-    HOURS_24("24h", Duration.ofHours(24)),
-    DAYS_7("7d", Duration.ofDays(7)),
-    DAYS_30("30d", Duration.ofDays(30)),
-    DAYS_365("365d", Duration.ofDays(365));
+    HOURS_2("2h", Duration.ofHours(2)),
+    DAYS_3("3d", Duration.ofDays(3)),
+    MONTH_1("1m", Duration.ofDays(30));
 
     private final String key;
     private final Duration duration;
@@ -44,7 +43,7 @@ public enum TimeRange {
 
     public static TimeRange fromKey(String key) {
         if (key == null) {
-            return HOURS_24;
+            return HOURS_2;
         }
         String normalized = key.toLowerCase(Locale.ROOT).trim();
         for (TimeRange range : values()) {
@@ -52,6 +51,6 @@ public enum TimeRange {
                 return range;
             }
         }
-        return HOURS_24;
+        return HOURS_2;
     }
 }

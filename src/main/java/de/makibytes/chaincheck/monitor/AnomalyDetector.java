@@ -92,7 +92,7 @@ public class AnomalyDetector {
                         currentBlockHash,
                         currentParentHash,
                         "Previous height " + previousBlockNumber + ", current " + currentBlockNumber));
-            } else if (currentBlockNumber > previousBlockNumber + 1) {
+            } else if (source == MetricSource.WS && currentBlockNumber > previousBlockNumber + 1) {
                 anomalies.add(new AnomalyEvent(
                         idSequence.getAndIncrement(),
                     nodeKey,

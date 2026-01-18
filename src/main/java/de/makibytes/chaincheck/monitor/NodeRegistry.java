@@ -34,11 +34,13 @@ public class NodeRegistry {
     private final List<NodeDefinition> nodes;
     private final Map<String, NodeDefinition> nodesByKey;
     private final Map<String, WsConnectionTracker> wsTrackers;
+    private final Map<String, HttpConnectionTracker> httpTrackers;
 
     public NodeRegistry(ChainCheckProperties properties) {
         List<NodeDefinition> temp = new ArrayList<>();
         Map<String, NodeDefinition> byKey = new HashMap<>();
         Map<String, WsConnectionTracker> trackers = new HashMap<>();
+        Map<String, HttpConnectionTracker> httpTrackerMap = new HashMap<>();
         Set<String> usedKeys = new HashSet<>();
         int index = 1;
         for (ChainCheckProperties.RpcNodeProperties node : properties.getNodes()) {
@@ -60,12 +62,18 @@ public class NodeRegistry {
                     node.getDelayThresholdMs());
             temp.add(definition);
             byKey.put(key, definition);
-            trackers.put(key, new WsConnectionTracker());
+            if (node.getWs() != null && !node.getWs().isBlank()) {
+                trackers.put(key, new WsConnectionTracker());
+            }
+            if (node.getHttp() != null && !node.getHttp().isBlank()) {
+                httpTrackerMap.put(key, new HttpConnectionTracker());
+            }
             index++;
         }
         this.nodes = List.copyOf(temp);
         this.nodesByKey = Map.copyOf(byKey);
         this.wsTrackers = trackers;
+        this.httpTrackers = httpTrackerMap;
     }
 
     public List<NodeDefinition> getNodes() {
@@ -82,6 +90,10 @@ public class NodeRegistry {
 
     public WsConnectionTracker getWsTracker(String key) {
         return wsTrackers.get(key);
+    }
+
+    public HttpConnectionTracker getHttpTracker(String key) {
+        return httpTrackers.get(key);
     }
 
     public record NodeDefinition(String key,

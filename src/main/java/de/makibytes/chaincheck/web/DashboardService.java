@@ -63,6 +63,14 @@ public class DashboardService {
             return cached;
         }
 
+        NodeRegistry.NodeDefinition nodeDefinition = nodeRegistry.getNode(nodeKey);
+        boolean httpConfigured = nodeDefinition != null
+            && nodeDefinition.http() != null
+            && !nodeDefinition.http().isBlank();
+        boolean wsConfigured = nodeDefinition != null
+            && nodeDefinition.ws() != null
+            && !nodeDefinition.ws().isBlank();
+
         Instant now = Instant.now();
         Instant since = now.minus(range.getDuration());
         Instant rawCutoff = now.minus(Duration.ofHours(24));
@@ -180,6 +188,8 @@ public class DashboardService {
 
         DashboardSummary summary = new DashboardSummary(
                 total,
+            httpCount,
+            wsCount,
                 success,
                 errors,
                 avgLatency,
@@ -240,6 +250,12 @@ public class DashboardService {
                         event.getMessage()))
                 .toList();
 
+        MetricSample latestHttpSample = rawSamples.stream()
+            .filter(sample -> sample.getSource() == MetricSource.HTTP)
+            .max(Comparator.comparing(MetricSample::getTimestamp))
+            .orElse(null);
+        boolean httpUp = httpConfigured && latestHttpSample != null && latestHttpSample.isSuccess();
+
         WsConnectionTracker wsTracker = nodeRegistry.getWsTracker(nodeKey);
         WsStatus wsStatus = wsTracker == null
                 ? new WsStatus(false, null, null, 0, 0, 0, null)
@@ -251,6 +267,13 @@ public class DashboardService {
                         wsTracker.getDisconnectCount(),
                         wsTracker.getConnectFailureCount(),
                         wsTracker.getLastError());
+        boolean wsUp = wsConfigured && wsStatus.isConnected();
+        Long latestBlockNumber = store.getLatestKnownBlockNumber(nodeKey);
+
+        de.makibytes.chaincheck.monitor.HttpConnectionTracker httpTracker = nodeRegistry.getHttpTracker(nodeKey);
+        HttpStatus httpStatus = httpTracker == null
+            ? new HttpStatus(null, 0, null)
+            : new HttpStatus(httpTracker.getConnectedSince(), httpTracker.getErrorCount(), httpTracker.getLastError());
 
         DashboardView view = new DashboardView(
                 range,
@@ -262,6 +285,12 @@ public class DashboardService {
                 chartLatencies,
                 chartErrorRates,
                 chartWsErrorRates,
+                httpConfigured,
+                wsConfigured,
+                httpUp,
+                wsUp,
+                latestBlockNumber,
+                httpStatus,
                 wsStatus,
                 totalPages,
                 PAGE_SIZE,

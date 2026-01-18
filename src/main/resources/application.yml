@@ -7,13 +7,33 @@ server:
 
 rpc:
   nodes:
-    - name: Ethereum
-      http: http://nibbler:8545
-      ws: ws://nibbler:8546
+    - name: polygon-rpc.com
+      http: https://polygon-rpc.com
+      #ws: wss://polygon-rpc.com
       poll-interval-ms: 3000
       delay-threshold-ms: 2000
-    - name: Polygon Mainnet
-      http: https://polygon-rpc.com
-      ws: wss://polygon-rpc.com
+    - name: drpc.org
+      http: https://polygon.drpc.org
+      ws: wss://polygon.drpc.org
+      poll-interval-ms: 3000
+      delay-threshold-ms: 2000
+    - name: publicnode.com
+      http: https://polygon-bor-rpc.publicnode.com
+      ws: wss://polygon-bor-rpc.publicnode.com
+      poll-interval-ms: 3000
+      delay-threshold-ms: 2000
+    - name: 1rpc.io
+      http: https://1rpc.io/matic
+      #ws: wss://1rpc.io/matic
+      poll-interval-ms: 3000
+      delay-threshold-ms: 2000
+    - name: quiknode.pro
+      http: https://rpc-mainnet.matic.quiknode.pro
+      ws: wss://rpc-mainnet.matic.quiknode.pro/ws
+      poll-interval-ms: 3000
+      delay-threshold-ms: 2000
+    - name: tenderly.co
+      http: https://polygon.gateway.tenderly.co
+      ws: wss://polygon.gateway.tenderly.co
       poll-interval-ms: 3000
       delay-threshold-ms: 2000

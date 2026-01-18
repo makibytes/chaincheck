@@ -2,9 +2,7 @@
 
 **ChainCheck** is a comprehensive Ethereum and Polygon node monitoring solution designed to provide real-time insights into the performance and stability of your RPC nodes.
 
-![Dashboard Screenshot](docs/screenshot_placeholder.png)
-
-*Note: Screenshot to be updated.*
+![Dashboard Screenshot](docs/screenshot.png)
 
 ## Features
 

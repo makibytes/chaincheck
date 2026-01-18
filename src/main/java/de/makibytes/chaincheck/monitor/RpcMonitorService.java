@@ -40,14 +40,14 @@ import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import de.makibytes.chaincheck.model.AnomalyEvent;
 import de.makibytes.chaincheck.model.MetricSample;
 import de.makibytes.chaincheck.model.MetricSource;
 import de.makibytes.chaincheck.monitor.NodeRegistry.NodeDefinition;
 import de.makibytes.chaincheck.store.InMemoryMetricsStore;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-
 import jakarta.annotation.PostConstruct;
 
 @Service
@@ -155,21 +155,38 @@ public class RpcMonitorService {
                 store.addAnomaly(node.key(), anomaly);
             }
 
+            HttpConnectionTracker httpTracker = nodeRegistry.getHttpTracker(node.key());
+            if (httpTracker != null) {
+                httpTracker.onSuccess();
+            }
+
             state.lastHttpBlockNumber = blockNumber;
             if (info != null) {
                 state.lastHttpBlockHash = info.blockHash;
             }
         } catch (HttpStatusException ex) {
             logger.error("HTTP RPC failure ({} / http): status {} ({})", node.name(), ex.getStatusCode(), ex.getMessage());
+            HttpConnectionTracker httpTracker = nodeRegistry.getHttpTracker(node.key());
+            if (httpTracker != null) {
+                httpTracker.onError(ex);
+            }
             recordFailure(node, MetricSource.HTTP, ex.getMessage());
         } catch (IOException | InterruptedException ex) {
             if (ex instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
             logger.error("HTTP RPC failure ({}): {}", node.name(), ex.getMessage());
+            HttpConnectionTracker httpTracker = nodeRegistry.getHttpTracker(node.key());
+            if (httpTracker != null) {
+                httpTracker.onError(ex);
+            }
             recordFailure(node, MetricSource.HTTP, ex.getMessage());
         } catch (RuntimeException ex) {
             logger.error("HTTP RPC failure ({}): {}", node.name(), ex.getMessage());
+            HttpConnectionTracker httpTracker = nodeRegistry.getHttpTracker(node.key());
+            if (httpTracker != null) {
+                httpTracker.onError(ex);
+            }
             recordFailure(node, MetricSource.HTTP, ex.getMessage());
         }
     }

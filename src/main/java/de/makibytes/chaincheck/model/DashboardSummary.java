@@ -20,6 +20,8 @@ package de.makibytes.chaincheck.model;
 public class DashboardSummary {
 
     private final long totalSamples;
+    private final long httpSamples;
+    private final long wsSamples;
     private final long successCount;
     private final long errorCount;
     private final double avgLatencyMs;
@@ -40,6 +42,8 @@ public class DashboardSummary {
     private final long blockGapCount;
 
     public DashboardSummary(long totalSamples,
+                            long httpSamples,
+                            long wsSamples,
                             long successCount,
                             long errorCount,
                             double avgLatencyMs,
@@ -59,6 +63,8 @@ public class DashboardSummary {
                             long reorgCount,
                             long blockGapCount) {
         this.totalSamples = totalSamples;
+        this.httpSamples = httpSamples;
+        this.wsSamples = wsSamples;
         this.successCount = successCount;
         this.errorCount = errorCount;
         this.avgLatencyMs = avgLatencyMs;
@@ -81,6 +87,14 @@ public class DashboardSummary {
 
     public long getTotalSamples() {
         return totalSamples;
+    }
+
+    public long getHttpSamples() {
+        return httpSamples;
+    }
+
+    public long getWsSamples() {
+        return wsSamples;
     }
 
     public long getSuccessCount() {

@@ -46,13 +46,17 @@ public class InMemoryMetricsStore {
     private final Map<String, NavigableMap<Instant, AnomalyAggregate>> anomalyAggregatesByNode = new ConcurrentHashMap<>();
     private final Map<Long, AnomalyEvent> anomalyById = new ConcurrentHashMap<>();
     private final Map<String, Long> latestHttpBlockNumber = new ConcurrentHashMap<>();
-    private final Duration rawRetention = Duration.ofHours(24);
-    private final Duration aggregateRetention = TimeRange.DAYS_365.getDuration();
+    private final Map<String, Long> latestBlockNumber = new ConcurrentHashMap<>();
+    private final Duration rawRetention = Duration.ofHours(2);
+    private final Duration aggregateRetention = TimeRange.MONTH_1.getDuration();
 
     public void addSample(String nodeKey, MetricSample sample) {
         rawSamplesByNode.computeIfAbsent(nodeKey, key -> new ConcurrentLinkedDeque<>()).add(sample);
-        if (sample.getSource() == MetricSource.HTTP && sample.getBlockNumber() != null) {
-            latestHttpBlockNumber.put(nodeKey, sample.getBlockNumber());
+        if (sample.getBlockNumber() != null) {
+            latestBlockNumber.put(nodeKey, sample.getBlockNumber());
+            if (sample.getSource() == MetricSource.HTTP) {
+                latestHttpBlockNumber.put(nodeKey, sample.getBlockNumber());
+            }
         }
     }
 
@@ -111,6 +115,10 @@ public class InMemoryMetricsStore {
 
     public Long getLatestBlockNumber(String nodeKey) {
         return latestHttpBlockNumber.get(nodeKey);
+    }
+
+    public Long getLatestKnownBlockNumber(String nodeKey) {
+        return latestBlockNumber.get(nodeKey);
     }
 
     @Scheduled(fixedDelay = 300000)
