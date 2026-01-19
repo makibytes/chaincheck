@@ -222,6 +222,11 @@ public class DashboardService {
         List<Long> chartLatencies = chartData.latencies();
         List<Double> chartErrorRates = chartData.errorRates();
         List<Double> chartWsErrorRates = chartData.wsErrorRates();
+        
+        DelayChartData delayChartData = buildDelayChart(rawSamples, aggregateSamples, range);
+        List<Long> chartHeadDelays = delayChartData.headDelays();
+        List<Long> chartSafeDelays = delayChartData.safeDelays();
+        List<Long> chartFinalizedDelays = delayChartData.finalizedDelays();
 
         DateTimeFormatter rowFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.systemDefault());
         List<SampleRow> sampleRows = sortedSamples.stream()
@@ -284,8 +289,12 @@ public class DashboardService {
                 chartLatencies,
                 chartErrorRates,
                 chartWsErrorRates,
+                chartHeadDelays,
+                chartSafeDelays,
+                chartFinalizedDelays,
                 httpConfigured,
                 wsConfigured,
+                nodeDefinition != null && nodeDefinition.safeBlocksEnabled(),
                 httpUp,
                 wsUp,
                 latestBlockNumber,
@@ -440,7 +449,120 @@ public class DashboardService {
         return new ChartData(labels, latencies, errorRates, wsErrorRates);
     }
 
+    private DelayChartData buildDelayChart(List<MetricSample> rawSamples,
+                                           List<SampleAggregate> aggregateSamples,
+                                           TimeRange range) {
+        List<MetricSample> sortedSamples = rawSamples.stream()
+                .sorted(Comparator.comparing(MetricSample::getTimestamp))
+                .toList();
+        if (sortedSamples.isEmpty() && aggregateSamples.isEmpty()) {
+            return new DelayChartData(List.of(), List.of(), List.of());
+        }
+
+        Instant now = Instant.now();
+        Instant rangeStart = now.minus(range.getDuration());
+        Instant earliest = null;
+        if (!sortedSamples.isEmpty()) {
+            earliest = sortedSamples.get(0).getTimestamp();
+        } else if (!aggregateSamples.isEmpty()) {
+            earliest = aggregateSamples.get(0).getBucketStart();
+        }
+        if (earliest == null) {
+            return new DelayChartData(List.of(), List.of(), List.of());
+        }
+        Instant chartStart = earliest.isAfter(rangeStart) ? earliest : rangeStart;
+        Instant chartEnd = now;
+        if (chartStart.isAfter(chartEnd)) {
+            return new DelayChartData(List.of(), List.of(), List.of());
+        }
+
+        long spanMs = Math.max(1, Duration.between(chartStart, chartEnd).toMillis());
+        int targetPoints = 120;
+        long bucketMs = Math.max(1000, spanMs / targetPoints);
+        int bucketCount = (int) Math.min(targetPoints, Math.max(1, Math.ceil((double) spanMs / bucketMs)));
+
+        List<Long> headDelays = new java.util.ArrayList<>(bucketCount);
+        List<Long> safeDelays = new java.util.ArrayList<>(bucketCount);
+        List<Long> finalizedDelays = new java.util.ArrayList<>(bucketCount);
+
+        int sampleIndex = 0;
+        int aggregateIndex = 0;
+
+        for (int i = 0; i < bucketCount; i++) {
+            Instant bucketStart = chartStart.plusMillis(bucketMs * i);
+            Instant bucketEnd = bucketStart.plusMillis(bucketMs);
+            if (bucketEnd.isAfter(chartEnd)) {
+                bucketEnd = chartEnd;
+            }
+
+            long headDelaySum = 0;
+            long headDelayCount = 0;
+            long safeDelaySum = 0;
+            long safeDelayCount = 0;
+            long finalizedDelaySum = 0;
+            long finalizedDelayCount = 0;
+
+            while (sampleIndex < sortedSamples.size()) {
+                MetricSample sample = sortedSamples.get(sampleIndex);
+                Instant ts = sample.getTimestamp();
+                if (ts.isBefore(bucketStart)) {
+                    sampleIndex++;
+                    continue;
+                }
+                if (!ts.isBefore(bucketEnd)) {
+                    break;
+                }
+                
+                if (sample.getHeadDelayMs() != null) {
+                    headDelaySum += sample.getHeadDelayMs();
+                    headDelayCount++;
+                }
+                if (sample.getSafeDelayMs() != null) {
+                    safeDelaySum += sample.getSafeDelayMs();
+                    safeDelayCount++;
+                }
+                if (sample.getFinalizedDelayMs() != null) {
+                    finalizedDelaySum += sample.getFinalizedDelayMs();
+                    finalizedDelayCount++;
+                }
+                sampleIndex++;
+            }
+
+            while (aggregateIndex < aggregateSamples.size()) {
+                SampleAggregate aggregate = aggregateSamples.get(aggregateIndex);
+                Instant ts = aggregate.getBucketStart();
+                if (ts.isBefore(bucketStart)) {
+                    aggregateIndex++;
+                    continue;
+                }
+                if (!ts.isBefore(bucketEnd)) {
+                    break;
+                }
+                headDelaySum += aggregate.getHeadDelaySumMs();
+                headDelayCount += aggregate.getHeadDelayCount();
+                safeDelaySum += aggregate.getSafeDelaySumMs();
+                safeDelayCount += aggregate.getSafeDelayCount();
+                finalizedDelaySum += aggregate.getFinalizedDelaySumMs();
+                finalizedDelayCount += aggregate.getFinalizedDelayCount();
+                aggregateIndex++;
+            }
+
+            headDelays.add(headDelayCount == 0 ? null : Math.round((double) headDelaySum / headDelayCount));
+            safeDelays.add(safeDelayCount == 0 ? null : Math.round((double) safeDelaySum / safeDelayCount));
+            finalizedDelays.add(finalizedDelayCount == 0 ? null : Math.round((double) finalizedDelaySum / finalizedDelayCount));
+
+            if (bucketEnd.equals(chartEnd)) {
+                break;
+            }
+        }
+
+        return new DelayChartData(headDelays, safeDelays, finalizedDelays);
+    }
+
     private record ChartData(List<String> labels, List<Long> latencies, List<Double> errorRates, List<Double> wsErrorRates) {
+    }
+
+    private record DelayChartData(List<Long> headDelays, List<Long> safeDelays, List<Long> finalizedDelays) {
     }
 
 }

@@ -32,6 +32,9 @@ public class MetricSample {
     private final Integer transactionCount;
     private final Long gasPriceWei;
     private final String error;
+    private final Long headDelayMs;
+    private final Long safeDelayMs;
+    private final Long finalizedDelayMs;
 
     public MetricSample(Instant timestamp,
                         MetricSource source,
@@ -43,7 +46,10 @@ public class MetricSample {
                         String parentHash,
                         Integer transactionCount,
                         Long gasPriceWei,
-                        String error) {
+                        String error,
+                        Long headDelayMs,
+                        Long safeDelayMs,
+                        Long finalizedDelayMs) {
         this.timestamp = timestamp;
         this.source = source;
         this.success = success;
@@ -55,6 +61,9 @@ public class MetricSample {
         this.transactionCount = transactionCount;
         this.gasPriceWei = gasPriceWei;
         this.error = error;
+        this.headDelayMs = headDelayMs;
+        this.safeDelayMs = safeDelayMs;
+        this.finalizedDelayMs = finalizedDelayMs;
     }
 
     public Instant getTimestamp() {
@@ -99,5 +108,17 @@ public class MetricSample {
 
     public String getError() {
         return error;
+    }
+
+    public Long getHeadDelayMs() {
+        return headDelayMs;
+    }
+
+    public Long getSafeDelayMs() {
+        return safeDelayMs;
+    }
+
+    public Long getFinalizedDelayMs() {
+        return finalizedDelayMs;
     }
 }

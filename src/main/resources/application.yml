@@ -12,25 +12,30 @@ rpc:
     - name: polygon-rpc.com
       http: https://polygon-rpc.com
       #ws: wss://polygon-rpc.com
-      poll-interval-ms: 3000
-      delay-threshold-ms: 2000
+      poll-interval-ms: 1000
+      anomaly-delay-ms: 2000
+      safe-blocks-enabled: false
     - name: publicnode.com
       http: https://polygon-bor-rpc.publicnode.com
       ws: wss://polygon-bor-rpc.publicnode.com
-      poll-interval-ms: 3000
-      delay-threshold-ms: 2000
+      poll-interval-ms: 1000
+      anomaly-delay-ms: 2000
+      safe-blocks-enabled: false
     - name: drpc.org
       http: https://polygon.drpc.org
       ws: wss://polygon.drpc.org
-      poll-interval-ms: 3000
-      delay-threshold-ms: 2000
+      poll-interval-ms: 1000
+      anomaly-delay-ms: 2000
+      safe-blocks-enabled: false
     - name: quiknode.pro
       http: https://rpc-mainnet.matic.quiknode.pro
       ws: wss://rpc-mainnet.matic.quiknode.pro/ws
-      poll-interval-ms: 3000
-      delay-threshold-ms: 2000
+      poll-interval-ms: 1000
+      anomaly-delay-ms: 2000
+      safe-blocks-enabled: false
     - name: tenderly.co
       http: https://polygon.gateway.tenderly.co
       ws: wss://polygon.gateway.tenderly.co
-      poll-interval-ms: 3000
-      delay-threshold-ms: 2000
+      poll-interval-ms: 1000
+      anomaly-delay-ms: 2000
+      safe-blocks-enabled: false

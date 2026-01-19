@@ -35,8 +35,12 @@ public class DashboardView {
     private final List<Long> chartLatencies;
     private final List<Double> chartErrorRates;
     private final List<Double> chartWsErrorRates;
+    private final List<Long> chartHeadDelays;
+    private final List<Long> chartSafeDelays;
+    private final List<Long> chartFinalizedDelays;
     private final boolean httpConfigured;
     private final boolean wsConfigured;
+    private final boolean safeBlocksEnabled;
     private final boolean httpUp;
     private final boolean wsUp;
     private final Long latestBlockNumber;
@@ -59,8 +63,12 @@ public class DashboardView {
                          List<Long> chartLatencies,
                          List<Double> chartErrorRates,
                          List<Double> chartWsErrorRates,
+                         List<Long> chartHeadDelays,
+                         List<Long> chartSafeDelays,
+                         List<Long> chartFinalizedDelays,
                          boolean httpConfigured,
                          boolean wsConfigured,
+                         boolean safeBlocksEnabled,
                          boolean httpUp,
                          boolean wsUp,
                          Long latestBlockNumber,
@@ -82,8 +90,12 @@ public class DashboardView {
         this.chartLatencies = chartLatencies;
         this.chartErrorRates = chartErrorRates;
         this.chartWsErrorRates = chartWsErrorRates;
+        this.chartHeadDelays = chartHeadDelays;
+        this.chartSafeDelays = chartSafeDelays;
+        this.chartFinalizedDelays = chartFinalizedDelays;
         this.httpConfigured = httpConfigured;
         this.wsConfigured = wsConfigured;
+        this.safeBlocksEnabled = safeBlocksEnabled;
         this.httpUp = httpUp;
         this.wsUp = wsUp;
         this.latestBlockNumber = latestBlockNumber;
@@ -134,12 +146,28 @@ public class DashboardView {
         return chartWsErrorRates;
     }
 
+    public List<Long> getChartHeadDelays() {
+        return chartHeadDelays;
+    }
+
+    public List<Long> getChartSafeDelays() {
+        return chartSafeDelays;
+    }
+
+    public List<Long> getChartFinalizedDelays() {
+        return chartFinalizedDelays;
+    }
+
     public boolean isHttpConfigured() {
         return httpConfigured;
     }
 
     public boolean isWsConfigured() {
         return wsConfigured;
+    }
+
+    public boolean isSafeBlocksEnabled() {
+        return safeBlocksEnabled;
     }
 
     public boolean isHttpUp() {

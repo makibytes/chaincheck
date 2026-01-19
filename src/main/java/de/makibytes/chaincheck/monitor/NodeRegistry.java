@@ -59,7 +59,8 @@ public class NodeRegistry {
                     node.getHttp(),
                     node.getWs(),
                     node.getPollIntervalMs(),
-                    node.getDelayThresholdMs());
+                    node.getAnomalyDelayMs(),
+                    node.isSafeBlocksEnabled());
             temp.add(definition);
             byKey.put(key, definition);
             if (node.getWs() != null && !node.getWs().isBlank()) {
@@ -101,6 +102,7 @@ public class NodeRegistry {
                                  String http,
                                  String ws,
                                  long pollIntervalMs,
-                                 long delayThresholdMs) {
+                                 long anomalyDelayMs,
+                                 boolean safeBlocksEnabled) {
     }
 }

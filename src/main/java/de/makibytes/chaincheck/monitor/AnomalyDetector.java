@@ -36,7 +36,7 @@ public class AnomalyDetector {
 
     public List<AnomalyEvent> detect(String nodeKey,
                                      MetricSample sample,
-                                     long delayThresholdMs,
+                                     long anomalyDelayMs,
                                      Long previousBlockNumber,
                                      String previousBlockHash) {
         List<AnomalyEvent> anomalies = new ArrayList<>();
@@ -61,7 +61,7 @@ public class AnomalyDetector {
             return anomalies;
         }
 
-        if (sample.getLatencyMs() >= delayThresholdMs && sample.getLatencyMs() >= 0) {
+        if (sample.getLatencyMs() >= anomalyDelayMs && sample.getLatencyMs() >= 0) {
             anomalies.add(new AnomalyEvent(
                     idSequence.getAndIncrement(),
                     nodeKey,

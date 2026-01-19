@@ -59,7 +59,8 @@ public class ChainCheckProperties {
         private String http;
         private String ws;
         private long pollIntervalMs = 3000;
-        private long delayThresholdMs = 2000;
+        private long anomalyDelayMs = 2000;
+        private boolean safeBlocksEnabled = false;
 
         public String getName() {
             return name;
@@ -93,12 +94,20 @@ public class ChainCheckProperties {
             this.pollIntervalMs = pollIntervalMs;
         }
 
-        public long getDelayThresholdMs() {
-            return delayThresholdMs;
+        public long getAnomalyDelayMs() {
+            return anomalyDelayMs;
         }
 
-        public void setDelayThresholdMs(long delayThresholdMs) {
-            this.delayThresholdMs = delayThresholdMs;
+        public void setAnomalyDelayMs(long anomalyDelayMs) {
+            this.anomalyDelayMs = anomalyDelayMs;
+        }
+
+        public boolean isSafeBlocksEnabled() {
+            return safeBlocksEnabled;
+        }
+
+        public void setSafeBlocksEnabled(boolean safeBlocksEnabled) {
+            this.safeBlocksEnabled = safeBlocksEnabled;
         }
     }
 }

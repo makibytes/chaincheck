@@ -39,6 +39,15 @@ public class SampleAggregate {
     private long propagationDelayCount;
     private long maxPropagationDelayMs;
     private long staleBlockCount;
+    private long headDelaySumMs;
+    private long headDelayCount;
+    private long maxHeadDelayMs;
+    private long safeDelaySumMs;
+    private long safeDelayCount;
+    private long maxSafeDelayMs;
+    private long finalizedDelaySumMs;
+    private long finalizedDelayCount;
+    private long maxFinalizedDelayMs;
 
     public SampleAggregate(Instant bucketStart) {
         this.bucketStart = bucketStart;
@@ -77,6 +86,27 @@ public class SampleAggregate {
                 if (delay > 30000) {
                     staleBlockCount++;
                 }
+            }
+        }
+        if (sample.getHeadDelayMs() != null) {
+            headDelaySumMs += sample.getHeadDelayMs();
+            headDelayCount++;
+            if (sample.getHeadDelayMs() > maxHeadDelayMs) {
+                maxHeadDelayMs = sample.getHeadDelayMs();
+            }
+        }
+        if (sample.getSafeDelayMs() != null) {
+            safeDelaySumMs += sample.getSafeDelayMs();
+            safeDelayCount++;
+            if (sample.getSafeDelayMs() > maxSafeDelayMs) {
+                maxSafeDelayMs = sample.getSafeDelayMs();
+            }
+        }
+        if (sample.getFinalizedDelayMs() != null) {
+            finalizedDelaySumMs += sample.getFinalizedDelayMs();
+            finalizedDelayCount++;
+            if (sample.getFinalizedDelayMs() > maxFinalizedDelayMs) {
+                maxFinalizedDelayMs = sample.getFinalizedDelayMs();
             }
         }
     }
@@ -135,5 +165,41 @@ public class SampleAggregate {
 
     public long getStaleBlockCount() {
         return staleBlockCount;
+    }
+
+    public long getHeadDelaySumMs() {
+        return headDelaySumMs;
+    }
+
+    public long getHeadDelayCount() {
+        return headDelayCount;
+    }
+
+    public long getMaxHeadDelayMs() {
+        return maxHeadDelayMs;
+    }
+
+    public long getSafeDelaySumMs() {
+        return safeDelaySumMs;
+    }
+
+    public long getSafeDelayCount() {
+        return safeDelayCount;
+    }
+
+    public long getMaxSafeDelayMs() {
+        return maxSafeDelayMs;
+    }
+
+    public long getFinalizedDelaySumMs() {
+        return finalizedDelaySumMs;
+    }
+
+    public long getFinalizedDelayCount() {
+        return finalizedDelayCount;
+    }
+
+    public long getMaxFinalizedDelayMs() {
+        return maxFinalizedDelayMs;
     }
 }

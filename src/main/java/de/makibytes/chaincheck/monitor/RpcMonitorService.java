@@ -25,6 +25,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.net.http.WebSocket;
 import java.nio.ByteBuffer;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -104,7 +105,10 @@ public class RpcMonitorService {
                 null,
                 null,
                 null,
-                errorMessage);
+                errorMessage,
+                null,
+                null,
+                null);
         store.addSample(node.key(), sample);
         NodeState state = nodeStates.get(node.key());
         Long lastBlock = source == MetricSource.HTTP ? (state != null ? state.lastHttpBlockNumber : null) : (state != null ? state.lastWsBlockNumber : null);
@@ -113,7 +117,7 @@ public class RpcMonitorService {
         List<AnomalyEvent> anomalies = detector.detect(
                 node.key(),
                 sample,
-                node.delayThresholdMs(),
+                node.anomalyDelayMs(),
                 lastBlock,
                 lastHash);
         for (AnomalyEvent anomaly : anomalies) {
@@ -126,44 +130,70 @@ public class RpcMonitorService {
         long start = System.nanoTime();
         try {
             Long blockNumber = fetchBlockNumber(node);
-            BlockInfo info = null;
-            if (blockNumber != null) {
-                info = fetchBlock(node, blockNumber);
+            if (blockNumber == null) {
+                recordFailure(node, MetricSource.HTTP, "Could not fetch block number");
+                return;
             }
+
+            state.pollCounter++;
+            boolean querySafe = node.safeBlocksEnabled() && (state.pollCounter % 2 == 1);
+            String blockTag = querySafe ? "safe" : "finalized";
+            
+            BlockInfo checkpointBlock = fetchBlockByTag(node, blockTag);
+            if (checkpointBlock == null) {
+                recordFailure(node, MetricSource.HTTP, blockTag + " block not found");
+                return;
+            }
+            
             long latencyMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
+
+            HttpConnectionTracker tracker = nodeRegistry.getHttpTracker(node.key());
+            if (tracker != null) {
+                tracker.onSuccess();
+            }
+
+            // Calculate delays using block timestamps
+            Long headDelayMs = null;
+            Long safeDelayMs = null;
+            Long finalizedDelayMs = null;
+            
+            if (state.lastWsBlockTimestamp != null) {
+                // Head delay: how old is the WS head block?
+                headDelayMs = Duration.between(state.lastWsBlockTimestamp, Instant.now()).toMillis();
+                
+                // Checkpoint delay: how far behind is the checkpoint compared to head?
+                if (checkpointBlock.blockTimestamp() != null) {
+                    long checkpointDelay = Duration.between(
+                        checkpointBlock.blockTimestamp(), 
+                        state.lastWsBlockTimestamp
+                    ).toMillis();
+                    
+                    if (querySafe) {
+                        safeDelayMs = checkpointDelay;
+                    } else {
+                        finalizedDelayMs = checkpointDelay;
+                    }
+                }
+            }
+
             MetricSample sample = new MetricSample(
                     timestamp,
                     MetricSource.HTTP,
                     true,
                     latencyMs,
                     blockNumber,
-                    info == null ? null : info.blockTimestamp,
-                    info == null ? null : info.blockHash,
-                    info == null ? null : info.parentHash,
-                    info == null ? null : info.transactionCount,
-                    info == null ? null : info.gasPriceWei,
-                    null);
+                    checkpointBlock.blockTimestamp(),
+                    checkpointBlock.blockHash(),
+                    checkpointBlock.parentHash(),
+                    checkpointBlock.transactionCount(),
+                    checkpointBlock.gasPriceWei(),
+                    null,
+                    headDelayMs,
+                    safeDelayMs,
+                    finalizedDelayMs);
             store.addSample(node.key(), sample);
-
-            List<AnomalyEvent> anomalies = detector.detect(
-                    node.key(),
-                    sample,
-                    node.delayThresholdMs(),
-                    state.lastHttpBlockNumber,
-                    state.lastHttpBlockHash);
-            for (AnomalyEvent anomaly : anomalies) {
-                store.addAnomaly(node.key(), anomaly);
-            }
-
-            HttpConnectionTracker httpTracker = nodeRegistry.getHttpTracker(node.key());
-            if (httpTracker != null) {
-                httpTracker.onSuccess();
-            }
-
             state.lastHttpBlockNumber = blockNumber;
-            if (info != null) {
-                state.lastHttpBlockHash = info.blockHash;
-            }
+            state.lastHttpBlockHash = checkpointBlock.blockHash();
         } catch (HttpStatusException ex) {
             logger.error("HTTP RPC failure ({} / http): status {} ({})", node.name(), ex.getStatusCode(), ex.getMessage());
             HttpConnectionTracker httpTracker = nodeRegistry.getHttpTracker(node.key());
@@ -172,14 +202,6 @@ public class RpcMonitorService {
             }
             recordFailure(node, MetricSource.HTTP, ex.getMessage());
         } catch (IOException | InterruptedException ex) {
-            if (ex instanceof InterruptedException) {
-                Thread.currentThread().interrupt();
-            }
-            logger.error("HTTP RPC failure ({}): {}", node.name(), ex.getMessage());
-            HttpConnectionTracker httpTracker = nodeRegistry.getHttpTracker(node.key());
-            if (httpTracker != null) {
-                httpTracker.onError(ex);
-            }
             recordFailure(node, MetricSource.HTTP, ex.getMessage());
         } catch (RuntimeException ex) {
             logger.error("HTTP RPC failure ({}): {}", node.name(), ex.getMessage());
@@ -246,8 +268,12 @@ public class RpcMonitorService {
 
     private BlockInfo fetchBlock(NodeDefinition node, long blockNumber) throws IOException, InterruptedException {
         String hex = "0x" + Long.toHexString(blockNumber);
+        return fetchBlockByTag(node, hex);
+    }
+
+    private BlockInfo fetchBlockByTag(NodeDefinition node, String blockTag) throws IOException, InterruptedException {
         JsonNode params = mapper.createArrayNode()
-                .add(hex)
+                .add(blockTag)
                 .add(false);
         JsonNode response = sendRpc(node.http(), "eth_getBlockByNumber", params);
         if (response.has("error")) {
@@ -386,9 +412,17 @@ public class RpcMonitorService {
                         }
                     }
                     Long blockNumber = blockNumberHex == null ? null : parseHexLong(blockNumberHex);
+                    
+                    // Calculate head delay: now - block timestamp
+                    Instant now = Instant.now();
+                    Long headDelayMs = null;
+                    if (blockTimestamp != null) {
+                        headDelayMs = Duration.between(blockTimestamp, now).toMillis();
+                        state.lastWsBlockTimestamp = blockTimestamp;
+                    }
 
                     MetricSample sample = new MetricSample(
-                            Instant.now(),
+                            now,
                             MetricSource.WS,
                             true,
                             -1,
@@ -398,13 +432,16 @@ public class RpcMonitorService {
                             parentHash,
                             null,
                             null,
+                            null,
+                            headDelayMs,
+                            null,
                             null);
                     store.addSample(node.key(), sample);
 
                     List<AnomalyEvent> anomalies = detector.detect(
                             node.key(),
                             sample,
-                            node.delayThresholdMs(),
+                            node.anomalyDelayMs(),
                             state.lastWsBlockNumber,
                             state.lastWsBlockHash);
                     for (AnomalyEvent anomaly : anomalies) {
@@ -440,12 +477,14 @@ public class RpcMonitorService {
     }
 
     private static class NodeState {
-        private final AtomicReference<WebSocket> webSocketRef = new AtomicReference<>();
-        private volatile long lastPollEpochMs;
-        private volatile long lastWsAttemptEpochMs;
-        private volatile Long lastHttpBlockNumber;
-        private volatile String lastHttpBlockHash;
-        private volatile Long lastWsBlockNumber;
-        private volatile String lastWsBlockHash;
+        final AtomicReference<WebSocket> webSocketRef = new AtomicReference<>();
+        long lastPollEpochMs = 0;
+        long lastWsAttemptEpochMs = 0;
+        Long lastHttpBlockNumber;
+        String lastHttpBlockHash;
+        Long lastWsBlockNumber;
+        String lastWsBlockHash;
+        Instant lastWsBlockTimestamp;
+        int pollCounter = 0;
     }
 }
