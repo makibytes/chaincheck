@@ -33,7 +33,6 @@ import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.slf4j.Logger;
@@ -127,7 +126,7 @@ public class RpcMonitorService {
 
     private void pollHttp(NodeDefinition node, NodeState state) {
         Instant timestamp = Instant.now();
-        long start = System.nanoTime();
+        long startNanos = System.nanoTime();
         try {
             Long blockNumber = fetchBlockNumber(node);
             if (blockNumber == null) {
@@ -135,9 +134,15 @@ public class RpcMonitorService {
                 return;
             }
 
-            state.pollCounter++;
-            boolean querySafe = node.safeBlocksEnabled() && (state.pollCounter % 2 == 1);
-            String blockTag = querySafe ? "safe" : "finalized";
+            // When safe blocks are enabled, alternate between safe and finalized queries
+            // When safe blocks are disabled, always query finalized
+            String blockTag;
+            if (node.safeBlocksEnabled()) {
+                state.pollCounter++;
+                blockTag = (state.pollCounter % 2 == 1) ? "safe" : "finalized";
+            } else {
+                blockTag = "finalized";
+            }
             
             BlockInfo checkpointBlock = fetchBlockByTag(node, blockTag);
             if (checkpointBlock == null) {
@@ -145,8 +150,8 @@ public class RpcMonitorService {
                 return;
             }
             
-            long latencyMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
-
+            long latencyMs = (System.nanoTime() - startNanos) / 1_000_000;
+            
             HttpConnectionTracker tracker = nodeRegistry.getHttpTracker(node.key());
             if (tracker != null) {
                 tracker.onSuccess();
@@ -157,7 +162,11 @@ public class RpcMonitorService {
             Long safeDelayMs = null;
             Long finalizedDelayMs = null;
             
-            if (state.lastWsBlockTimestamp != null) {
+            // Only calculate delays if WS data is fresh (received within last 30 seconds)
+            boolean wsDataFresh = state.lastWsBlockTimestamp != null 
+                && Duration.between(state.lastWsBlockTimestamp, Instant.now()).toSeconds() < 30;
+            
+            if (wsDataFresh) {
                 // Head delay: how old is the WS head block?
                 headDelayMs = Duration.between(state.lastWsBlockTimestamp, Instant.now()).toMillis();
                 
@@ -168,10 +177,13 @@ public class RpcMonitorService {
                         state.lastWsBlockTimestamp
                     ).toMillis();
                     
-                    if (querySafe) {
-                        safeDelayMs = checkpointDelay;
-                    } else {
-                        finalizedDelayMs = checkpointDelay;
+                    // Only record positive delays (checkpoint must be older than head)
+                    if (checkpointDelay >= 0) {
+                        if ("safe".equals(blockTag)) {
+                            safeDelayMs = checkpointDelay;
+                        } else {
+                            finalizedDelayMs = checkpointDelay;
+                        }
                     }
                 }
             }

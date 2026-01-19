@@ -17,31 +17,43 @@
  */
 package de.makibytes.chaincheck.web;
 
+import java.util.List;
+
 public class SampleRow {
 
     private final String time;
+    private final List<String> sources;
     private final String status;
     private final Long latencyMs;
     private final Long blockNumber;
+    private final boolean finalized;
     private final Integer transactionCount;
     private final Long gasPriceWei;
 
     public SampleRow(String time,
+                     List<String> sources,
                      String status,
                      Long latencyMs,
                      Long blockNumber,
+                     boolean finalized,
                      Integer transactionCount,
                      Long gasPriceWei) {
         this.time = time;
+        this.sources = sources;
         this.status = status;
         this.latencyMs = latencyMs;
         this.blockNumber = blockNumber;
+        this.finalized = finalized;
         this.transactionCount = transactionCount;
         this.gasPriceWei = gasPriceWei;
     }
 
     public String getTime() {
         return time;
+    }
+
+    public List<String> getSources() {
+        return sources;
     }
 
     public String getStatus() {
@@ -54,6 +66,10 @@ public class SampleRow {
 
     public Long getBlockNumber() {
         return blockNumber;
+    }
+
+    public boolean isFinalized() {
+        return finalized;
     }
 
     public Integer getTransactionCount() {

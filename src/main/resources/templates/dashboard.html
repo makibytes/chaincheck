@@ -152,7 +152,7 @@
 </div>
 
 <section class="panel">
-    <h2>Latency & Error Rate</h2>
+    <h2>Network Latency & Error Rate</h2>
     <canvas id="latencyChart" height="120"></canvas>
 </section>
 
@@ -163,7 +163,7 @@
 
 <section class="panel">
     <div class="panel-header">
-        <h2>Recent Anomalies <span class="count-badge" th:text="${view.totalAnomalies}">0</span></h2>
+        <h2>Anomalies <span class="count-badge" th:text="${view.totalAnomalies}">0</span></h2>
         <button id="toggleAnomalies" class="button ghost" type="button">Show anomalies</button>
     </div>
     <div id="anomaliesPanel" class="collapsed">
@@ -190,7 +190,7 @@
 
 <section class="panel">
     <div class="panel-header">
-        <h2>Recent HTTP Samples <span class="count-badge" th:text="${view.totalSamples}">0</span></h2>
+        <h2>Samples <span class="count-badge" th:text="${view.totalSamples}">0</span></h2>
         <button id="toggleSamples" class="button ghost" type="button">Show samples</button>
     </div>
     <div id="samplesPanel" class="collapsed">
@@ -202,6 +202,7 @@
             <thead>
             <tr>
                 <th>Time</th>
+                <th>Source</th>
                 <th>Status</th>
                 <th>Latency</th>
                 <th>Block</th>
@@ -371,12 +372,33 @@
         samplesBody.innerHTML = '';
         for (let i = start; i < end; i += 1) {
             const s = samples[i];
+            
+            // Build block display with finalized tag if applicable
+            let blockDisplay = s.blockNumber ? String(s.blockNumber) : '-';
+            if (s.blockNumber && s.finalized) {
+                blockDisplay += ' <span class="tag tag-finalized">finalized</span>';
+            }
+            
+            // Build source display with multiple tags if applicable
+            let sourceDisplay = '';
+            if (s.sources && Array.isArray(s.sources)) {
+                sourceDisplay = s.sources.map(src => {
+                    if (src === 'WS') {
+                        return '<span class="tag tag-ws">WS</span>';
+                    } else if (src === 'HTTP') {
+                        return '<span class="tag tag-http">HTTP</span>';
+                    }
+                    return '';
+                }).join(' ');
+            }
+            
             const row = document.createElement('tr');
             row.innerHTML = `
                 <td>${s.time ?? '-'}</td>
+                <td>${sourceDisplay || '-'}</td>
                 <td>${s.status ?? '-'}</td>
                 <td>${s.latencyMs !== null && s.latencyMs !== undefined ? s.latencyMs + ' ms' : 'n/a'}</td>
-                <td>${s.blockNumber ?? '-'}</td>
+                <td>${blockDisplay}</td>
                 <td>${s.transactionCount ?? '-'}</td>
                 <td>${s.gasPriceWei ? (s.gasPriceWei / 1_000_000_000).toFixed(4) : '-'}</td>
             `;

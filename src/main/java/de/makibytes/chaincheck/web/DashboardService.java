@@ -208,13 +208,142 @@ public class DashboardService {
                 anomalyCounts.getOrDefault(AnomalyType.REORG, 0L),
                 anomalyCounts.getOrDefault(AnomalyType.BLOCK_GAP, 0L));
 
-        List<MetricSample> sortedSamples = rawSamples.stream()
-                .filter(sample -> sample.getSource() == MetricSource.HTTP)
-                .sorted(Comparator.comparing(MetricSample::getTimestamp).reversed())
+        // Group samples by blockhash and merge them
+        Map<String, List<MetricSample>> samplesByHash = rawSamples.stream()
+                .filter(s -> s.getBlockHash() != null && !s.getBlockHash().isBlank())
+                .collect(Collectors.groupingBy(MetricSample::getBlockHash));
+
+        DateTimeFormatter rowFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.systemDefault());
+        
+        // First pass: create intermediate rows with block number and initial finalized/safe status
+        Map<Long, BlockTagInfo> blockTags = new java.util.HashMap<>();
+        
+        List<SampleRow> intermediateRows = samplesByHash.entrySet().stream()
+                .map(entry -> {
+                    List<MetricSample> samples = entry.getValue();
+                    samples.sort(Comparator.comparing(MetricSample::getTimestamp));
+                    MetricSample first = samples.get(0);
+                    
+                    List<String> sources = samples.stream()
+                            .map(s -> s.getSource() == MetricSource.HTTP ? "HTTP" : "WS")
+                            .distinct()
+                            .sorted()
+                            .toList();
+                    
+                    Long avgLatencyForRow = null;
+                    List<Long> validLatencies = samples.stream()
+                            .filter(s -> s.getLatencyMs() >= 0)
+                            .map(MetricSample::getLatencyMs)
+                            .toList();
+                    if (!validLatencies.isEmpty()) {
+                        avgLatencyForRow = Math.round(validLatencies.stream()
+                                .mapToLong(Long::longValue)
+                                .average()
+                                .orElse(-1));
+                    }
+                    
+                    // Determine if this block was explicitly queried as finalized or safe
+                    boolean hasFinalized = samples.stream().anyMatch(s -> s.getFinalizedDelayMs() != null);
+                    boolean hasSafe = samples.stream().anyMatch(s -> s.getSafeDelayMs() != null);
+                    
+                    boolean allSuccess = samples.stream().allMatch(MetricSample::isSuccess);
+                    Integer transactionCount = samples.stream()
+                            .map(MetricSample::getTransactionCount)
+                            .filter(tc -> tc != null)
+                            .findFirst()
+                            .orElse(null);
+                    Long gasPriceWei = samples.stream()
+                            .map(MetricSample::getGasPriceWei)
+                            .filter(gp -> gp != null)
+                            .findFirst()
+                            .orElse(null);
+                    
+                    // Store tag info for propagation
+                    if (first.getBlockNumber() != null) {
+                        blockTags.put(first.getBlockNumber(), new BlockTagInfo(hasFinalized, hasSafe));
+                    }
+                    
+                    return new SampleRow(
+                            rowFormatter.format(first.getTimestamp()),
+                            sources,
+                            allSuccess ? "OK" : "ERROR",
+                            avgLatencyForRow,
+                            first.getBlockNumber(),
+                            hasFinalized,
+                            transactionCount,
+                            gasPriceWei);
+                })
+                .collect(Collectors.toList());
+        
+        // Second pass: propagate tags backwards
+        // Sort block numbers in descending order
+        List<Long> sortedBlockNumbers = blockTags.keySet().stream()
+                .sorted(Comparator.reverseOrder())
+                .toList();
+        
+        for (Long blockNumber : sortedBlockNumbers) {
+            BlockTagInfo info = blockTags.get(blockNumber);
+            
+            // If this block was explicitly marked as finalized, propagate backwards
+            if (info.explicitFinalized) {
+                for (long prevBlock = blockNumber - 1; prevBlock >= 0; prevBlock--) {
+                    BlockTagInfo prevInfo = blockTags.get(prevBlock);
+                    if (prevInfo == null) break; // No data for this block
+                    if (prevInfo.finalized) break; // Already finalized, stop
+                    
+                    // Mark as finalized (remove safe if present)
+                    prevInfo.finalized = true;
+                    prevInfo.safe = false;
+                }
+            }
+            
+            // If this block was explicitly marked as safe (and not finalized), propagate backwards
+            if (info.explicitSafe && !info.finalized) {
+                for (long prevBlock = blockNumber - 1; prevBlock >= 0; prevBlock--) {
+                    BlockTagInfo prevInfo = blockTags.get(prevBlock);
+                    if (prevInfo == null) break; // No data for this block
+                    if (prevInfo.finalized) break; // Hit finalized block, stop
+                    if (prevInfo.safe) break; // Already safe, stop
+                    
+                    // Mark as safe if not already tagged
+                    if (!prevInfo.finalized) {
+                        prevInfo.safe = true;
+                    }
+                }
+            }
+            
+            // Apply final status to this block
+            if (info.explicitFinalized) {
+                info.finalized = true;
+            } else if (info.explicitSafe) {
+                info.safe = true;
+            }
+        }
+        
+        // Third pass: update rows with propagated tags
+        List<SampleRow> sampleRows = intermediateRows.stream()
+                .map(row -> {
+                    if (row.getBlockNumber() == null) return row;
+                    
+                    BlockTagInfo info = blockTags.get(row.getBlockNumber());
+                    boolean isFinalized = info != null && info.finalized;
+                    
+                    return new SampleRow(
+                            row.getTime(),
+                            row.getSources(),
+                            row.getStatus(),
+                            row.getLatencyMs(),
+                            row.getBlockNumber(),
+                            isFinalized,
+                            row.getTransactionCount(),
+                            row.getGasPriceWei());
+                })
+                .sorted(Comparator.comparing(SampleRow::getTime).reversed()
+                        .thenComparing(SampleRow::getBlockNumber, Comparator.nullsLast(Comparator.reverseOrder())))
                 .limit(MAX_SAMPLES)
                 .toList();
 
-        int totalSamples = sortedSamples.size();
+        int totalSamples = sampleRows.size();
         int totalPages = Math.max(1, Math.min(MAX_PAGES, (int) Math.ceil(totalSamples / (double) PAGE_SIZE)));
 
         ChartData chartData = buildLatencyChart(rawSamples, aggregateSamples, range);
@@ -227,17 +356,6 @@ public class DashboardService {
         List<Long> chartHeadDelays = delayChartData.headDelays();
         List<Long> chartSafeDelays = delayChartData.safeDelays();
         List<Long> chartFinalizedDelays = delayChartData.finalizedDelays();
-
-        DateTimeFormatter rowFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.systemDefault());
-        List<SampleRow> sampleRows = sortedSamples.stream()
-                .map(sample -> new SampleRow(
-                        rowFormatter.format(sample.getTimestamp()),
-                        sample.isSuccess() ? "OK" : "ERROR",
-                        sample.getLatencyMs() >= 0 ? sample.getLatencyMs() : null,
-                        sample.getBlockNumber(),
-                        sample.getTransactionCount(),
-                        sample.getGasPriceWei()))
-                .toList();
 
         List<AnomalyEvent> pagedAnomalies = anomalies.stream()
                 .limit(MAX_ANOMALIES)
@@ -563,6 +681,20 @@ public class DashboardService {
     }
 
     private record DelayChartData(List<Long> headDelays, List<Long> safeDelays, List<Long> finalizedDelays) {
+    }
+
+    private static class BlockTagInfo {
+        boolean explicitFinalized;
+        boolean explicitSafe;
+        boolean finalized;
+        boolean safe;
+
+        BlockTagInfo(boolean explicitFinalized, boolean explicitSafe) {
+            this.explicitFinalized = explicitFinalized;
+            this.explicitSafe = explicitSafe;
+            this.finalized = false;
+            this.safe = false;
+        }
     }
 
 }
