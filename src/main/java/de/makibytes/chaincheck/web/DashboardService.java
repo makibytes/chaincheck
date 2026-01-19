@@ -74,14 +74,13 @@ public class DashboardService {
         Instant now = Instant.now();
         Instant since = now.minus(range.getDuration());
         Instant rawCutoff = now.minus(Duration.ofHours(24));
-        Instant rawSince = since.isAfter(rawCutoff) ? since : rawCutoff;
 
-        List<MetricSample> rawSamples = store.getRawSamplesSince(nodeKey, rawSince);
+        List<MetricSample> rawSamples = store.getRawSamplesSince(nodeKey, since);
         List<SampleAggregate> aggregateSamples = store.getAggregatedSamplesSince(nodeKey, since).stream()
                 .filter(aggregate -> aggregate.getBucketStart().isBefore(rawCutoff))
                 .toList();
 
-        List<AnomalyEvent> anomalies = store.getRawAnomaliesSince(nodeKey, rawSince)
+        List<AnomalyEvent> anomalies = store.getRawAnomaliesSince(nodeKey, since)
                 .stream()
                 .sorted(Comparator.comparing(AnomalyEvent::getTimestamp).reversed())
                 .collect(Collectors.toList());

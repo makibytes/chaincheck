@@ -10,7 +10,7 @@
 <body>
 <header class="app-header">
     <div>
-        <p class="title">ChainCheck</p>
+        <p class="title">ChainCheck<span th:if="${appTitle != null and !appTitle.isEmpty()}" th:text="' · ' + ${appTitle}" th:style="'font-weight: bold; color: ' + ${appTitleColor} + ';'"></span></p>
     </div>
     <div class="header-controls">
         <label class="select-label">

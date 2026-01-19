@@ -6,15 +6,12 @@ server:
   port: 8080
 
 rpc:
+  title: "Polygon Mainnet"
+  title-color: "#ff0000"
   nodes:
     - name: polygon-rpc.com
       http: https://polygon-rpc.com
       #ws: wss://polygon-rpc.com
-      poll-interval-ms: 3000
-      delay-threshold-ms: 2000
-    - name: drpc.org
-      http: https://polygon.drpc.org
-      ws: wss://polygon.drpc.org
       poll-interval-ms: 3000
       delay-threshold-ms: 2000
     - name: publicnode.com
@@ -22,9 +19,9 @@ rpc:
       ws: wss://polygon-bor-rpc.publicnode.com
       poll-interval-ms: 3000
       delay-threshold-ms: 2000
-    - name: 1rpc.io
-      http: https://1rpc.io/matic
-      #ws: wss://1rpc.io/matic
+    - name: drpc.org
+      http: https://polygon.drpc.org
+      ws: wss://polygon.drpc.org
       poll-interval-ms: 3000
       delay-threshold-ms: 2000
     - name: quiknode.pro

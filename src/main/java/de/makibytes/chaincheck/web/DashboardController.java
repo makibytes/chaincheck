@@ -25,6 +25,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseBody;
 
+import de.makibytes.chaincheck.config.ChainCheckProperties;
 import de.makibytes.chaincheck.model.AnomalyEvent;
 import de.makibytes.chaincheck.model.TimeRange;
 import de.makibytes.chaincheck.monitor.NodeRegistry;
@@ -35,10 +36,12 @@ public class DashboardController {
 
     private final DashboardService dashboardService;
     private final NodeRegistry nodeRegistry;
+    private final ChainCheckProperties properties;
 
-    public DashboardController(DashboardService dashboardService, NodeRegistry nodeRegistry) {
+    public DashboardController(DashboardService dashboardService, NodeRegistry nodeRegistry, ChainCheckProperties properties) {
         this.dashboardService = dashboardService;
         this.nodeRegistry = nodeRegistry;
+        this.properties = properties;
     }
 
     @GetMapping({"/", "/dashboard"})
@@ -58,6 +61,8 @@ public class DashboardController {
         NodeDefinition selectedNode = nodeRegistry.getNode(selectedKey);
 
         model.addAttribute("appName", "ChainCheck");
+        model.addAttribute("appTitle", properties.getTitle());
+        model.addAttribute("appTitleColor", properties.getTitleColor());
         model.addAttribute("nodeName", selectedNode == null ? "Node" : selectedNode.name());
         model.addAttribute("nodeKey", selectedKey);
         model.addAttribute("nodes", nodeRegistry.getNodes());
@@ -75,6 +80,8 @@ public class DashboardController {
             return "not-found";
         }
         model.addAttribute("appName", "ChainCheck");
+        model.addAttribute("appTitle", properties.getTitle());
+        model.addAttribute("appTitleColor", properties.getTitleColor());
         NodeDefinition selectedNode = nodeRegistry.getNode(event.getNodeKey());
         model.addAttribute("nodeName", selectedNode == null ? "Node" : selectedNode.name());
         model.addAttribute("nodeKey", event.getNodeKey());

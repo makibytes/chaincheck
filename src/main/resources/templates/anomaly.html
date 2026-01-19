@@ -9,7 +9,7 @@
 <body>
 <header class="app-header">
     <div>
-        <h1 th:text="${appName}">ChainCheck</h1>
+        <h1><span th:text="${appName}">ChainCheck</span><span th:if="${appTitle != null and !appTitle.isEmpty()}" th:text="' · ' + ${appTitle}" th:style="'font-weight: bold; color: ' + ${appTitleColor} + ';'"></span></h1>
         <p class="subtitle">Monitoring <span th:text="${nodeName}">Node</span></p>
     </div>
     <a class="button" th:href="@{/dashboard(node=${nodeKey})}">Back to dashboard</a>

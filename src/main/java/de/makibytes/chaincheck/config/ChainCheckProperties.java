@@ -25,7 +25,25 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "rpc")
 public class ChainCheckProperties {
 
+    private String title = "";
+    private String titleColor = "white";
     private List<RpcNodeProperties> nodes = new ArrayList<>();
+
+    public String getTitle() {
+        return title;
+    }
+
+    public void setTitle(String title) {
+        this.title = title;
+    }
+
+    public String getTitleColor() {
+        return titleColor;
+    }
+
+    public void setTitleColor(String titleColor) {
+        this.titleColor = titleColor;
+    }
 
     public List<RpcNodeProperties> getNodes() {
         return nodes;
