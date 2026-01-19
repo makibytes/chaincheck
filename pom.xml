@@ -10,7 +10,7 @@
 	</parent>
 	<groupId>de.makibytes</groupId>
 	<artifactId>chaincheck</artifactId>
-	<version>0.0.1-SNAPSHOT</version>
+	<version>1.0.0</version>
 	<name>chaincheck</name>
 	<description>Ethereum and Polygon Node Monitoring Solution</description>
 	<url/>

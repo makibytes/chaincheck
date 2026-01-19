@@ -278,11 +278,6 @@ public class RpcMonitorService {
         return parseHexLong(result.asText());
     }
 
-    private BlockInfo fetchBlock(NodeDefinition node, long blockNumber) throws IOException, InterruptedException {
-        String hex = "0x" + Long.toHexString(blockNumber);
-        return fetchBlockByTag(node, hex);
-    }
-
     private BlockInfo fetchBlockByTag(NodeDefinition node, String blockTag) throws IOException, InterruptedException {
         JsonNode params = mapper.createArrayNode()
                 .add(blockTag)

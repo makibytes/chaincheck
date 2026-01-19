@@ -78,9 +78,9 @@
     <div class="card">
         <h3>Block Propagation Delay</h3>
         <p>
-            Avg <span th:text="${#numbers.formatDecimal(view.summary.avgPropagationDelayMs, 0, 2)}">0</span> ms<br/>
-            P95 <span th:text="${view.summary.p95PropagationDelayMs}">0</span> ms<br/>
-            Max <span th:text="${view.summary.maxPropagationDelayMs}">0</span> ms<br/>
+            Avg <span th:text="${#numbers.formatDecimal(view.summary.avgPropagationDelayMs / 1000, 0, 2)}">0</span> s<br/>
+            P95 <span th:text="${#numbers.formatDecimal(view.summary.p95PropagationDelayMs / 1000, 0, 2)}">0</span> s<br/>
+            Max <span th:text="${#numbers.formatDecimal(view.summary.maxPropagationDelayMs / 1000, 0, 2)}">0</span> s<br/>
             Lag vs best <span th:text="${view.summary.blockLagBlocks}">0</span> blocks
         </p>
     </div>

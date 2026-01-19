@@ -1,17 +1,20 @@
 # ChainCheck
 
-**ChainCheck** is a comprehensive Ethereum (and compatible) node monitoring solution designed to provide real-time insights into the performance and stability of HTTP and WebSocket connections to RPC nodes.
+**ChainCheck** is a comprehensive Ethereum (and EVM-compatible) blockchain node monitoring solution designed to provide real-time insights into the performance, stability, and finality status of HTTP and WebSocket connections to RPC nodes.
 
 ![Dashboard Screenshot](docs/screenshot.png)
 
 ## Features
 
-- **Real-time Monitoring**: Tracks latency and error rates for both HTTP and WebSocket interfaces.
-- **Protocol Comparison**: Visualizes differences between HTTP and WebSocket performance side-by-side.
-- **Anomaly Detection**: Automatically flags block skips, high latency, and connection drops.
-- **Metric Aggregation**: Efficiently stores and aggregates metrics over time using `InMemoryMetricsStore`.
-- **Dashboard**: A responsive web interface built with Thymeleaf and Chart.js.
-- **Multi-Node Support**: Easily switch between monitored nodes
+- **Real-time Monitoring**: Tracks latency and error rates for both HTTP and WebSocket interfaces
+- **Checkpoint Propagation Delays**: Monitors head, safe, and finalized block delays to track blockchain finality
+- **Protocol Comparison**: Visualizes differences between HTTP and WebSocket performance side-by-side
+- **Anomaly Detection**: Automatically flags block skips, reorgs, high latency, and connection drops
+- **Block Finality Tracking**: Tags blocks as safe or finalized based on actual RPC queries with backward propagation
+- **Unified Block View**: Merges WebSocket and HTTP samples by block hash for complete block lifecycle tracking
+- **Metric Aggregation**: Efficiently stores raw samples (2 hours) and aggregated metrics (30 days) for long-term analysis
+- **Responsive Dashboard**: Modern web interface built with Thymeleaf and Chart.js
+- **Multi-Node Support**: Monitor multiple RPC endpoints and easily switch between them
 
 ## Getting Started
 
@@ -36,7 +39,35 @@ The dashboard will be available at `http://localhost:8080`.
 
 ## Configuration
 
-Configuration is managed via `application.yml`. You can define your nodes and monitoring intervals there.
+Configuration is managed via `application.yml`. Example configuration:
+
+```yaml
+spring:
+  application:
+    name: ChainCheck
+
+server:
+  port: 8080
+
+rpc:
+  title: "Polygon Mainnet"  # Optional: Dashboard title
+  title-color: "#8247e5"     # Optional: Title color
+  nodes:
+    - name: polygon-rpc.com
+      http: https://polygon-rpc.com
+      ws: wss://polygon-rpc.com  # Optional: WebSocket endpoint
+      poll-interval-ms: 1000     # HTTP polling interval (milliseconds)
+      anomaly-delay-ms: 2000     # Threshold for delay anomalies (milliseconds)
+      safe-blocks-enabled: false # Query safe blocks (alternates with finalized)
+```
+
+### Configuration Options
+
+- **poll-interval-ms**: How often to poll the HTTP endpoint (default: 1000ms)
+- **anomaly-delay-ms**: Threshold for flagging delay anomalies (default: 2000ms)
+- **safe-blocks-enabled**: When true, alternates between safe and finalized block queries; when false, only queries finalized blocks
+- **http**: HTTP RPC endpoint URL (required)
+- **ws**: WebSocket RPC endpoint URL (optional, enables real-time head block tracking)
 
 ## Development
 
