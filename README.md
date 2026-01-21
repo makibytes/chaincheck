@@ -58,14 +58,14 @@ rpc:
       ws: wss://polygon-rpc.com  # Optional: WebSocket endpoint
       poll-interval-ms: 1000     # HTTP polling interval (milliseconds)
       anomaly-delay-ms: 2000     # Threshold for delay anomalies (milliseconds)
-      safe-blocks-enabled: false # Query safe blocks (alternates with finalized)
+      safe-blocks-enabled: false # Only enable when available (e.g. on Ethereum)
 ```
 
 ### Configuration Options
 
 - **poll-interval-ms**: How often to poll the HTTP endpoint (default: 1000ms)
 - **anomaly-delay-ms**: Threshold for flagging delay anomalies (default: 2000ms)
-- **safe-blocks-enabled**: When true, alternates between safe and finalized block queries; when false, only queries finalized blocks
+- **safe-blocks-enabled**: When true, HTTP queries alternate between safe and finalized blocks
 - **http**: HTTP RPC endpoint URL (required)
 - **ws**: WebSocket RPC endpoint URL (optional, enables real-time head block tracking)
 
