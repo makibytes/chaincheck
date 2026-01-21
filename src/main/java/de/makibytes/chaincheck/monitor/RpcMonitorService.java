@@ -134,6 +134,30 @@ public class RpcMonitorService {
                 return;
             }
 
+            // Detect dead websocket connections using event timestamp
+            if (node.ws() != null && !node.ws().isBlank()) {
+                WebSocket ws = state.webSocketRef.get();
+                if (ws != null) {
+                    Long previousHttpBlock = state.lastHttpBlockNumber;
+                    Instant lastWsEvent = state.lastWsEventReceivedAt;
+                    
+                    // If HTTP block advanced (meaning new blocks are being produced)
+                    if (previousHttpBlock != null && blockNumber > previousHttpBlock) {
+                        // Check if WS is receiving events
+                        if (lastWsEvent == null) {
+                            // Never received any WS event - dead from beginning
+                            recordFailure(node, MetricSource.WS, "WebSocket not receiving newHeads events (no events since connection)");
+                        } else {
+                            // Check if last WS event is too old (no events for 10+ seconds)
+                            long secondsSinceLastEvent = Duration.between(lastWsEvent, Instant.now()).toSeconds();
+                            if (secondsSinceLastEvent > 10) {
+                                recordFailure(node, MetricSource.WS, "WebSocket not receiving newHeads events (last event " + secondsSinceLastEvent + "s ago)");
+                            }
+                        }
+                    }
+                }
+            }
+
             // When safe blocks are enabled, alternate between safe and finalized queries
             // When safe blocks are disabled, always query finalized
             String blockTag;
@@ -422,6 +446,10 @@ public class RpcMonitorService {
                     
                     // Calculate head delay: now - block timestamp
                     Instant now = Instant.now();
+                    
+                    // Track that we received a WS event
+                    state.lastWsEventReceivedAt = now;
+                    
                     Long headDelayMs = null;
                     if (blockTimestamp != null) {
                         headDelayMs = Duration.between(blockTimestamp, now).toMillis();
@@ -492,6 +520,7 @@ public class RpcMonitorService {
         Long lastWsBlockNumber;
         String lastWsBlockHash;
         Instant lastWsBlockTimestamp;
+        Instant lastWsEventReceivedAt;  // Timestamp when last WS newHeads event was received
         int pollCounter = 0;
     }
 }
