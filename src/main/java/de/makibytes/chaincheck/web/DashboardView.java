@@ -31,6 +31,7 @@ public class DashboardView {
     private final List<AnomalyEvent> anomalies;
     private final List<AnomalyRow> anomalyRows;
     private final List<SampleRow> sampleRows;
+    private final List<Long> chartTimestamps;
     private final List<String> chartLabels;
     private final List<Long> chartLatencies;
     private final List<Double> chartErrorRates;
@@ -59,6 +60,7 @@ public class DashboardView {
                          List<AnomalyEvent> anomalies,
                          List<AnomalyRow> anomalyRows,
                          List<SampleRow> sampleRows,
+                         List<Long> chartTimestamps,
                          List<String> chartLabels,
                          List<Long> chartLatencies,
                          List<Double> chartErrorRates,
@@ -86,6 +88,7 @@ public class DashboardView {
         this.anomalies = anomalies;
         this.anomalyRows = anomalyRows;
         this.sampleRows = sampleRows;
+        this.chartTimestamps = chartTimestamps;
         this.chartLabels = chartLabels;
         this.chartLatencies = chartLatencies;
         this.chartErrorRates = chartErrorRates;
@@ -128,6 +131,10 @@ public class DashboardView {
 
     public List<SampleRow> getSampleRows() {
         return sampleRows;
+    }
+
+    public List<Long> getChartTimestamps() {
+        return chartTimestamps;
     }
 
     public List<String> getChartLabels() {

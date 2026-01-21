@@ -77,7 +77,7 @@ public class DashboardService {
 
         List<MetricSample> rawSamples = store.getRawSamplesSince(nodeKey, since);
         List<SampleAggregate> aggregateSamples = store.getAggregatedSamplesSince(nodeKey, since).stream()
-                .filter(aggregate -> aggregate.getBucketStart().isBefore(rawCutoff))
+                .filter(aggregate -> !aggregate.getBucketStart().isBefore(since))
                 .toList();
 
         List<AnomalyEvent> anomalies = store.getRawAnomaliesSince(nodeKey, since)
@@ -85,7 +85,7 @@ public class DashboardService {
                 .sorted(Comparator.comparing(AnomalyEvent::getTimestamp).reversed())
                 .collect(Collectors.toList());
         List<AnomalyAggregate> aggregatedAnomalies = store.getAggregatedAnomaliesSince(nodeKey, since).stream()
-                .filter(aggregate -> aggregate.getBucketStart().isBefore(rawCutoff))
+                .filter(aggregate -> !aggregate.getBucketStart().isBefore(since))
                 .toList();
 
         long rawTotal = rawSamples.size();
@@ -403,6 +403,7 @@ public class DashboardService {
                 anomalies,
                 anomalyRows,
                 sampleRows,
+                chartData.timestamps(),
                 chartLabels,
                 chartLatencies,
                 chartErrorRates,
@@ -448,7 +449,7 @@ public class DashboardService {
                 .sorted(Comparator.comparing(MetricSample::getTimestamp))
                 .toList();
         if (sortedSamples.isEmpty() && aggregateSamples.isEmpty()) {
-            return new ChartData(List.of(), List.of(), List.of(), List.of());
+            return new ChartData(List.of(), List.of(), List.of(), List.of(), List.of());
         }
 
         Instant now = Instant.now();
@@ -460,12 +461,12 @@ public class DashboardService {
             earliest = aggregateSamples.get(0).getBucketStart();
         }
         if (earliest == null) {
-            return new ChartData(List.of(), List.of(), List.of(), List.of());
+            return new ChartData(List.of(), List.of(), List.of(), List.of(), List.of());
         }
         Instant chartStart = earliest.isAfter(rangeStart) ? earliest : rangeStart;
         Instant chartEnd = now;
         if (chartStart.isAfter(chartEnd)) {
-            return new ChartData(List.of(), List.of(), List.of(), List.of());
+            return new ChartData(List.of(), List.of(), List.of(), List.of(), List.of());
         }
 
         long spanMs = Math.max(1, Duration.between(chartStart, chartEnd).toMillis());
@@ -478,6 +479,7 @@ public class DashboardService {
                 : DateTimeFormatter.ofPattern("HH:mm");
         formatter = formatter.withZone(ZoneId.systemDefault());
 
+        List<Long> timestamps = new java.util.ArrayList<>(bucketCount);
         List<String> labels = new java.util.ArrayList<>(bucketCount);
         List<Long> latencies = new java.util.ArrayList<>(bucketCount);
         List<Double> errorRates = new java.util.ArrayList<>(bucketCount);
@@ -555,6 +557,7 @@ public class DashboardService {
             }
 
             labels.add(formatter.format(bucketStart));
+            timestamps.add(bucketStart.toEpochMilli());
             latencies.add(latencyCount == 0 ? null : Math.round((double) latencySum / latencyCount));
             errorRates.add(totalBucket == 0 ? null : (double) errorBucket / totalBucket);
             wsErrorRates.add(wsBucket == 0 ? null : (double) wsErrorBucket / wsBucket);
@@ -564,7 +567,7 @@ public class DashboardService {
             }
         }
 
-        return new ChartData(labels, latencies, errorRates, wsErrorRates);
+        return new ChartData(timestamps, labels, latencies, errorRates, wsErrorRates);
     }
 
     private DelayChartData buildDelayChart(List<MetricSample> rawSamples,
@@ -574,7 +577,7 @@ public class DashboardService {
                 .sorted(Comparator.comparing(MetricSample::getTimestamp))
                 .toList();
         if (sortedSamples.isEmpty() && aggregateSamples.isEmpty()) {
-            return new DelayChartData(List.of(), List.of(), List.of());
+            return new DelayChartData(List.of(), List.of(), List.of(), List.of());
         }
 
         Instant now = Instant.now();
@@ -586,12 +589,12 @@ public class DashboardService {
             earliest = aggregateSamples.get(0).getBucketStart();
         }
         if (earliest == null) {
-            return new DelayChartData(List.of(), List.of(), List.of());
+            return new DelayChartData(List.of(), List.of(), List.of(), List.of());
         }
         Instant chartStart = earliest.isAfter(rangeStart) ? earliest : rangeStart;
         Instant chartEnd = now;
         if (chartStart.isAfter(chartEnd)) {
-            return new DelayChartData(List.of(), List.of(), List.of());
+            return new DelayChartData(List.of(), List.of(), List.of(), List.of());
         }
 
         long spanMs = Math.max(1, Duration.between(chartStart, chartEnd).toMillis());
@@ -599,6 +602,7 @@ public class DashboardService {
         long bucketMs = Math.max(1000, spanMs / targetPoints);
         int bucketCount = (int) Math.min(targetPoints, Math.max(1, Math.ceil((double) spanMs / bucketMs)));
 
+        List<Long> timestamps = new java.util.ArrayList<>(bucketCount);
         List<Long> headDelays = new java.util.ArrayList<>(bucketCount);
         List<Long> safeDelays = new java.util.ArrayList<>(bucketCount);
         List<Long> finalizedDelays = new java.util.ArrayList<>(bucketCount);
@@ -666,6 +670,7 @@ public class DashboardService {
             }
 
             headDelays.add(headDelayCount == 0 ? null : Math.round((double) headDelaySum / headDelayCount));
+            timestamps.add(bucketStart.toEpochMilli());
             safeDelays.add(safeDelayCount == 0 ? null : Math.round((double) safeDelaySum / safeDelayCount));
             finalizedDelays.add(finalizedDelayCount == 0 ? null : Math.round((double) finalizedDelaySum / finalizedDelayCount));
 
@@ -674,13 +679,13 @@ public class DashboardService {
             }
         }
 
-        return new DelayChartData(headDelays, safeDelays, finalizedDelays);
+        return new DelayChartData(timestamps, headDelays, safeDelays, finalizedDelays);
     }
 
-    private record ChartData(List<String> labels, List<Long> latencies, List<Double> errorRates, List<Double> wsErrorRates) {
+    private record ChartData(List<Long> timestamps, List<String> labels, List<Long> latencies, List<Double> errorRates, List<Double> wsErrorRates) {
     }
 
-    private record DelayChartData(List<Long> headDelays, List<Long> safeDelays, List<Long> finalizedDelays) {
+    private record DelayChartData(List<Long> timestamps, List<Long> headDelays, List<Long> safeDelays, List<Long> finalizedDelays) {
     }
 
     private static class BlockTagInfo {

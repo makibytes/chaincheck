@@ -6,6 +6,8 @@
     <title>ChainCheck Dashboard</title>
     <link rel="stylesheet" th:href="@{/style.css}"/>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/date-fns@3.0.0/index.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
 </head>
 <body>
 <header class="app-header">
@@ -217,6 +219,7 @@
 </section>
 
 <script th:inline="javascript">
+    const timestamps = /*[[${view.chartTimestamps}]]*/ [];
     const labels = /*[[${view.chartLabels}]]*/ [];
     const latencyData = /*[[${view.chartLatencies}]]*/ [];
     const errorRateData = /*[[${view.chartErrorRates}]]*/ [];
@@ -276,7 +279,16 @@
                     legend: { display: true }
                 },
                 scales: {
-                    x: { ticks: { color: '#8b93a7' }, grid: { color: '#20263a' } },
+                    x: { 
+                        display: true,
+                        ticks: { 
+                            color: '#8b93a7',
+                            display: true,
+                            maxRotation: 45,
+                            minRotation: 0
+                        },
+                        grid: { color: '#20263a' }
+                    },
                     y: {
                         ticks: {
                             color: '#8b93a7',
@@ -345,7 +357,16 @@
                     legend: { display: true }
                 },
                 scales: {
-                    x: { ticks: { color: '#8b93a7' }, grid: { color: '#20263a' } },
+                    x: { 
+                        display: true,
+                        ticks: { 
+                            color: '#8b93a7',
+                            display: true,
+                            maxRotation: 45,
+                            minRotation: 0
+                        },
+                        grid: { color: '#20263a' }
+                    },
                     y: {
                         ticks: {
                             color: '#8b93a7',
