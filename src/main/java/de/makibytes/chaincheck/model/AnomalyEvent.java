@@ -31,6 +31,7 @@ public class AnomalyEvent {
     private final String blockHash;
     private final String parentHash;
     private final String details;
+    private volatile boolean closed = false;
 
     public AnomalyEvent(long id,
                         String nodeKey,
@@ -92,5 +93,13 @@ public class AnomalyEvent {
 
     public String getDetails() {
         return details;
+    }
+
+    public boolean isClosed() {
+        return closed;
+    }
+
+    public void setClosed(boolean closed) {
+        this.closed = closed;
     }
 }

@@ -21,6 +21,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -360,17 +361,40 @@ public class DashboardService {
         List<AnomalyEvent> pagedAnomalies = anomalies.stream()
                 .limit(MAX_ANOMALIES)
                 .toList();
-        int totalAnomalies = pagedAnomalies.size();
-        int anomalyTotalPages = Math.max(1, Math.min(MAX_PAGES, (int) Math.ceil(totalAnomalies / (double) PAGE_SIZE)));
+
         DateTimeFormatter anomalyFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.systemDefault());
-        List<AnomalyRow> anomalyRows = pagedAnomalies.stream()
-                .map(event -> new AnomalyRow(
-                        event.getId(),
-                        anomalyFormatter.format(event.getTimestamp()),
-                        event.getType().name(),
-                        event.getSource().name(),
-                        event.getMessage()))
-                .toList();
+        
+        // Group consecutive anomalies of the same type
+        List<AnomalyRow> anomalyRows = new ArrayList<>();
+        if (!pagedAnomalies.isEmpty()) {
+            AnomalyEvent firstInGroup = pagedAnomalies.get(0);
+            AnomalyEvent lastInGroup = firstInGroup;
+            int groupCount = 1;
+            
+            for (int i = 1; i < pagedAnomalies.size(); i++) {
+                AnomalyEvent current = pagedAnomalies.get(i);
+                
+                // Check if this anomaly continues the current group
+                if (current.getType() == firstInGroup.getType() && 
+                    current.getSource() == firstInGroup.getSource() &&
+                    !lastInGroup.isClosed()) {
+                    // Same type and source and previous not closed - extend the group
+                    lastInGroup = current;
+                    groupCount++;
+                } else {
+                    // Different type or source or previous closed - finish current group and start new one
+                    anomalyRows.add(createAnomalyRow(firstInGroup, lastInGroup, groupCount, anomalyFormatter));
+                    firstInGroup = current;
+                    lastInGroup = current;
+                    groupCount = 1;
+                }
+            }
+            // Add the last group
+            anomalyRows.add(createAnomalyRow(firstInGroup, lastInGroup, groupCount, anomalyFormatter));
+        }
+
+        int totalAnomalies = anomalyRows.size();
+        int anomalyTotalPages = Math.max(1, Math.min(MAX_PAGES, (int) Math.ceil(totalAnomalies / (double) PAGE_SIZE)));
 
         MetricSample latestHttpSample = rawSamples.stream()
             .filter(sample -> sample.getSource() == MetricSource.HTTP)
@@ -680,6 +704,30 @@ public class DashboardService {
         }
 
         return new DelayChartData(timestamps, headDelays, safeDelays, finalizedDelays);
+    }
+
+    private AnomalyRow createAnomalyRow(AnomalyEvent firstEvent, AnomalyEvent lastEvent, int count, DateTimeFormatter formatter) {
+        if (count == 1) {
+            // Single anomaly - use standard format
+            return new AnomalyRow(
+                    firstEvent.getId(),
+                    formatter.format(firstEvent.getTimestamp()),
+                    firstEvent.getType().name(),
+                    firstEvent.getSource().name(),
+                    firstEvent.getMessage());
+        } else {
+            // Multiple anomalies - show time range and use newest ID
+            String timeRange = formatter.format(firstEvent.getTimestamp()) + " ↔ " + formatter.format(lastEvent.getTimestamp());
+            String message = lastEvent.getMessage(); // Use the latest message
+            return new AnomalyRow(
+                    lastEvent.getId(), // Use newest ID for details link
+                    timeRange,
+                    firstEvent.getType().name(),
+                    firstEvent.getSource().name(),
+                    message,
+                    count,
+                    true);
+        }
     }
 
     private record ChartData(List<Long> timestamps, List<String> labels, List<Long> latencies, List<Double> errorRates, List<Double> wsErrorRates) {

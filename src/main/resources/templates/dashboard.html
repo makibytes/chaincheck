@@ -4,6 +4,7 @@
     <meta charset="UTF-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
     <title>ChainCheck Dashboard</title>
+    <link rel="icon" type="image/svg+xml" th:href="@{/favicon.svg}"/>
     <link rel="stylesheet" th:href="@{/style.css}"/>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/date-fns@3.0.0/index.min.js"></script>
@@ -55,7 +56,7 @@
         </p>
         <p class="muted">
             Uptime <span th:text="${#numbers.formatDecimal(view.summary.uptimePercent, 0, 2)}">0</span>% ·
-            Error rate <span th:text="${#numbers.formatDecimal(view.summary.errorRatePercent, 0, 2)}">0</span>%
+            Error rate <span th:text="${view.summary.errorRatePercent == 0 ? '0' : #numbers.formatDecimal(view.summary.errorRatePercent, 0, 2)}">0</span>%
         </p>
     </div>
     <div class="card">
@@ -158,7 +159,7 @@
     <canvas id="latencyChart" height="120"></canvas>
 </section>
 
-<section class="panel">
+<section class="panel" th:if="${view.wsConfigured}">
     <h2>Checkpoint Propagation Delays</h2>
     <canvas id="delayChart" height="120"></canvas>
 </section>
@@ -466,12 +467,18 @@
         for (let i = start; i < end; i += 1) {
             const a = anomalies[i];
             const row = document.createElement('tr');
+            
+            let messageContent = a.message ?? '-';
+            if (a.count > 1) {
+                messageContent += ` <span class="count-badge">${a.count}</span>`;
+            }
+            
             row.innerHTML = `
                 <td>${a.time ?? '-'}</td>
                 <td>${a.type ?? '-'}</td>
                 <td>${a.source ?? '-'}</td>
-                <td>${a.message ?? '-'}</td>
-                <td><a href="#" class="anomaly-link" data-id="${a.id}">Open</a></td>
+                <td>${messageContent}</td>
+                <td><button class="button ghost anomaly-link" data-id="${a.id}">Open</button></td>
             `;
             anomaliesBody.appendChild(row);
         }

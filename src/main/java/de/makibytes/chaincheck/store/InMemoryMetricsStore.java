@@ -65,6 +65,23 @@ public class InMemoryMetricsStore {
         anomalyById.put(event.getId(), event);
     }
 
+    public void closeLastAnomaly(String nodeKey, de.makibytes.chaincheck.model.MetricSource source) {
+        java.util.Deque<AnomalyEvent> anomalies = rawAnomaliesByNode.get(nodeKey);
+        if (anomalies == null || anomalies.isEmpty()) {
+            return;
+        }
+        java.util.Iterator<AnomalyEvent> it = anomalies.descendingIterator();
+        while (it.hasNext()) {
+            AnomalyEvent event = it.next();
+            if (event.getSource() == source) {
+                if (!event.isClosed()) {
+                    event.setClosed(true);
+                }
+                break;
+            }
+        }
+    }
+
     public List<MetricSample> getRawSamplesSince(String nodeKey, Instant since) {
         Deque<MetricSample> samples = rawSamplesByNode.get(nodeKey);
         if (samples == null || samples.isEmpty()) {

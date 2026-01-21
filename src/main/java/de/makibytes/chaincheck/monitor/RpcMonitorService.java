@@ -93,6 +93,8 @@ public class RpcMonitorService {
     }
 
     private void recordFailure(NodeDefinition node, MetricSource source, String errorMessage) {
+        checkAndCloseAnomaly(node, errorMessage, source);
+        
         MetricSample sample = new MetricSample(
                 Instant.now(),
                 source,
@@ -124,6 +126,46 @@ public class RpcMonitorService {
         }
     }
 
+    private boolean areErrorsSame(String error1, String error2) {
+        if (java.util.Objects.equals(error1, error2)) {
+            return true;
+        }
+        if (error1 == null || error2 == null) {
+            return false;
+        }
+        // Normalize specific error messages that contain variable counters
+        String prefix = "WebSocket not receiving newHeads events";
+        if (error1.startsWith(prefix) && error2.startsWith(prefix)) {
+            return true;
+        }
+        // Normalize rate limit errors with variable trace_ids
+        if (error1.contains("call rate limit exhausted") && error2.contains("call rate limit exhausted")) {
+            return true;
+        }
+        return false;
+    }
+
+    private void checkAndCloseAnomaly(NodeDefinition node, String currentError, MetricSource source) {
+        NodeState state = nodeStates.computeIfAbsent(node.key(), key -> new NodeState());
+        String previousError = source == MetricSource.HTTP ? state.lastHttpError : state.lastWsError;
+        
+        // If the result changed significantly (not just a counter update)
+        if (!areErrorsSame(currentError, previousError)) {
+            // If the previous state was an error, close the related anomaly
+            if (previousError != null) {
+                store.closeLastAnomaly(node.key(), source);
+            }
+        }
+        
+        // Always update state to the latest error message (even if technically "same" type)
+        // so that we have the latest counter/details
+        if (source == MetricSource.HTTP) {
+            state.lastHttpError = currentError;
+        } else {
+            state.lastWsError = currentError;
+        }
+    }
+
     private void pollHttp(NodeDefinition node, NodeState state) {
         Instant timestamp = Instant.now();
         long startNanos = System.nanoTime();
@@ -152,6 +194,9 @@ public class RpcMonitorService {
                             long secondsSinceLastEvent = Duration.between(lastWsEvent, Instant.now()).toSeconds();
                             if (secondsSinceLastEvent > 10) {
                                 recordFailure(node, MetricSource.WS, "WebSocket not receiving newHeads events (last event " + secondsSinceLastEvent + "s ago)");
+                            } else {
+                                // WS is healthy (receiving events recently), treat as update to close potential previous errors
+                                checkAndCloseAnomaly(node, null, MetricSource.WS);
                             }
                         }
                     }
@@ -173,6 +218,9 @@ public class RpcMonitorService {
                 recordFailure(node, MetricSource.HTTP, blockTag + " block not found");
                 return;
             }
+            
+            // Successfully fetched all data - this counts as a success sample for HTTP
+            checkAndCloseAnomaly(node, null, MetricSource.HTTP);
             
             long latencyMs = (System.nanoTime() - startNanos) / 1_000_000;
             
@@ -522,5 +570,7 @@ public class RpcMonitorService {
         Instant lastWsBlockTimestamp;
         Instant lastWsEventReceivedAt;  // Timestamp when last WS newHeads event was received
         int pollCounter = 0;
+        String lastHttpError;
+        String lastWsError;
     }
 }

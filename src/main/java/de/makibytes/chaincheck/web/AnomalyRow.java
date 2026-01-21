@@ -24,13 +24,21 @@ public class AnomalyRow {
     private final String type;
     private final String source;
     private final String message;
+    private final int count;
+    private final boolean isGrouped;
 
     public AnomalyRow(long id, String time, String type, String source, String message) {
+        this(id, time, type, source, message, 1, false);
+    }
+
+    public AnomalyRow(long id, String time, String type, String source, String message, int count, boolean isGrouped) {
         this.id = id;
         this.time = time;
         this.type = type;
         this.source = source;
         this.message = message;
+        this.count = count;
+        this.isGrouped = isGrouped;
     }
 
     public long getId() {
@@ -51,5 +59,13 @@ public class AnomalyRow {
 
     public String getMessage() {
         return message;
+    }
+
+    public int getCount() {
+        return count;
+    }
+
+    public boolean isGrouped() {
+        return isGrouped;
     }
 }
