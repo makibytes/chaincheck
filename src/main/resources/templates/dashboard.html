@@ -7,10 +7,9 @@
     <title>ChainCheck Dashboard</title>
     <link rel="icon" type="image/svg+xml" th:href="@{/favicon.svg}" />
     <link rel="stylesheet" th:href="@{/style.css}" />
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/date-fns@3.0.0/index.min.js"></script>
-    <script
-        src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/date-fns@4.1.0/index.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
 </head>
 
 <body>
@@ -39,57 +38,113 @@
 
     <section class="summary-grid">
         <div class="card">
-            <h3>Total Samples</h3>
-            <p>
-                <span th:text="${view.summary.totalSamples}">0</span>
-            </p>
-            <p class="muted">
-                HTTP <span th:text="${view.summary.httpSamples}">0</span> ·
-                WS <span th:text="${view.summary.wsSamples}">0</span>
-            </p>
-        </div>
-        <div class="card">
-            <h3>Success / Errors</h3>
-            <p>
-                <span th:text="${view.summary.successCount}">0</span>
-                <span class="muted">/</span>
+            <h3>Samples &amp; Errors</h3>
+            <div>
+                <span class="muted">HTTP:</span>
+                <span th:text="${view.summary.httpSamples}">0</span>
+                <span class="muted">WS:</span>
+                <span th:text="${view.summary.wsSamples}">0</span>
+            </div>
+            <div>
+                <span class="muted">Errors:</span>
                 <span th:text="${view.summary.errorCount}">0</span>
-            </p>
-            <p class="muted">
-                Uptime <span th:text="${#numbers.formatDecimal(view.summary.uptimePercent, 1, 1)}">0</span>% ·
-                Error rate <span th:text="${#numbers.formatDecimal(view.summary.errorRatePercent, 1, 1)}">0</span>%
-            </p>
-        </div>
-        <div class="card">
-            <h3>Latency (avg / p95 / p99)</h3>
-            <p>
-                <span th:text="${#numbers.formatDecimal(view.summary.avgLatencyMs, 0, 2)}">0</span> ms
-                <span class="muted">/</span>
-                <span th:text="${view.summary.p95LatencyMs}">0</span> ms
-                <span class="muted">/</span>
-                <span th:text="${view.summary.p99LatencyMs}">0</span> ms
-            </p>
+            </div>
+            <div>
+                <span class="muted">Uptime</span>
+                <span th:text="${#numbers.formatDecimal(view.summary.uptimePercent, 1, 1)}">0</span>
+                <span class="muted">%</span>
+            </div>
         </div>
         <div class="card">
             <h3>Anomalies</h3>
-            <p>
-                <span>Delay:</span> <span th:text="${view.summary.delayCount}">0</span><br />
-                <span>Reorg:</span> <span th:text="${view.summary.reorgCount}">0</span><br />
-                <span>Block Gap:</span> <span th:text="${view.summary.blockGapCount}">0</span><br />
-                <span>Stale Blocks:</span> <span th:text="${view.summary.staleBlockCount}">0</span>
-            </p>
+            <div>
+                <span class="muted">Delay:</span>
+                <span th:text="${view.summary.delayCount}">0</span>
+            </div>
+            <div>
+                <span class="muted">Reorg:</span>
+                <span th:text="${view.summary.reorgCount}">0</span>
+            </div>
+            <div>
+                <span class="muted">Block Gap:</span>
+                <span th:text="${view.summary.blockGapCount}">0</span>
+            </div>
+            <div>
+                <span class="muted">Stale Blocks:</span>
+                <span th:text="${view.summary.staleBlockCount}">0</span>
+            </div>
         </div>
         <div class="card">
-            <h3>Block Propagation Delay</h3>
-            <p>
-                Avg <span th:text="${#numbers.formatDecimal(view.summary.avgPropagationDelayMs / 1000, 0, 2)}">0</span>
-                s<br />
-                P95 <span th:text="${#numbers.formatDecimal(view.summary.p95PropagationDelayMs / 1000, 0, 2)}">0</span>
-                s<br />
-                Max <span th:text="${#numbers.formatDecimal(view.summary.maxPropagationDelayMs / 1000, 0, 2)}">0</span>
-                s<br />
-                Lag vs best <span th:text="${view.summary.blockLagBlocks}">0</span> blocks
-            </p>
+            <h3>Network Latency</h3>
+            <div>
+                <span class="muted">Avg</span>
+                <span th:text="${#numbers.formatDecimal(view.summary.avgLatencyMs, 1, 2)}">0</span>
+                <span class="muted">ms</span>
+            </div>
+            <div>
+                <span class="muted">P95</span>
+                <span th:text="${#numbers.formatDecimal(view.summary.p95LatencyMs, 1, 2)}">0</span>
+                <span class="muted">ms</span>
+            </div>
+            <div>
+                <span class="muted">P99</span>
+                <span th:text="${#numbers.formatDecimal(view.summary.p99LatencyMs, 1, 2)}">0</span>
+                <span class="muted">ms</span>
+            </div>
+        </div>
+        <div class="card" th:if="${view.wsConfigured}">
+            <h3>New Blocks</h3>
+            <div>
+                <span class="muted">Avg</span>
+                <span th:text="${#numbers.formatDecimal(view.summary.avgNewBlockPropagationMs / 1000, 1, 2)}">0</span>
+                <span class="muted">s</span>
+            </div>
+            <div>
+                <span class="muted">P95</span>
+                <span th:text="${#numbers.formatDecimal(view.summary.p95NewBlockPropagationMs / 1000, 1, 2)}">0</span>
+                <span class="muted">s</span>
+            </div>
+            <div>
+                <span class="muted">P99</span>
+                <span th:text="${#numbers.formatDecimal(view.summary.p99NewBlockPropagationMs / 1000, 1, 2)}">0</span>
+                <span class="muted">s</span>
+            </div>
+        </div>
+        <div class="card" th:if="${view.safeBlocksEnabled}">
+            <h3>Safe Blocks</h3>
+            <div>
+                <span class="muted">Avg</span>
+                <span th:text="${#numbers.formatDecimal(view.summary.avgSafeBlockPropagationMs / 1000, 1, 2)}">0</span>
+                <span class="muted">s</span>
+            </div>
+            <div>
+                <span class="muted">P95</span>
+                <span th:text="${#numbers.formatDecimal(view.summary.p95SafeBlockPropagationMs / 1000, 1, 2)}">0</span>
+                <span class="muted">s</span>
+            </div>
+            <div>
+                <span class="muted">P99</span>
+                <span th:text="${#numbers.formatDecimal(view.summary.p99SafeBlockPropagationMs / 1000, 1, 2)}">0</span>
+                <span class="muted">s</span>
+            </div>
+        </div>
+        <div class="card" th:if="${view.httpConfigured}">
+            <h3>Finalized Blocks</h3>
+            <div>
+                <span class="muted">Avg</span>
+                <span th:text="${#numbers.formatDecimal(view.summary.avgFinalizedBlockPropagationMs / 1000, 1, 2)}">0</span>
+                <span class="muted">s</span>
+            </div>
+            <div>
+                <span class="muted">P95</span>
+                <span th:text="${#numbers.formatDecimal(view.summary.p95FinalizedBlockPropagationMs / 1000, 1, 2)}">0</span>
+                <span class="muted">s</span>
+            </div>
+            <div>
+                <span class="muted">P99</span>
+                <span th:text="${#numbers.formatDecimal(view.summary.p99FinalizedBlockPropagationMs / 1000, 1, 2)}">0</span>
+                <span class="muted">s</span>
+            </div>
         </div>
     </section>
 
@@ -120,10 +175,6 @@
                         th:text="${view.httpStatus.connectedSince != null ? #temporals.format(view.httpStatus.connectedSince, 'yyyy-MM-dd HH:mm:ss') : '-'}">-</span>
                 </div>
                 <div class="rpc-item">
-                    <span class="label">HTTP Connection Errors</span>
-                    <span th:text="${view.httpStatus.errorCount}">0</span>
-                </div>
-                <div class="rpc-item">
                     <span class="label">Last Error</span>
                     <span th:text="${view.httpStatus.lastError != null ? view.httpStatus.lastError : '-'}">-</span>
                 </div>
@@ -134,10 +185,6 @@
                     <span class="label">WS Connected</span>
                     <span
                         th:text="${view.wsStatus.connectedSince != null ? #temporals.format(view.wsStatus.connectedSince, 'yyyy-MM-dd HH:mm:ss') : '-'}">-</span>
-                </div>
-                <div class="rpc-item">
-                    <span class="label">WS Connection Errors</span>
-                    <span th:text="${view.wsStatus.connectFailureCount}">0</span>
                 </div>
                 <div class="rpc-item">
                     <span class="label">Last Error</span>
@@ -161,13 +208,8 @@
     </div>
 
     <section class="panel">
-        <h2>Network Latency & Error Rate</h2>
+        <h2>Network Latency &amp; Block Propagation</h2>
         <canvas id="latencyChart" height="120"></canvas>
-    </section>
-
-    <section class="panel" th:if="${view.wsConfigured}">
-        <h2>Checkpoint Propagation Delays</h2>
-        <canvas id="delayChart" height="120"></canvas>
     </section>
 
     <section class="panel">
@@ -244,34 +286,218 @@
         const anomalyPageSize = /*[[${view.anomalyPageSize}]]*/ 50;
         const anomalyTotalPages = /*[[${view.anomalyTotalPages}]]*/ 1;
 
+        const maxDelayValue = Math.max(
+            0,
+            ...latencyData.filter(value => value != null),
+            ...headDelayData.filter(value => value != null),
+            ...safeDelayData.filter(value => value != null),
+            ...finalizedDelayData.filter(value => value != null)
+        );
+        const scaledAxisMax = 1000;
+        const lowBandRatio = 0.2;
+        const lowBandMax = 500;
+        const lowBandSize = scaledAxisMax * lowBandRatio;
+
+        const scaleValue = (value) => {
+            if (value == null) {
+                return null;
+            }
+            if (maxDelayValue <= lowBandMax) {
+                return value;
+            }
+            if (value <= lowBandMax) {
+                return (value / lowBandMax) * lowBandSize;
+            }
+            return lowBandSize + ((value - lowBandMax) / (maxDelayValue - lowBandMax)) * (scaledAxisMax - lowBandSize);
+        };
+
+        const inverseScale = (value) => {
+            if (maxDelayValue <= lowBandMax) {
+                return value;
+            }
+            if (value <= lowBandSize) {
+                return Math.round((value / lowBandSize) * lowBandMax);
+            }
+            return Math.round(lowBandMax + ((value - lowBandSize) / (scaledAxisMax - lowBandSize)) * (maxDelayValue - lowBandMax));
+        };
+
+        const latencyScaled = latencyData.map(scaleValue);
+        const headDelayScaled = headDelayData.map(scaleValue);
+        const safeDelayScaled = safeDelayData.map(scaleValue);
+        const finalizedDelayScaled = finalizedDelayData.map(scaleValue);
+
         const ctx = document.getElementById('latencyChart');
         if (ctx) {
             const datasets = [{
-                label: 'Latency (ms)',
-                data: latencyData,
+                label: 'Network Latency',
+                data: latencyScaled,
+                originalData: latencyData,
                 borderColor: '#2b4cff',
                 backgroundColor: 'rgba(43, 76, 255, 0.2)',
                 spanGaps: true,
                 tension: 0.2,
                 yAxisID: 'y'
-            }, {
-                label: 'HTTP Error rate (%)',
-                data: errorRateData,
-                borderColor: '#ff5c5c',
-                backgroundColor: 'rgba(255, 92, 92, 0.2)',
-                spanGaps: true,
-                tension: 0.2,
-                yAxisID: 'y1'
             }];
+
+            const errorBarPlugin = {
+                id: 'errorBars',
+                beforeDatasetsDraw(chart) {
+                    const { ctx, chartArea, scales } = chart;
+                    const xScale = scales.x;
+                    if (!chartArea || !xScale || !timestamps || timestamps.length === 0) {
+                        return;
+                    }
+
+                    const minWidthPx = 5;
+                    const height = chartArea.bottom - chartArea.top;
+
+                    const getStepWidth = (index) => {
+                        if (index < timestamps.length - 1) {
+                            return xScale.getPixelForValue(index + 1) - xScale.getPixelForValue(index);
+                        }
+                        if (index > 0) {
+                            return xScale.getPixelForValue(index) - xScale.getPixelForValue(index - 1);
+                        }
+                        return minWidthPx;
+                    };
+
+                    const drawBars = (series, color) => {
+                        let startIndex = null;
+                        for (let i = 0; i <= series.length; i += 1) {
+                            const hasError = i < series.length && series[i] != null && series[i] > 0;
+                            if (hasError && startIndex === null) {
+                                startIndex = i;
+                            }
+                            if (startIndex !== null && (!hasError || i === series.length)) {
+                                const endIndex = i - 1;
+                                const xStart = xScale.getPixelForValue(startIndex);
+                                const xEnd = xScale.getPixelForValue(endIndex) + getStepWidth(endIndex);
+                                const width = Math.max(minWidthPx, xEnd - xStart);
+                                ctx.fillStyle = color;
+                                ctx.fillRect(xStart, chartArea.top, width, height);
+                                startIndex = null;
+                            }
+                        }
+                    };
+
+                    ctx.save();
+                    drawBars(errorRateData, 'rgba(255, 92, 92, 0.25)');
+                    if (wsConfigured) {
+                        drawBars(wsErrorRateData, 'rgba(168, 85, 247, 0.25)');
+                    }
+                    ctx.restore();
+                }
+            };
+
+            const scaleIndicatorPlugin = {
+                id: 'scaleIndicator',
+                afterDatasetsDraw(chart) {
+                    if (maxDelayValue <= lowBandMax) {
+                        return;
+                    }
+                    const { ctx, chartArea, scales } = chart;
+                    const yScale = scales.y;
+                    if (!chartArea || !yScale) {
+                        return;
+                    }
+                    const boundaryValue = lowBandSize;
+                    const y = yScale.getPixelForValue(boundaryValue);
+                    const isLight = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
+                    const lineColor = isLight ? 'rgba(43, 76, 255, 0.35)' : 'rgba(138, 162, 255, 0.45)';
+                    const labelColor = isLight ? '#1a1a1a' : '#e6e8ee';
+                    const badgeBg = isLight ? 'rgba(43, 76, 255, 0.12)' : 'rgba(138, 162, 255, 0.18)';
+
+                    ctx.save();
+                    ctx.setLineDash([6, 6]);
+                    ctx.lineWidth = 1.5;
+                    ctx.strokeStyle = lineColor;
+                    ctx.beginPath();
+                    ctx.moveTo(chartArea.left, y);
+                    ctx.lineTo(chartArea.right, y);
+                    ctx.stroke();
+
+                    const label = `Scale change @ ${lowBandMax} ms`;
+                    ctx.font = '12px "Inter", "Segoe UI", system-ui, sans-serif';
+                    const textWidth = ctx.measureText(label).width;
+                    const paddingX = 8;
+                    const paddingY = 4;
+                    const badgeWidth = textWidth + paddingX * 2;
+                    const badgeHeight = 20;
+                    const badgeX = chartArea.right - badgeWidth - 8;
+                    const badgeY = Math.max(chartArea.top + 6, y - badgeHeight - 6);
+
+                    ctx.setLineDash([]);
+                    ctx.fillStyle = badgeBg;
+                    ctx.strokeStyle = lineColor;
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.roundRect(badgeX, badgeY, badgeWidth, badgeHeight, 6);
+                    ctx.fill();
+                    ctx.stroke();
+
+                    ctx.fillStyle = labelColor;
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(label, badgeX + paddingX, badgeY + badgeHeight / 2);
+                    ctx.restore();
+                }
+            };
+
             if (wsConfigured) {
                 datasets.push({
-                    label: 'WS error rate (%)',
-                    data: wsErrorRateData,
-                    borderColor: '#a855f7',
-                    backgroundColor: 'rgba(168, 85, 247, 0.2)',
+                    label: 'Head Delay',
+                    data: headDelayScaled,
+                    originalData: headDelayData,
+                    borderColor: '#f59e0b',
+                    backgroundColor: 'rgba(245, 158, 11, 0.2)',
                     spanGaps: true,
                     tension: 0.2,
-                    yAxisID: 'y1'
+                    yAxisID: 'y'
+                });
+
+                if (safeBlocksEnabled) {
+                    datasets.push({
+                        label: 'Safe Delay',
+                        data: safeDelayScaled,
+                        originalData: safeDelayData,
+                        borderColor: '#eab308',
+                        backgroundColor: 'rgba(234, 179, 8, 0.2)',
+                        spanGaps: true,
+                        tension: 0.2,
+                        yAxisID: 'y'
+                    });
+                }
+
+                datasets.push({
+                    label: 'Finalized Delay',
+                    data: finalizedDelayScaled,
+                    originalData: finalizedDelayData,
+                    borderColor: '#22c55e',
+                    backgroundColor: 'rgba(34, 197, 94, 0.2)',
+                    spanGaps: true,
+                    tension: 0.2,
+                    yAxisID: 'y'
+                });
+            }
+
+            datasets.push({
+                label: 'HTTP Errors',
+                data: labels.map(() => null),
+                borderColor: 'rgba(255, 92, 92, 0.25)',
+                backgroundColor: 'rgba(255, 92, 92, 0.25)',
+                pointRadius: 0,
+                borderWidth: 0,
+                showLine: false
+            });
+
+            if (wsConfigured) {
+                datasets.push({
+                    label: 'WS Errors',
+                    data: labels.map(() => null),
+                    borderColor: 'rgba(168, 85, 247, 0.25)',
+                    backgroundColor: 'rgba(168, 85, 247, 0.25)',
+                    pointRadius: 0,
+                    borderWidth: 0,
+                    showLine: false
                 });
             }
 
@@ -281,89 +507,27 @@
                     labels,
                     datasets
                 },
+                plugins: [errorBarPlugin, scaleIndicatorPlugin],
                 options: {
                     responsive: true,
                     plugins: {
-                        legend: { display: true }
-                    },
-                    scales: {
-                        x: {
-                            display: true,
-                            ticks: {
-                                color: '#8b93a7',
-                                display: true,
-                                maxRotation: 45,
-                                minRotation: 0
-                            },
-                            grid: { color: '#20263a' }
-                        },
-                        y: {
-                            min: 0,
-                            ticks: {
-                                color: '#8b93a7',
-                                callback: (value) => `${value} ms`
-                            },
-                            grid: { color: '#20263a' }
-                        },
-                        y1: {
-                            position: 'right',
-                            min: 0,
-                            max: 2,
-                            ticks: {
-                                color: '#ff8c8c',
-                                callback: (value) => `${value}`
-                            },
-                            grid: { drawOnChartArea: false }
+                        legend: { display: true },
+                        tooltip: {
+                            callbacks: {
+                                label: (context) => {
+                                    const dataset = context.dataset;
+                                    const dataIndex = context.dataIndex;
+                                    if (dataset && Array.isArray(dataset.originalData)) {
+                                        const value = dataset.originalData[dataIndex];
+                                        if (value == null) {
+                                            return `${dataset.label}: n/a`;
+                                        }
+                                        return `${dataset.label}: ${value} ms`;
+                                    }
+                                    return `${context.dataset.label}: ${context.formattedValue}`;
+                                }
+                            }
                         }
-                    }
-                }
-            });
-        }
-
-        const delayCtx = document.getElementById('delayChart');
-        if (delayCtx) {
-            const delayDatasets = [{
-                label: 'Head Delay (ms)',
-                data: headDelayData,
-                borderColor: '#f59e0b',
-                backgroundColor: 'rgba(245, 158, 11, 0.2)',
-                spanGaps: true,
-                tension: 0.2,
-                yAxisID: 'y'
-            }];
-
-            if (safeBlocksEnabled) {
-                delayDatasets.push({
-                    label: 'Safe Delay (ms)',
-                    data: safeDelayData,
-                    borderColor: '#eab308',
-                    backgroundColor: 'rgba(234, 179, 8, 0.2)',
-                    spanGaps: true,
-                    tension: 0.2,
-                    yAxisID: 'y'
-                });
-            }
-
-            delayDatasets.push({
-                label: 'Finalized Delay (ms)',
-                data: finalizedDelayData,
-                borderColor: '#22c55e',
-                backgroundColor: 'rgba(34, 197, 94, 0.2)',
-                spanGaps: true,
-                tension: 0.2,
-                yAxisID: 'y'
-            });
-
-            new Chart(delayCtx, {
-                type: 'line',
-                data: {
-                    labels,
-                    datasets: delayDatasets
-                },
-                options: {
-                    responsive: true,
-                    plugins: {
-                        legend: { display: true }
                     },
                     scales: {
                         x: {
@@ -377,9 +541,11 @@
                             grid: { color: '#20263a' }
                         },
                         y: {
-                            min: 0, ticks: {
+                            min: 0,
+                            max: maxDelayValue <= lowBandMax ? undefined : scaledAxisMax,
+                            ticks: {
                                 color: '#8b93a7',
-                                callback: (value) => `${value} ms`
+                                callback: (value) => `${inverseScale(value)} ms`
                             },
                             grid: { color: '#20263a' }
                         }

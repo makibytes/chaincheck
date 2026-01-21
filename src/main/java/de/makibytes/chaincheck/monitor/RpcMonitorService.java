@@ -234,28 +234,28 @@ public class RpcMonitorService {
             Long safeDelayMs = null;
             Long finalizedDelayMs = null;
             
-            // Only calculate delays if WS data is fresh (received within last 30 seconds)
-            boolean wsDataFresh = state.lastWsBlockTimestamp != null 
-                && Duration.between(state.lastWsBlockTimestamp, Instant.now()).toSeconds() < 30;
-            
+            // Only calculate head delay if WS data is fresh (received within last 30 seconds)
+            boolean wsDataFresh = state.lastWsBlockTimestamp != null
+                && Duration.between(state.lastWsBlockTimestamp, timestamp).toSeconds() < 30;
+
             if (wsDataFresh) {
-                // Head delay: how old is the WS head block?
-                headDelayMs = Duration.between(state.lastWsBlockTimestamp, Instant.now()).toMillis();
-                
-                // Checkpoint delay: how far behind is the checkpoint compared to head?
-                if (checkpointBlock.blockTimestamp() != null) {
-                    long checkpointDelay = Duration.between(
-                        checkpointBlock.blockTimestamp(), 
-                        state.lastWsBlockTimestamp
-                    ).toMillis();
-                    
-                    // Only record positive delays (checkpoint must be older than head)
-                    if (checkpointDelay >= 0) {
-                        if ("safe".equals(blockTag)) {
-                            safeDelayMs = checkpointDelay;
-                        } else {
-                            finalizedDelayMs = checkpointDelay;
-                        }
+                // Head delay: age of the WS head block
+                headDelayMs = Duration.between(state.lastWsBlockTimestamp, timestamp).toMillis();
+            }
+
+            // Checkpoint delay: age of the safe/finalized block
+            if (checkpointBlock.blockTimestamp() != null) {
+                long checkpointDelay = Duration.between(
+                    checkpointBlock.blockTimestamp(),
+                    timestamp
+                ).toMillis();
+
+                // Only record positive ages
+                if (checkpointDelay >= 0) {
+                    if ("safe".equals(blockTag)) {
+                        safeDelayMs = checkpointDelay;
+                    } else {
+                        finalizedDelayMs = checkpointDelay;
                     }
                 }
             }

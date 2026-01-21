@@ -32,9 +32,15 @@ public class DashboardSummary {
     private final double wsEventsPerMinute;
     private final double uptimePercent;
     private final double errorRatePercent;
-    private final double avgPropagationDelayMs;
-    private final long p95PropagationDelayMs;
-    private final long maxPropagationDelayMs;
+    private final double avgNewBlockPropagationMs;
+    private final long p95NewBlockPropagationMs;
+    private final long p99NewBlockPropagationMs;
+    private final double avgSafeBlockPropagationMs;
+    private final long p95SafeBlockPropagationMs;
+    private final long p99SafeBlockPropagationMs;
+    private final double avgFinalizedBlockPropagationMs;
+    private final long p95FinalizedBlockPropagationMs;
+    private final long p99FinalizedBlockPropagationMs;
     private final long staleBlockCount;
     private final long blockLagBlocks;
     private final long delayCount;
@@ -54,9 +60,15 @@ public class DashboardSummary {
                             double wsEventsPerMinute,
                             double uptimePercent,
                             double errorRatePercent,
-                            double avgPropagationDelayMs,
-                            long p95PropagationDelayMs,
-                            long maxPropagationDelayMs,
+                            double avgNewBlockPropagationMs,
+                            long p95NewBlockPropagationMs,
+                            long p99NewBlockPropagationMs,
+                            double avgSafeBlockPropagationMs,
+                            long p95SafeBlockPropagationMs,
+                            long p99SafeBlockPropagationMs,
+                            double avgFinalizedBlockPropagationMs,
+                            long p95FinalizedBlockPropagationMs,
+                            long p99FinalizedBlockPropagationMs,
                             long staleBlockCount,
                             long blockLagBlocks,
                             long delayCount,
@@ -75,9 +87,15 @@ public class DashboardSummary {
         this.wsEventsPerMinute = wsEventsPerMinute;
         this.uptimePercent = uptimePercent;
         this.errorRatePercent = errorRatePercent;
-        this.avgPropagationDelayMs = avgPropagationDelayMs;
-        this.p95PropagationDelayMs = p95PropagationDelayMs;
-        this.maxPropagationDelayMs = maxPropagationDelayMs;
+        this.avgNewBlockPropagationMs = avgNewBlockPropagationMs;
+        this.p95NewBlockPropagationMs = p95NewBlockPropagationMs;
+        this.p99NewBlockPropagationMs = p99NewBlockPropagationMs;
+        this.avgSafeBlockPropagationMs = avgSafeBlockPropagationMs;
+        this.p95SafeBlockPropagationMs = p95SafeBlockPropagationMs;
+        this.p99SafeBlockPropagationMs = p99SafeBlockPropagationMs;
+        this.avgFinalizedBlockPropagationMs = avgFinalizedBlockPropagationMs;
+        this.p95FinalizedBlockPropagationMs = p95FinalizedBlockPropagationMs;
+        this.p99FinalizedBlockPropagationMs = p99FinalizedBlockPropagationMs;
         this.staleBlockCount = staleBlockCount;
         this.blockLagBlocks = blockLagBlocks;
         this.delayCount = delayCount;
@@ -137,16 +155,40 @@ public class DashboardSummary {
         return errorRatePercent;
     }
 
-    public double getAvgPropagationDelayMs() {
-        return avgPropagationDelayMs;
+    public double getAvgNewBlockPropagationMs() {
+        return avgNewBlockPropagationMs;
     }
 
-    public long getP95PropagationDelayMs() {
-        return p95PropagationDelayMs;
+    public long getP95NewBlockPropagationMs() {
+        return p95NewBlockPropagationMs;
     }
 
-    public long getMaxPropagationDelayMs() {
-        return maxPropagationDelayMs;
+    public long getP99NewBlockPropagationMs() {
+        return p99NewBlockPropagationMs;
+    }
+
+    public double getAvgSafeBlockPropagationMs() {
+        return avgSafeBlockPropagationMs;
+    }
+
+    public long getP95SafeBlockPropagationMs() {
+        return p95SafeBlockPropagationMs;
+    }
+
+    public long getP99SafeBlockPropagationMs() {
+        return p99SafeBlockPropagationMs;
+    }
+
+    public double getAvgFinalizedBlockPropagationMs() {
+        return avgFinalizedBlockPropagationMs;
+    }
+
+    public long getP95FinalizedBlockPropagationMs() {
+        return p95FinalizedBlockPropagationMs;
+    }
+
+    public long getP99FinalizedBlockPropagationMs() {
+        return p99FinalizedBlockPropagationMs;
     }
 
     public long getStaleBlockCount() {

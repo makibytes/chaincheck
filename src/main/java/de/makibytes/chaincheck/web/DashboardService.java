@@ -148,12 +148,81 @@ public class DashboardService {
         long rawPropagationSum = propagationDelays.stream().mapToLong(Long::longValue).sum();
         long rawPropagationCount = propagationDelays.size();
         long rawPropagationMax = propagationDelays.stream().mapToLong(Long::longValue).max().orElse(0);
-        long aggPropagationSum = aggregateSamples.stream().mapToLong(SampleAggregate::getPropagationDelaySumMs).sum();
-        long aggPropagationCount = aggregateSamples.stream().mapToLong(SampleAggregate::getPropagationDelayCount).sum();
-        long aggPropagationMax = aggregateSamples.stream().mapToLong(SampleAggregate::getMaxPropagationDelayMs).max().orElse(0);
-        long propagationSum = rawPropagationSum + aggPropagationSum;
-        long propagationCount = rawPropagationCount + aggPropagationCount;
-        double avgPropagationDelay = propagationCount == 0 ? 0 : (double) propagationSum / propagationCount;
+        List<Long> newBlockDelays = rawSamples.stream()
+                .filter(sample -> sample.getSource() == MetricSource.WS)
+                .map(MetricSample::getHeadDelayMs)
+                .filter(delay -> delay != null && delay >= 0)
+                .map(Long::longValue)
+                .toList();
+        long rawNewBlockSum = newBlockDelays.stream().mapToLong(Long::longValue).sum();
+        long rawNewBlockCount = newBlockDelays.size();
+        long rawNewBlockMax = newBlockDelays.stream().mapToLong(Long::longValue).max().orElse(0);
+        long aggNewBlockSum = aggregateSamples.stream().mapToLong(SampleAggregate::getHeadDelaySumMs).sum();
+        long aggNewBlockCount = aggregateSamples.stream().mapToLong(SampleAggregate::getHeadDelayCount).sum();
+        long aggNewBlockMax = aggregateSamples.stream().mapToLong(SampleAggregate::getMaxHeadDelayMs).max().orElse(0);
+        long newBlockSum = rawNewBlockSum + aggNewBlockSum;
+        long newBlockCount = rawNewBlockCount + aggNewBlockCount;
+        double avgNewBlockPropagation = newBlockCount == 0 ? 0 : (double) newBlockSum / newBlockCount;
+
+        List<Long> newBlockValues = new ArrayList<>(newBlockDelays);
+        for (SampleAggregate aggregate : aggregateSamples) {
+            if (aggregate.getHeadDelayCount() > 0) {
+                newBlockValues.add(Math.round((double) aggregate.getHeadDelaySumMs() / aggregate.getHeadDelayCount()));
+            }
+        }
+        newBlockValues = newBlockValues.stream().sorted().toList();
+        long p95NewBlockPropagation = percentile(newBlockValues, 0.95);
+        long p99NewBlockPropagation = percentile(newBlockValues, 0.99);
+
+        List<Long> safeDelays = rawSamples.stream()
+                .map(MetricSample::getSafeDelayMs)
+                .filter(delay -> delay != null && delay >= 0)
+                .map(Long::longValue)
+                .toList();
+        long rawSafeSum = safeDelays.stream().mapToLong(Long::longValue).sum();
+        long rawSafeCount = safeDelays.size();
+        long rawSafeMax = safeDelays.stream().mapToLong(Long::longValue).max().orElse(0);
+        long aggSafeSum = aggregateSamples.stream().mapToLong(SampleAggregate::getSafeDelaySumMs).sum();
+        long aggSafeCount = aggregateSamples.stream().mapToLong(SampleAggregate::getSafeDelayCount).sum();
+        long aggSafeMax = aggregateSamples.stream().mapToLong(SampleAggregate::getMaxSafeDelayMs).max().orElse(0);
+        long safeSum = rawSafeSum + aggSafeSum;
+        long safeCount = rawSafeCount + aggSafeCount;
+        double avgSafePropagation = safeCount == 0 ? 0 : (double) safeSum / safeCount;
+
+        List<Long> safeValues = new ArrayList<>(safeDelays);
+        for (SampleAggregate aggregate : aggregateSamples) {
+            if (aggregate.getSafeDelayCount() > 0) {
+                safeValues.add(Math.round((double) aggregate.getSafeDelaySumMs() / aggregate.getSafeDelayCount()));
+            }
+        }
+        safeValues = safeValues.stream().sorted().toList();
+        long p95SafePropagation = percentile(safeValues, 0.95);
+        long p99SafePropagation = percentile(safeValues, 0.99);
+
+        List<Long> finalizedDelays = rawSamples.stream()
+                .map(MetricSample::getFinalizedDelayMs)
+                .filter(delay -> delay != null && delay >= 0)
+                .map(Long::longValue)
+                .toList();
+        long rawFinalizedSum = finalizedDelays.stream().mapToLong(Long::longValue).sum();
+        long rawFinalizedCount = finalizedDelays.size();
+        long rawFinalizedMax = finalizedDelays.stream().mapToLong(Long::longValue).max().orElse(0);
+        long aggFinalizedSum = aggregateSamples.stream().mapToLong(SampleAggregate::getFinalizedDelaySumMs).sum();
+        long aggFinalizedCount = aggregateSamples.stream().mapToLong(SampleAggregate::getFinalizedDelayCount).sum();
+        long aggFinalizedMax = aggregateSamples.stream().mapToLong(SampleAggregate::getMaxFinalizedDelayMs).max().orElse(0);
+        long finalizedSum = rawFinalizedSum + aggFinalizedSum;
+        long finalizedCount = rawFinalizedCount + aggFinalizedCount;
+        double avgFinalizedPropagation = finalizedCount == 0 ? 0 : (double) finalizedSum / finalizedCount;
+
+        List<Long> finalizedValues = new ArrayList<>(finalizedDelays);
+        for (SampleAggregate aggregate : aggregateSamples) {
+            if (aggregate.getFinalizedDelayCount() > 0) {
+                finalizedValues.add(Math.round((double) aggregate.getFinalizedDelaySumMs() / aggregate.getFinalizedDelayCount()));
+            }
+        }
+        finalizedValues = finalizedValues.stream().sorted().toList();
+        long p95FinalizedPropagation = percentile(finalizedValues, 0.95);
+        long p99FinalizedPropagation = percentile(finalizedValues, 0.99);
 
         List<Long> propagationValues = new ArrayList<>(propagationDelays);
         for (SampleAggregate aggregate : aggregateSamples) {
@@ -161,9 +230,6 @@ public class DashboardService {
                 propagationValues.add(Math.round((double) aggregate.getPropagationDelaySumMs() / aggregate.getPropagationDelayCount()));
             }
         }
-        propagationValues = propagationValues.stream().sorted().toList();
-        long p95PropagationDelay = percentile(propagationValues, 0.95);
-        long maxPropagationDelay = Math.max(rawPropagationMax, aggPropagationMax);
         long staleBlockCount = propagationValues.stream().filter(delay -> delay > 30000).count()
                 + aggregateSamples.stream().mapToLong(SampleAggregate::getStaleBlockCount).sum();
 
@@ -200,9 +266,15 @@ public class DashboardService {
                 wsEventsPerMinute,
                 uptimePercent,
                 errorRatePercent,
-                avgPropagationDelay,
-                p95PropagationDelay,
-                maxPropagationDelay,
+                avgNewBlockPropagation,
+                p95NewBlockPropagation,
+                p99NewBlockPropagation,
+                avgSafePropagation,
+                p95SafePropagation,
+                p99SafePropagation,
+                avgFinalizedPropagation,
+                p95FinalizedPropagation,
+                p99FinalizedPropagation,
                 staleBlockCount,
                 blockLagBlocks,
                 anomalyCounts.getOrDefault(AnomalyType.DELAY, 0L),
