@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <!-- Black filled circle -->
+  <circle cx="16" cy="16" r="16" fill="#000000"/>
+  
+  <!-- Bright green heartbeat line (EKG style) -->
+  <polyline points="4,12 7,12 9,7 11,12 13,12 17,5 19,12 22,12 28,12" 
+            fill="none" stroke="#00ff00" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+  
+  <!-- Bright yellow heartbeat line below -->
+  <polyline points="4,22 7,22 9,17 11,22 13,22 17,15 19,22 22,22 28,22" 
+            fill="none" stroke="#ffff00" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
+
+
+
+
