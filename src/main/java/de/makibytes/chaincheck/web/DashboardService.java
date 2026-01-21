@@ -75,19 +75,18 @@ public class DashboardService {
 
         Instant now = Instant.now();
         Instant since = now.minus(range.getDuration());
-        Instant rawCutoff = now.minus(Duration.ofHours(24));
 
         List<MetricSample> rawSamples = store.getRawSamplesSince(nodeKey, since);
+        // Get all aggregates since the requested time range (they may contain data within range even if started before)
         List<SampleAggregate> aggregateSamples = store.getAggregatedSamplesSince(nodeKey, since).stream()
-                .filter(aggregate -> !aggregate.getBucketStart().isBefore(since))
                 .toList();
 
         List<AnomalyEvent> anomalies = store.getRawAnomaliesSince(nodeKey, since)
                 .stream()
                 .sorted(Comparator.comparing(AnomalyEvent::getTimestamp).reversed())
                 .collect(Collectors.toList());
+        // Get all aggregated anomalies - they may contain data within range even if started before
         List<AnomalyAggregate> aggregatedAnomalies = store.getAggregatedAnomaliesSince(nodeKey, since).stream()
-                .filter(aggregate -> !aggregate.getBucketStart().isBefore(since))
                 .toList();
 
         long rawTotal = rawSamples.size();
@@ -718,7 +717,7 @@ public class DashboardService {
                     firstEvent.getMessage());
         } else {
             // Multiple anomalies - show time range and use newest ID
-            String timeRange = formatter.format(firstEvent.getTimestamp()) + " ↔ " + formatter.format(lastEvent.getTimestamp());
+            String timeRange = formatter.format(lastEvent.getTimestamp()) + " ↔ " + formatter.format(firstEvent.getTimestamp());
             String message = lastEvent.getMessage(); // Use the latest message
             return new AnomalyRow(
                     lastEvent.getId(), // Use newest ID for details link
