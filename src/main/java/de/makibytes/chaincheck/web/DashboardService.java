@@ -23,6 +23,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -155,12 +156,12 @@ public class DashboardService {
         long propagationCount = rawPropagationCount + aggPropagationCount;
         double avgPropagationDelay = propagationCount == 0 ? 0 : (double) propagationSum / propagationCount;
 
-                List<Long> propagationValues = new java.util.ArrayList<>(propagationDelays);
-                for (SampleAggregate aggregate : aggregateSamples) {
-                        if (aggregate.getPropagationDelayCount() > 0) {
-                                propagationValues.add(Math.round((double) aggregate.getPropagationDelaySumMs() / aggregate.getPropagationDelayCount()));
-                        }
-                }
+        List<Long> propagationValues = new ArrayList<>(propagationDelays);
+        for (SampleAggregate aggregate : aggregateSamples) {
+            if (aggregate.getPropagationDelayCount() > 0) {
+                propagationValues.add(Math.round((double) aggregate.getPropagationDelaySumMs() / aggregate.getPropagationDelayCount()));
+            }
+        }
         propagationValues = propagationValues.stream().sorted().toList();
         long p95PropagationDelay = percentile(propagationValues, 0.95);
         long maxPropagationDelay = Math.max(rawPropagationMax, aggPropagationMax);
@@ -215,9 +216,9 @@ public class DashboardService {
                 .collect(Collectors.groupingBy(MetricSample::getBlockHash));
 
         DateTimeFormatter rowFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.systemDefault());
-        
+
         // First pass: create intermediate rows with block number and initial finalized/safe status
-        Map<Long, BlockTagInfo> blockTags = new java.util.HashMap<>();
+        Map<Long, BlockTagInfo> blockTags = new HashMap<>();
         
         List<SampleRow> intermediateRows = samplesByHash.entrySet().stream()
                 .map(entry -> {
@@ -503,11 +504,11 @@ public class DashboardService {
                 : DateTimeFormatter.ofPattern("HH:mm");
         formatter = formatter.withZone(ZoneId.systemDefault());
 
-        List<Long> timestamps = new java.util.ArrayList<>(bucketCount);
-        List<String> labels = new java.util.ArrayList<>(bucketCount);
-        List<Long> latencies = new java.util.ArrayList<>(bucketCount);
-        List<Double> errorRates = new java.util.ArrayList<>(bucketCount);
-        List<Double> wsErrorRates = new java.util.ArrayList<>(bucketCount);
+        List<Long> timestamps = new ArrayList<>(bucketCount);
+        List<String> labels = new ArrayList<>(bucketCount);
+        List<Long> latencies = new ArrayList<>(bucketCount);
+        List<Double> errorRates = new ArrayList<>(bucketCount);
+        List<Double> wsErrorRates = new ArrayList<>(bucketCount);
 
         int sampleIndex = 0;
         int aggregateIndex = 0;
@@ -626,10 +627,10 @@ public class DashboardService {
         long bucketMs = Math.max(1000, spanMs / targetPoints);
         int bucketCount = (int) Math.min(targetPoints, Math.max(1, Math.ceil((double) spanMs / bucketMs)));
 
-        List<Long> timestamps = new java.util.ArrayList<>(bucketCount);
-        List<Long> headDelays = new java.util.ArrayList<>(bucketCount);
-        List<Long> safeDelays = new java.util.ArrayList<>(bucketCount);
-        List<Long> finalizedDelays = new java.util.ArrayList<>(bucketCount);
+        List<Long> timestamps = new ArrayList<>(bucketCount);
+        List<Long> headDelays = new ArrayList<>(bucketCount);
+        List<Long> safeDelays = new ArrayList<>(bucketCount);
+        List<Long> finalizedDelays = new ArrayList<>(bucketCount);
 
         int sampleIndex = 0;
         int aggregateIndex = 0;

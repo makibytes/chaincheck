@@ -1,0 +1,99 @@
+/*
+ * Copyright (c) 2026 MakiBytes.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+package de.makibytes.chaincheck.monitor;
+
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.util.ReflectionTestUtils;
+
+@SpringBootTest
+@DisplayName("RpcMonitorService Tests")
+class RpcMonitorServiceTest {
+
+    private final RpcMonitorService service = new RpcMonitorService(null, null, null);
+
+    @Test
+    @DisplayName("areErrorsSame: identical errors should be same")
+    void testAreErrorsSame_IdenticalErrors() {
+        String error = "Connection timeout";
+        boolean result = (boolean) ReflectionTestUtils.invokeMethod(service, "areErrorsSame", error, error);
+        assertTrue(result);
+    }
+
+    @Test
+    @DisplayName("areErrorsSame: null errors should be considered same (no error state)")
+    void testAreErrorsSame_NullErrors() {
+        boolean result = (boolean) ReflectionTestUtils.invokeMethod(service, "areErrorsSame", null, null);
+        assertTrue(result);
+    }
+
+    @Test
+    @DisplayName("areErrorsSame: one null, one non-null should not be same")
+    void testAreErrorsSame_OneNull() {
+        boolean result = (boolean) ReflectionTestUtils.invokeMethod(service, "areErrorsSame", "error", null);
+        assertFalse(result);
+    }
+
+    @Test
+    @DisplayName("areErrorsSame: different WebSocket errors with changing counter should be same")
+    void testAreErrorsSame_WebSocketCounterDifference() {
+        String error1 = "WebSocket not receiving newHeads events (last event 10s ago)";
+        String error2 = "WebSocket not receiving newHeads events (last event 144s ago)";
+        boolean result = (boolean) ReflectionTestUtils.invokeMethod(service, "areErrorsSame", error1, error2);
+        assertTrue(result, "WebSocket timeout errors with different counters should be treated as same");
+    }
+
+    @Test
+    @DisplayName("areErrorsSame: WebSocket errors without counter should be same")
+    void testAreErrorsSame_WebSocketNoCounter() {
+        String error1 = "WebSocket not receiving newHeads events (no events since connection)";
+        String error2 = "WebSocket not receiving newHeads events (last event 50s ago)";
+        boolean result = (boolean) ReflectionTestUtils.invokeMethod(service, "areErrorsSame", error1, error2);
+        assertTrue(result, "Both WebSocket timeout variants should be same");
+    }
+
+    @Test
+    @DisplayName("areErrorsSame: rate limit errors with different trace_ids should be same")
+    void testAreErrorsSame_RateLimitDifferentTraceId() {
+        String error1 = "{\"code\":-32090,\"message\":\"Too many requests, reason: call rate limit exhausted, retry in 10s\",\"data\":{\"trace_id\":\"309d24716c1342b93405302fcd4ac6e4\"}}";
+        String error2 = "{\"code\":-32090,\"message\":\"Too many requests, reason: call rate limit exhausted, retry in 10s\",\"data\":{\"trace_id\":\"abcdef1234567890abcdef1234567890\"}}";
+        boolean result = (boolean) ReflectionTestUtils.invokeMethod(service, "areErrorsSame", error1, error2);
+        assertTrue(result, "Rate limit errors with different trace_ids should be same");
+    }
+
+    @Test
+    @DisplayName("areErrorsSame: completely different errors should not be same")
+    void testAreErrorsSame_CompletelyDifferent() {
+        String error1 = "Connection timeout";
+        String error2 = "Invalid JSON response";
+        boolean result = (boolean) ReflectionTestUtils.invokeMethod(service, "areErrorsSame", error1, error2);
+        assertFalse(result);
+    }
+
+    @Test
+    @DisplayName("areErrorsSame: different error prefix should not be same")
+    void testAreErrorsSame_DifferentPrefix() {
+        String error1 = "WebSocket connection failed";
+        String error2 = "WebSocket not receiving newHeads events (last event 10s ago)";
+        boolean result = (boolean) ReflectionTestUtils.invokeMethod(service, "areErrorsSame", error1, error2);
+        assertFalse(result, "Different WebSocket error types should not be same");
+    }
+}

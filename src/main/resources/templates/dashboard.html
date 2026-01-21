@@ -56,7 +56,7 @@
         </p>
         <p class="muted">
             Uptime <span th:text="${#numbers.formatDecimal(view.summary.uptimePercent, 0, 2)}">0</span>% ·
-            Error rate <span th:text="${view.summary.errorRatePercent == 0 ? '0' : #numbers.formatDecimal(view.summary.errorRatePercent, 0, 2)}">0</span>%
+            Error rate <span th:text="${#numbers.formatDecimal(view.summary.errorRatePercent, 0, 2)}">0</span>%
         </p>
     </div>
     <div class="card">
