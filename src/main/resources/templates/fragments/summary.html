@@ -1,0 +1,111 @@
+<section class="summary-grid" th:fragment="summary">
+    <div class="card">
+        <h3>Samples &amp; Errors</h3>
+        <div>
+            <span class="muted">HTTP:</span>
+            <span th:text="${view.summary.httpSamples}">0</span>
+            <span class="muted">WS:</span>
+            <span th:text="${view.summary.wsSamples}">0</span>
+        </div>
+        <div>
+            <span class="muted">Errors:</span>
+            <span th:text="${view.summary.errorCount}">0</span>
+        </div>
+        <div>
+            <span class="muted">Uptime</span>
+            <span th:text="${#numbers.formatDecimal(view.summary.uptimePercent, 1, 1)}">0</span>
+            <span class="muted">%</span>
+        </div>
+    </div>
+    <div class="card">
+        <h3>Anomalies</h3>
+        <div>
+            <span class="muted">Delay:</span>
+            <span th:text="${view.summary.delayCount}">0</span>
+        </div>
+        <div>
+            <span class="muted">Reorg:</span>
+            <span th:text="${view.summary.reorgCount}">0</span>
+        </div>
+        <div>
+            <span class="muted">Block Gap:</span>
+            <span th:text="${view.summary.blockGapCount}">0</span>
+        </div>
+        <div>
+            <span class="muted">Stale Blocks:</span>
+            <span th:text="${view.summary.staleBlockCount}">0</span>
+        </div>
+    </div>
+    <div class="card">
+        <h3>Network Latency</h3>
+        <div>
+            <span class="muted">Avg</span>
+            <span th:text="${#numbers.formatDecimal(view.summary.avgLatencyMs, 1, 2)}">0</span>
+            <span class="muted">ms</span>
+        </div>
+        <div>
+            <span class="muted">P95</span>
+            <span th:text="${#numbers.formatDecimal(view.summary.p95LatencyMs, 1, 2)}">0</span>
+            <span class="muted">ms</span>
+        </div>
+        <div>
+            <span class="muted">P99</span>
+            <span th:text="${#numbers.formatDecimal(view.summary.p99LatencyMs, 1, 2)}">0</span>
+            <span class="muted">ms</span>
+        </div>
+    </div>
+    <div class="card" th:if="${view.wsConfigured}">
+        <h3>New Blocks</h3>
+        <div>
+            <span class="muted">Avg</span>
+            <span th:text="${#numbers.formatDecimal(view.summary.avgNewBlockPropagationMs / 1000, 1, 2)}">0</span>
+            <span class="muted">s</span>
+        </div>
+        <div>
+            <span class="muted">P95</span>
+            <span th:text="${#numbers.formatDecimal(view.summary.p95NewBlockPropagationMs / 1000, 1, 2)}">0</span>
+            <span class="muted">s</span>
+        </div>
+        <div>
+            <span class="muted">P99</span>
+            <span th:text="${#numbers.formatDecimal(view.summary.p99NewBlockPropagationMs / 1000, 1, 2)}">0</span>
+            <span class="muted">s</span>
+        </div>
+    </div>
+    <div class="card" th:if="${view.safeBlocksEnabled}">
+        <h3>Safe Blocks</h3>
+        <div>
+            <span class="muted">Avg</span>
+            <span th:text="${#numbers.formatDecimal(view.summary.avgSafeBlockPropagationMs / 1000, 1, 2)}">0</span>
+            <span class="muted">s</span>
+        </div>
+        <div>
+            <span class="muted">P95</span>
+            <span th:text="${#numbers.formatDecimal(view.summary.p95SafeBlockPropagationMs / 1000, 1, 2)}">0</span>
+            <span class="muted">s</span>
+        </div>
+        <div>
+            <span class="muted">P99</span>
+            <span th:text="${#numbers.formatDecimal(view.summary.p99SafeBlockPropagationMs / 1000, 1, 2)}">0</span>
+            <span class="muted">s</span>
+        </div>
+    </div>
+    <div class="card" th:if="${view.httpConfigured}">
+        <h3>Finalized Blocks</h3>
+        <div>
+            <span class="muted">Avg</span>
+            <span th:text="${#numbers.formatDecimal(view.summary.avgFinalizedBlockPropagationMs / 1000, 1, 2)}">0</span>
+            <span class="muted">s</span>
+        </div>
+        <div>
+            <span class="muted">P95</span>
+            <span th:text="${#numbers.formatDecimal(view.summary.p95FinalizedBlockPropagationMs / 1000, 1, 2)}">0</span>
+            <span class="muted">s</span>
+        </div>
+        <div>
+            <span class="muted">P99</span>
+            <span th:text="${#numbers.formatDecimal(view.summary.p99FinalizedBlockPropagationMs / 1000, 1, 2)}">0</span>
+            <span class="muted">s</span>
+        </div>
+    </div>
+</section>

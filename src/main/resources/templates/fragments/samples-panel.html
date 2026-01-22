@@ -1,0 +1,27 @@
+<section class="panel" th:fragment="samplesPanel">
+    <div class="panel-header">
+        <h2>Samples <span class="count-badge" th:text="${view.totalSamples}">0</span></h2>
+        <button id="toggleSamples" class="button ghost" type="button">Show samples</button>
+    </div>
+    <div id="samplesPanel" class="collapsed">
+        <p class="muted">
+            <span id="pageInfo">Showing page 1 of 1</span>
+            · Total samples (max 1000): <span th:text="${view.totalSamples}">0</span>
+        </p>
+        <table>
+            <thead>
+                <tr>
+                    <th>Time</th>
+                    <th>Source</th>
+                    <th>Status</th>
+                    <th>Latency</th>
+                    <th>Block</th>
+                    <th>Transactions</th>
+                    <th>Gas Price (gwei)</th>
+                </tr>
+            </thead>
+            <tbody id="samplesBody"></tbody>
+        </table>
+        <div class="pagination" id="pagination"></div>
+    </div>
+</section>

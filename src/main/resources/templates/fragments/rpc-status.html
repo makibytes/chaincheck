@@ -1,0 +1,45 @@
+<section class="panel" th:fragment="rpcStatus">
+    <h2>RPC Status</h2>
+    <div class="status-grid">
+        <div class="status-item">
+            <span class="status-light"
+                th:classappend="${view.httpConfigured} ? (${view.httpUp} ? ' status-http-up' : ' status-error') : ' status-off'"></span>
+            <span>HTTP RPC</span>
+        </div>
+        <div class="status-item">
+            <span class="status-light"
+                th:classappend="${view.wsConfigured} ? (${view.wsUp} ? ' status-ws-up' : ' status-error') : ' status-off'"></span>
+            <span>WebSocket RPC</span>
+        </div>
+        <div class="status-item">
+            <span class="label">Latest Block</span>
+            <span th:text="${view.latestBlockNumber != null ? view.latestBlockNumber : '-'}">-</span>
+        </div>
+    </div>
+    <div class="rpc-columns">
+        <div class="rpc-column">
+            <h3>HTTP</h3>
+            <div class="rpc-item">
+                <span class="label">HTTP Connected</span>
+                <span
+                    th:text="${view.httpStatus.connectedSince != null ? #temporals.format(view.httpStatus.connectedSince, 'yyyy-MM-dd HH:mm:ss') : '-'}">-</span>
+            </div>
+            <div class="rpc-item">
+                <span class="label">Last Error</span>
+                <span th:text="${view.httpStatus.lastError != null ? view.httpStatus.lastError : '-'}">-</span>
+            </div>
+        </div>
+        <div class="rpc-column">
+            <h3>WebSocket</h3>
+            <div class="rpc-item">
+                <span class="label">WS Connected</span>
+                <span
+                    th:text="${view.wsStatus.connectedSince != null ? #temporals.format(view.wsStatus.connectedSince, 'yyyy-MM-dd HH:mm:ss') : '-'}">-</span>
+            </div>
+            <div class="rpc-item">
+                <span class="label">Last Error</span>
+                <span th:text="${view.wsStatus.lastError != null ? view.wsStatus.lastError : '-'}">-</span>
+            </div>
+        </div>
+    </div>
+</section>
