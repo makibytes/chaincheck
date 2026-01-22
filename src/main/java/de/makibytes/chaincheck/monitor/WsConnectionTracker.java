@@ -36,6 +36,18 @@ public class WsConnectionTracker {
         lastError.set(null);
     }
 
+    public void setLastError(String message) {
+        if (message == null || message.isBlank()) {
+            lastError.set(null);
+        } else {
+            lastError.set(message);
+        }
+    }
+
+    public void clearLastError() {
+        lastError.set(null);
+    }
+
     public void onDisconnect() {
         disconnectCount.incrementAndGet();
         connectedSince.set(null);

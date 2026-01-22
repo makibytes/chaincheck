@@ -32,10 +32,12 @@ public class HttpConnectionTracker {
         lastError.set(null);
     }
 
-    public void onError(Throwable error) {
+    public void onErrorMessage(String message) {
         errorCount.incrementAndGet();
-        if (error != null) {
-            lastError.set(error.getMessage());
+        if (message == null || message.isBlank()) {
+            lastError.set(null);
+        } else {
+            lastError.set(message);
         }
     }
 

@@ -94,6 +94,18 @@ public class RpcMonitorService {
 
     private void recordFailure(NodeDefinition node, MetricSource source, String errorMessage) {
         checkAndCloseAnomaly(node, errorMessage, source);
+
+        if (source == MetricSource.HTTP) {
+            HttpConnectionTracker httpTracker = nodeRegistry.getHttpTracker(node.key());
+            if (httpTracker != null) {
+                httpTracker.onErrorMessage(errorMessage);
+            }
+        } else if (source == MetricSource.WS) {
+            WsConnectionTracker wsTracker = nodeRegistry.getWsTracker(node.key());
+            if (wsTracker != null) {
+                wsTracker.setLastError(errorMessage);
+            }
+        }
         
         MetricSample sample = new MetricSample(
                 Instant.now(),
@@ -280,19 +292,11 @@ public class RpcMonitorService {
             state.lastHttpBlockHash = checkpointBlock.blockHash();
         } catch (HttpStatusException ex) {
             logger.error("HTTP RPC failure ({} / http): status {} ({})", node.name(), ex.getStatusCode(), ex.getMessage());
-            HttpConnectionTracker httpTracker = nodeRegistry.getHttpTracker(node.key());
-            if (httpTracker != null) {
-                httpTracker.onError(ex);
-            }
             recordFailure(node, MetricSource.HTTP, ex.getMessage());
         } catch (IOException | InterruptedException ex) {
             recordFailure(node, MetricSource.HTTP, ex.getMessage());
         } catch (RuntimeException ex) {
             logger.error("HTTP RPC failure ({}): {}", node.name(), ex.getMessage());
-            HttpConnectionTracker httpTracker = nodeRegistry.getHttpTracker(node.key());
-            if (httpTracker != null) {
-                httpTracker.onError(ex);
-            }
             recordFailure(node, MetricSource.HTTP, ex.getMessage());
         }
     }
@@ -520,6 +524,11 @@ public class RpcMonitorService {
                             null,
                             null);
                     store.addSample(node.key(), sample);
+
+                    WsConnectionTracker tracker = nodeRegistry.getWsTracker(node.key());
+                    if (tracker != null) {
+                        tracker.clearLastError();
+                    }
 
                     List<AnomalyEvent> anomalies = detector.detect(
                             node.key(),

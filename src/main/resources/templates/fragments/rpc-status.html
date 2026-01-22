@@ -25,7 +25,7 @@
                     th:text="${view.httpStatus.connectedSince != null ? #temporals.format(view.httpStatus.connectedSince, 'yyyy-MM-dd HH:mm:ss') : '-'}">-</span>
             </div>
             <div class="rpc-item">
-                <span class="label">Last Error</span>
+                <span class="label">Current Error</span>
                 <span th:text="${view.httpStatus.lastError != null ? view.httpStatus.lastError : '-'}">-</span>
             </div>
         </div>
@@ -37,7 +37,7 @@
                     th:text="${view.wsStatus.connectedSince != null ? #temporals.format(view.wsStatus.connectedSince, 'yyyy-MM-dd HH:mm:ss') : '-'}">-</span>
             </div>
             <div class="rpc-item">
-                <span class="label">Last Error</span>
+                <span class="label">Current Error</span>
                 <span th:text="${view.wsStatus.lastError != null ? view.wsStatus.lastError : '-'}">-</span>
             </div>
         </div>
