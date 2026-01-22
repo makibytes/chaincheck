@@ -111,6 +111,31 @@ public class SampleAggregate {
         }
     }
 
+    public void addAggregate(SampleAggregate aggregate) {
+        totalCount += aggregate.totalCount;
+        successCount += aggregate.successCount;
+        errorCount += aggregate.errorCount;
+        latencySumMs += aggregate.latencySumMs;
+        latencyCount += aggregate.latencyCount;
+        maxLatencyMs = Math.max(maxLatencyMs, aggregate.maxLatencyMs);
+        httpCount += aggregate.httpCount;
+        wsCount += aggregate.wsCount;
+        wsErrorCount += aggregate.wsErrorCount;
+        propagationDelaySumMs += aggregate.propagationDelaySumMs;
+        propagationDelayCount += aggregate.propagationDelayCount;
+        maxPropagationDelayMs = Math.max(maxPropagationDelayMs, aggregate.maxPropagationDelayMs);
+        staleBlockCount += aggregate.staleBlockCount;
+        headDelaySumMs += aggregate.headDelaySumMs;
+        headDelayCount += aggregate.headDelayCount;
+        maxHeadDelayMs = Math.max(maxHeadDelayMs, aggregate.maxHeadDelayMs);
+        safeDelaySumMs += aggregate.safeDelaySumMs;
+        safeDelayCount += aggregate.safeDelayCount;
+        maxSafeDelayMs = Math.max(maxSafeDelayMs, aggregate.maxSafeDelayMs);
+        finalizedDelaySumMs += aggregate.finalizedDelaySumMs;
+        finalizedDelayCount += aggregate.finalizedDelayCount;
+        maxFinalizedDelayMs = Math.max(maxFinalizedDelayMs, aggregate.maxFinalizedDelayMs);
+    }
+
     public Instant getBucketStart() {
         return bucketStart;
     }

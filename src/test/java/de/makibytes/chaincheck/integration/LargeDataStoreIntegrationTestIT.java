@@ -15,4 +15,4 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-package de.makibytes.chaincheck;
+package de.makibytes.chaincheck.integration;

@@ -44,6 +44,14 @@ public class AnomalyAggregate {
         }
     }
 
+    public void addAggregate(AnomalyAggregate aggregate) {
+        totalCount += aggregate.totalCount;
+        delayCount += aggregate.delayCount;
+        reorgCount += aggregate.reorgCount;
+        blockGapCount += aggregate.blockGapCount;
+        errorCount += aggregate.errorCount;
+    }
+
     public Instant getBucketStart() {
         return bucketStart;
     }

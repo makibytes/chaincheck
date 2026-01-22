@@ -1,0 +1,1 @@
+mvn -Dspring-boot.run.profiles=mock spring-boot:run

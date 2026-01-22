@@ -553,8 +553,12 @@ public class DashboardService {
         Instant earliest = null;
         if (!sortedSamples.isEmpty()) {
             earliest = sortedSamples.get(0).getTimestamp();
-        } else if (!aggregateSamples.isEmpty()) {
-            earliest = aggregateSamples.get(0).getBucketStart();
+        }
+        if (!aggregateSamples.isEmpty()) {
+            Instant aggregateStart = aggregateSamples.get(0).getBucketStart();
+            if (earliest == null || aggregateStart.isBefore(earliest)) {
+                earliest = aggregateStart;
+            }
         }
         if (earliest == null) {
             return new ChartData(List.of(), List.of(), List.of(), List.of(), List.of());
@@ -570,9 +574,14 @@ public class DashboardService {
         long bucketMs = Math.max(1000, spanMs / targetPoints);
         int bucketCount = (int) Math.min(targetPoints, Math.max(1, Math.ceil((double) spanMs / bucketMs)));
 
-        DateTimeFormatter formatter = spanMs > Duration.ofDays(2).toMillis()
-                ? DateTimeFormatter.ofPattern("MM-dd")
-                : DateTimeFormatter.ofPattern("HH:mm");
+        DateTimeFormatter formatter;
+        if (spanMs <= Duration.ofHours(6).toMillis()) {
+            formatter = DateTimeFormatter.ofPattern("HH:mm");
+        } else if (spanMs > Duration.ofDays(10).toMillis()) {
+            formatter = DateTimeFormatter.ofPattern("MM-dd");
+        } else {
+            formatter = DateTimeFormatter.ofPattern("MM-dd HH:mm");
+        }
         formatter = formatter.withZone(ZoneId.systemDefault());
 
         List<Long> timestamps = new ArrayList<>(bucketCount);
@@ -681,8 +690,12 @@ public class DashboardService {
         Instant earliest = null;
         if (!sortedSamples.isEmpty()) {
             earliest = sortedSamples.get(0).getTimestamp();
-        } else if (!aggregateSamples.isEmpty()) {
-            earliest = aggregateSamples.get(0).getBucketStart();
+        }
+        if (!aggregateSamples.isEmpty()) {
+            Instant aggregateStart = aggregateSamples.get(0).getBucketStart();
+            if (earliest == null || aggregateStart.isBefore(earliest)) {
+                earliest = aggregateStart;
+            }
         }
         if (earliest == null) {
             return new DelayChartData(List.of(), List.of(), List.of(), List.of());
