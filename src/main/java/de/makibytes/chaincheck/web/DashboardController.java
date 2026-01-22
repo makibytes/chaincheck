@@ -86,7 +86,7 @@ public class DashboardController {
         model.addAttribute("nodeName", selectedNode == null ? "Node" : selectedNode.name());
         model.addAttribute("nodeKey", event.getNodeKey());
         model.addAttribute("event", event);
-        return "anomaly";
+        return "fragments/anomaly";
     }
 
     @GetMapping("/api/anomalies/{id}")

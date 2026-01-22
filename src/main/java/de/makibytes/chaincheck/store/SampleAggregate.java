@@ -88,7 +88,7 @@ public class SampleAggregate {
                 }
             }
         }
-        if (sample.getHeadDelayMs() != null) {
+        if (sample.getSource() == MetricSource.WS && sample.getHeadDelayMs() != null) {
             headDelaySumMs += sample.getHeadDelayMs();
             headDelayCount++;
             if (sample.getHeadDelayMs() > maxHeadDelayMs) {

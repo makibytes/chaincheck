@@ -94,6 +94,18 @@ public class RpcMonitorService {
 
     private void recordFailure(NodeDefinition node, MetricSource source, String errorMessage) {
         checkAndCloseAnomaly(node, errorMessage, source);
+
+        if (source == MetricSource.HTTP) {
+            HttpConnectionTracker httpTracker = nodeRegistry.getHttpTracker(node.key());
+            if (httpTracker != null) {
+                httpTracker.onErrorMessage(errorMessage);
+            }
+        } else if (source == MetricSource.WS) {
+            WsConnectionTracker wsTracker = nodeRegistry.getWsTracker(node.key());
+            if (wsTracker != null) {
+                wsTracker.setLastError(errorMessage);
+            }
+        }
         
         MetricSample sample = new MetricSample(
                 Instant.now(),
@@ -234,28 +246,28 @@ public class RpcMonitorService {
             Long safeDelayMs = null;
             Long finalizedDelayMs = null;
             
-            // Only calculate delays if WS data is fresh (received within last 30 seconds)
-            boolean wsDataFresh = state.lastWsBlockTimestamp != null 
-                && Duration.between(state.lastWsBlockTimestamp, Instant.now()).toSeconds() < 30;
-            
+            // Only calculate head delay if WS data is fresh (received within last 30 seconds)
+            boolean wsDataFresh = state.lastWsBlockTimestamp != null
+                && Duration.between(state.lastWsBlockTimestamp, timestamp).toSeconds() < 30;
+
             if (wsDataFresh) {
-                // Head delay: how old is the WS head block?
-                headDelayMs = Duration.between(state.lastWsBlockTimestamp, Instant.now()).toMillis();
-                
-                // Checkpoint delay: how far behind is the checkpoint compared to head?
-                if (checkpointBlock.blockTimestamp() != null) {
-                    long checkpointDelay = Duration.between(
-                        checkpointBlock.blockTimestamp(), 
-                        state.lastWsBlockTimestamp
-                    ).toMillis();
-                    
-                    // Only record positive delays (checkpoint must be older than head)
-                    if (checkpointDelay >= 0) {
-                        if ("safe".equals(blockTag)) {
-                            safeDelayMs = checkpointDelay;
-                        } else {
-                            finalizedDelayMs = checkpointDelay;
-                        }
+                // Head delay: age of the WS head block
+                headDelayMs = Duration.between(state.lastWsBlockTimestamp, timestamp).toMillis();
+            }
+
+            // Checkpoint delay: age of the safe/finalized block
+            if (checkpointBlock.blockTimestamp() != null) {
+                long checkpointDelay = Duration.between(
+                    checkpointBlock.blockTimestamp(),
+                    timestamp
+                ).toMillis();
+
+                // Only record positive ages
+                if (checkpointDelay >= 0) {
+                    if ("safe".equals(blockTag)) {
+                        safeDelayMs = checkpointDelay;
+                    } else {
+                        finalizedDelayMs = checkpointDelay;
                     }
                 }
             }
@@ -280,19 +292,11 @@ public class RpcMonitorService {
             state.lastHttpBlockHash = checkpointBlock.blockHash();
         } catch (HttpStatusException ex) {
             logger.error("HTTP RPC failure ({} / http): status {} ({})", node.name(), ex.getStatusCode(), ex.getMessage());
-            HttpConnectionTracker httpTracker = nodeRegistry.getHttpTracker(node.key());
-            if (httpTracker != null) {
-                httpTracker.onError(ex);
-            }
             recordFailure(node, MetricSource.HTTP, ex.getMessage());
         } catch (IOException | InterruptedException ex) {
             recordFailure(node, MetricSource.HTTP, ex.getMessage());
         } catch (RuntimeException ex) {
             logger.error("HTTP RPC failure ({}): {}", node.name(), ex.getMessage());
-            HttpConnectionTracker httpTracker = nodeRegistry.getHttpTracker(node.key());
-            if (httpTracker != null) {
-                httpTracker.onError(ex);
-            }
             recordFailure(node, MetricSource.HTTP, ex.getMessage());
         }
     }
@@ -520,6 +524,11 @@ public class RpcMonitorService {
                             null,
                             null);
                     store.addSample(node.key(), sample);
+
+                    WsConnectionTracker tracker = nodeRegistry.getWsTracker(node.key());
+                    if (tracker != null) {
+                        tracker.clearLastError();
+                    }
 
                     List<AnomalyEvent> anomalies = detector.detect(
                             node.key(),
