@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ChainCheck · Error</title>
+    <link rel="stylesheet" href="/style.css" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+</head>
+<body>
+<header class="app-header">
+    <div>
+        <p class="title">ChainCheck<span style="font-weight: 600; color: #e07070;"> · Error</span></p>
+        <p class="subtitle">Something went wrong while loading the request.</p>
+    </div>
+</header>
+
+<div class="panel">
+    <div class="panel-header">
+        <h2>Request error</h2>
+    </div>
+    <div class="summary-grid">
+        <div class="card">
+            <p class="label">Status</p>
+            <p th:text="${status} != null ? ${status} : '-'">500</p>
+        </div>
+        <div class="card">
+            <p class="label">Error</p>
+            <p th:text="${error} != null ? ${error} : 'Unexpected error'">Unexpected error</p>
+        </div>
+        <div class="card">
+            <p class="label">Path</p>
+            <p th:text="${path} != null ? ${path} : '-'">/</p>
+        </div>
+        <div class="card">
+            <p class="label">Timestamp</p>
+            <p th:text="${timestamp} != null ? ${timestamp} : '-'">-</p>
+        </div>
+    </div>
+    <p class="muted" th:text="${message} != null ? ${message} : 'Please retry or check the logs for details.'">Please retry or check the logs for details.</p>
+
+    <div style="margin-top: 16px; display: flex; gap: 12px; flex-wrap: wrap;">
+        <a class="button" href="/dashboard">Back to dashboard</a>
+        <a class="button ghost" href="/">Home</a>
+    </div>
+</div>
+</body>
+</html>
