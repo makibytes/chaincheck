@@ -31,6 +31,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.ConcurrentSkipListMap;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -44,6 +46,7 @@ import de.makibytes.chaincheck.model.TimeRange;
 
 @Component
 public class InMemoryMetricsStore {
+    private static final Logger logger = LoggerFactory.getLogger(InMemoryMetricsStore.class);
 
     private final Map<String, Deque<MetricSample>> rawSamplesByNode = new ConcurrentHashMap<>();
     private final Map<String, Deque<AnomalyEvent>> rawAnomaliesByNode = new ConcurrentHashMap<>();
@@ -316,8 +319,8 @@ public class InMemoryMetricsStore {
             }
             aggregateOldData();
         } catch (java.io.IOException ex) {
-            // Persistence is optional; log to stdout to avoid introducing logger here.
-            System.err.println("Failed to load persistence snapshot: " + ex.getMessage());
+            // Persistence is optional; log as warning
+            logger.warn("Failed to load persistence snapshot: {}", ex.getMessage());
         }
     }
 
@@ -334,7 +337,7 @@ public class InMemoryMetricsStore {
             }
             Files.writeString(persistenceFile, new String(bytes, java.nio.charset.StandardCharsets.UTF_8));
         } catch (java.io.IOException ex) {
-            System.err.println("Failed to write persistence snapshot: " + ex.getMessage());
+            logger.warn("Failed to write persistence snapshot: {}", ex.getMessage());
         }
     }
 
