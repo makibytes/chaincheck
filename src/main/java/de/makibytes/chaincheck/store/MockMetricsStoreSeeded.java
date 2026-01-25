@@ -44,7 +44,8 @@ public class MockMetricsStoreSeeded extends InMemoryMetricsStore {
     private static final int HTTP_OUTAGE_LOOKBACK_MINUTES = 120;
     private static final Duration DATA_RANGE = Duration.ofDays(21);
 
-    public MockMetricsStoreSeeded() {
+    public MockMetricsStoreSeeded(de.makibytes.chaincheck.config.ChainCheckProperties properties) {
+        super(properties);
         seedLargeDataset();
     }
 

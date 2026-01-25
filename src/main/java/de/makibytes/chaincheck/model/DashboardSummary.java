@@ -46,6 +46,7 @@ public class DashboardSummary {
     private final long delayCount;
     private final long reorgCount;
     private final long blockGapCount;
+    private final long wrongHeadCount;
 
     public DashboardSummary(long totalSamples,
                             long httpSamples,
@@ -73,7 +74,8 @@ public class DashboardSummary {
                             long blockLagBlocks,
                             long delayCount,
                             long reorgCount,
-                            long blockGapCount) {
+                            long blockGapCount,
+                            long wrongHeadCount) {
         this.totalSamples = totalSamples;
         this.httpSamples = httpSamples;
         this.wsSamples = wsSamples;
@@ -101,6 +103,7 @@ public class DashboardSummary {
         this.delayCount = delayCount;
         this.reorgCount = reorgCount;
         this.blockGapCount = blockGapCount;
+        this.wrongHeadCount = wrongHeadCount;
     }
 
     public long getTotalSamples() {
@@ -209,5 +212,9 @@ public class DashboardSummary {
 
     public long getBlockGapCount() {
         return blockGapCount;
+    }
+
+    public long getWrongHeadCount() {
+        return wrongHeadCount;
     }
 }

@@ -8,8 +8,12 @@
     const headDelayData = /*[[${view.chartHeadDelays}]]*/[];
     const safeDelayData = /*[[${view.chartSafeDelays}]]*/[];
     const finalizedDelayData = /*[[${view.chartFinalizedDelays}]]*/[];
+    const referenceHeadDelayData = /*[[${view.chartReferenceHeadDelays}]]*/[];
+    const referenceSafeDelayData = /*[[${view.chartReferenceSafeDelays}]]*/[];
+    const referenceFinalizedDelayData = /*[[${view.chartReferenceFinalizedDelays}]]*/[];
     const wsConfigured = /*[[${view.wsConfigured}]]*/ false;
     const safeBlocksEnabled = /*[[${view.safeBlocksEnabled}]]*/ false;
+    const isReferenceNode = /*[[${view.referenceNode}]]*/ false;
     const samples = /*[[${view.sampleRows}]]*/[];
     const anomalies = /*[[${view.anomalyRows}]]*/[];
     const pageSize = /*[[${view.pageSize}]]*/ 50;
@@ -17,12 +21,19 @@
     const anomalyPageSize = /*[[${view.anomalyPageSize}]]*/ 50;
     const anomalyTotalPages = /*[[${view.anomalyTotalPages}]]*/ 1;
 
+    const referenceToggle = document.getElementById('toggleReferenceLines');
+    let showReferences = referenceToggle ? referenceToggle.checked : false;
+    const referenceAvailable = !isReferenceNode
+        && (referenceHeadDelayData.length > 0 || referenceSafeDelayData.length > 0 || referenceFinalizedDelayData.length > 0);
     const maxDelayValue = Math.max(
         0,
         ...latencyData.filter(value => value != null),
         ...headDelayData.filter(value => value != null),
         ...safeDelayData.filter(value => value != null),
-        ...finalizedDelayData.filter(value => value != null)
+        ...finalizedDelayData.filter(value => value != null),
+        ...(referenceAvailable && showReferences ? referenceHeadDelayData.filter(value => value != null) : []),
+        ...(referenceAvailable && showReferences ? referenceSafeDelayData.filter(value => value != null) : []),
+        ...(referenceAvailable && showReferences ? referenceFinalizedDelayData.filter(value => value != null) : [])
     );
     const scaledAxisMax = 1000;
     const lowBandRatio = 0.2;
@@ -56,6 +67,9 @@
     const headDelayScaled = headDelayData.map(scaleValue);
     const safeDelayScaled = safeDelayData.map(scaleValue);
     const finalizedDelayScaled = finalizedDelayData.map(scaleValue);
+    const referenceHeadDelayScaled = referenceHeadDelayData.map(scaleValue);
+    const referenceSafeDelayScaled = referenceSafeDelayData.map(scaleValue);
+    const referenceFinalizedDelayScaled = referenceFinalizedDelayData.map(scaleValue);
 
     const ctx = document.getElementById('latencyChart');
     if (ctx) {
@@ -217,6 +231,22 @@
                 yAxisID: 'y'
             });
 
+                if (referenceAvailable) {
+                    datasets.push({
+                        label: 'Head Delay (Reference)',
+                        data: referenceHeadDelayScaled,
+                        originalData: referenceHeadDelayData,
+                        borderColor: '#f59e0b',
+                        backgroundColor: 'rgba(245, 158, 11, 0.0)',
+                        borderDash: [6, 6],
+                        hidden: !showReferences,
+                        spanGaps: true,
+                        tension: 0.2,
+                        yAxisID: 'y',
+                        referenceLine: true
+                    });
+                }
+
             if (safeBlocksEnabled) {
                 datasets.push({
                     label: 'Safe Delay',
@@ -228,6 +258,22 @@
                     tension: 0.2,
                     yAxisID: 'y'
                 });
+
+                    if (referenceAvailable) {
+                        datasets.push({
+                            label: 'Safe Delay (Reference)',
+                            data: referenceSafeDelayScaled,
+                            originalData: referenceSafeDelayData,
+                            borderColor: '#eab308',
+                            backgroundColor: 'rgba(234, 179, 8, 0.0)',
+                            borderDash: [6, 6],
+                            hidden: !showReferences,
+                            spanGaps: true,
+                            tension: 0.2,
+                            yAxisID: 'y',
+                            referenceLine: true
+                        });
+                    }
             }
 
             datasets.push({
@@ -240,6 +286,22 @@
                 tension: 0.2,
                 yAxisID: 'y'
             });
+
+                if (referenceAvailable) {
+                    datasets.push({
+                        label: 'Finalized Delay (Reference)',
+                        data: referenceFinalizedDelayScaled,
+                        originalData: referenceFinalizedDelayData,
+                        borderColor: '#22c55e',
+                        backgroundColor: 'rgba(34, 197, 94, 0.0)',
+                        borderDash: [6, 6],
+                        hidden: !showReferences,
+                        spanGaps: true,
+                        tension: 0.2,
+                        yAxisID: 'y',
+                        referenceLine: true
+                    });
+                }
         }
 
         datasets.push({
@@ -264,7 +326,7 @@
             });
         }
 
-        new Chart(ctx, {
+        const chartInstance = new Chart(ctx, {
             type: 'line',
             data: {
                 labels,
@@ -274,7 +336,31 @@
             options: {
                 responsive: true,
                 plugins: {
-                    legend: { display: true },
+                    legend: {
+                        display: true,
+                        labels: {
+                            generateLabels: (chart) => {
+                                const baseLabels = Chart.defaults.plugins.legend.labels.generateLabels(chart)
+                                    .filter((legendItem) => {
+                                        const dataset = chart.data.datasets[legendItem.datasetIndex];
+                                        return !dataset.referenceLine;
+                                    });
+
+                                if (referenceAvailable && showReferences) {
+                                    baseLabels.push({
+                                        text: 'Reference Node',
+                                        fillStyle: 'rgba(120, 120, 120, 0.0)',
+                                        strokeStyle: 'rgba(120, 120, 120, 0.7)',
+                                        lineWidth: 2,
+                                        lineDash: [6, 6],
+                                        hidden: false
+                                    });
+                                }
+
+                                return baseLabels;
+                            }
+                        }
+                    },
                     tooltip: {
                         callbacks: {
                             label: (context) => {
@@ -315,6 +401,18 @@
                 }
             }
         });
+
+        if (referenceToggle) {
+            referenceToggle.addEventListener('change', (event) => {
+                showReferences = event.target.checked;
+                chartInstance.data.datasets.forEach((dataset) => {
+                    if (dataset.referenceLine) {
+                        dataset.hidden = !showReferences;
+                    }
+                });
+                chartInstance.update();
+            });
+        }
     }
 
     const samplesBody = document.getElementById('samplesBody');

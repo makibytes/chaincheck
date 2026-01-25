@@ -17,11 +17,21 @@
  */
 package de.makibytes.chaincheck.monitor;
 
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
+
+import de.makibytes.chaincheck.config.ChainCheckProperties;
+import de.makibytes.chaincheck.monitor.NodeRegistry.NodeDefinition;
 
 @DisplayName("RpcMonitorService Tests")
 class RpcMonitorServiceTest {
@@ -93,5 +103,91 @@ class RpcMonitorServiceTest {
         String error2 = "WebSocket not receiving newHeads events (last event 10s ago)";
         boolean result = (boolean) ReflectionTestUtils.invokeMethod(service, "areErrorsSame", error1, error2);
         assertFalse(result, "Different WebSocket error types should not be same");
+    }
+
+    @Test
+    @DisplayName("reference uses majority of available nodes")
+    void referenceFollowsMajorityAcrossNodes() {
+        NodeRegistry registry = registryWithNodes("alpha", "beta", "gamma");
+        RpcMonitorService svc = new RpcMonitorService(registry, null, null);
+        Map<String, RpcMonitorService.NodeState> states = nodeStates(svc);
+
+        for (NodeDefinition def : registry.getNodes()) {
+            RpcMonitorService.NodeState state = new RpcMonitorService.NodeState();
+            if (def.key().contains("gamma")) {
+                state.lastHttpBlockNumber = 99L;
+                state.lastHttpBlockHash = "0xdeadbeef";
+            } else {
+                state.lastHttpBlockNumber = 100L;
+                state.lastHttpBlockHash = "0xaaa";
+            }
+            states.put(def.key(), state);
+        }
+
+        ReflectionTestUtils.invokeMethod(svc, "refreshReferenceFromNodes");
+        ReferenceSnapshot reference = reference(svc);
+
+        assertEquals(100L, reference.headNumber());
+        assertEquals("0xaaa", reference.headHash());
+    }
+
+    @Test
+    @DisplayName("reference prefers healthy WebSocket nodes when others stall")
+    void referencePrefersHealthyWebSocketsWhenOthersStall() {
+        NodeRegistry registry = registryWithNodes("a", "b", "c", "d", "e");
+        RpcMonitorService svc = new RpcMonitorService(registry, null, null);
+        Map<String, RpcMonitorService.NodeState> states = nodeStates(svc);
+        Instant now = Instant.now();
+
+        for (NodeDefinition def : registry.getNodes()) {
+            RpcMonitorService.NodeState state = new RpcMonitorService.NodeState();
+            if (def.key().equals("a") || def.key().equals("b")) {
+                state.lastWsBlockNumber = 120L;
+                state.lastWsBlockHash = "0xhead";
+                state.lastWsEventReceivedAt = now;
+            } else {
+                state.lastHttpBlockNumber = 110L;
+                state.lastHttpBlockHash = "0xstale";
+            }
+            states.put(def.key(), state);
+        }
+
+        ReflectionTestUtils.invokeMethod(svc, "refreshReferenceFromNodes");
+        ReferenceSnapshot reference = reference(svc);
+
+        assertEquals(120L, reference.headNumber());
+        assertEquals("0xhead", reference.headHash());
+    }
+
+    private NodeRegistry registryWithNodes(String... names) {
+        ChainCheckProperties properties = new ChainCheckProperties();
+        List<ChainCheckProperties.RpcNodeProperties> nodeProps = new ArrayList<>();
+        for (String name : names) {
+            ChainCheckProperties.RpcNodeProperties rpc = new ChainCheckProperties.RpcNodeProperties();
+            rpc.setName(name);
+            rpc.setHttp("http://" + name + ".example");
+            nodeProps.add(rpc);
+        }
+        properties.setNodes(nodeProps);
+        return new NodeRegistry(properties);
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, RpcMonitorService.NodeState> nodeStates(RpcMonitorService svc) {
+        return (Map<String, RpcMonitorService.NodeState>) ReflectionTestUtils.getField(svc, "nodeStates");
+    }
+
+    private ReferenceSnapshot reference(RpcMonitorService svc) {
+        AtomicReference<?> ref = (AtomicReference<?>) ReflectionTestUtils.getField(svc, "referenceState");
+        Object value = ref.get();
+        if (value == null) {
+            return new ReferenceSnapshot(null, null);
+        }
+        Long headNumber = (Long) ReflectionTestUtils.getField(value, "headNumber");
+        String headHash = (String) ReflectionTestUtils.getField(value, "headHash");
+        return new ReferenceSnapshot(headNumber, headHash);
+    }
+
+    private record ReferenceSnapshot(Long headNumber, String headHash) {
     }
 }

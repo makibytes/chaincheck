@@ -23,10 +23,13 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.net.http.HttpTimeoutException;
 import java.net.http.WebSocket;
 import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletionStage;
@@ -37,12 +40,14 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import de.makibytes.chaincheck.config.ChainCheckProperties;
 import de.makibytes.chaincheck.model.AnomalyEvent;
 import de.makibytes.chaincheck.model.MetricSample;
 import de.makibytes.chaincheck.model.MetricSource;
@@ -59,26 +64,72 @@ public class RpcMonitorService {
     private final NodeRegistry nodeRegistry;
     private final InMemoryMetricsStore store;
     private final AnomalyDetector detector;
-    private final ObjectMapper mapper = new ObjectMapper();
-    private final HttpClient httpClient = HttpClient.newHttpClient();
+    private final ChainCheckProperties properties;
+    private final ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
+    private final Map<Long, HttpClient> httpClients = new ConcurrentHashMap<>();
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
     private final Map<String, NodeState> nodeStates = new ConcurrentHashMap<>();
+    private final AtomicReference<ReferenceState> referenceState = new AtomicReference<>();
+    private Long referenceFirstSetAtBlock = null;
 
+    @Autowired
     public RpcMonitorService(NodeRegistry nodeRegistry,
                              InMemoryMetricsStore store,
-                             AnomalyDetector detector) {
+                             AnomalyDetector detector,
+                             ChainCheckProperties properties) {
         this.nodeRegistry = nodeRegistry;
         this.store = store;
         this.detector = detector;
+        this.properties = properties;
+    }
+
+    /**
+     * Backwards-compatible constructor used by older tests that did not wire properties.
+     */
+    public RpcMonitorService(NodeRegistry nodeRegistry,
+                             InMemoryMetricsStore store,
+                             AnomalyDetector detector) {
+        this(nodeRegistry, store, detector, new ChainCheckProperties());
     }
 
     @PostConstruct
     public void init() {
         ensureWebSocket();
     }
+
+    /**
+     * Returns the node key of the current reference node, or null if no reference is set.
+     */
+    public String getReferenceNodeKey() {
+        ReferenceState ref = referenceState.get();
+        if (ref == null || ref.headNumber == null || ref.headHash == null) {
+            return null;
+        }
+
+        // Find which node matches the reference block
+        for (Map.Entry<String, NodeState> entry : nodeStates.entrySet()) {
+            NodeState state = entry.getValue();
+            
+            // Check WebSocket head first (preferred)
+            if (state.lastWsBlockNumber != null && state.lastWsBlockNumber.equals(ref.headNumber)
+                    && state.lastWsBlockHash != null && state.lastWsBlockHash.equals(ref.headHash)) {
+                return entry.getKey();
+            }
+            
+            // Check HTTP head
+            if (state.lastHttpBlockNumber != null && state.lastHttpBlockNumber.equals(ref.headNumber)
+                    && state.lastHttpBlockHash != null && state.lastHttpBlockHash.equals(ref.headHash)) {
+                return entry.getKey();
+            }
+        }
+        
+        return null; // No node currently matches reference
+    }
+
     @Scheduled(fixedDelay = 250, initialDelay = 500)
     public void pollNodes() {
         long now = System.currentTimeMillis();
+        refreshReferenceFromNodes();
         for (NodeDefinition node : nodeRegistry.getNodes()) {
             if (node.http() == null || node.http().isBlank()) {
                 continue;
@@ -138,23 +189,46 @@ public class RpcMonitorService {
         }
     }
 
+    private HttpClient getHttpClient(long connectTimeoutMs) {
+        long effectiveTimeout = connectTimeoutMs > 0 ? connectTimeoutMs : properties.getDefaults().getConnectTimeoutMs();
+        return httpClients.computeIfAbsent(effectiveTimeout, timeout -> HttpClient.newBuilder()
+                .connectTimeout(Duration.ofMillis(Math.max(1, timeout)))
+                .build());
+    }
+
     private boolean areErrorsSame(String error1, String error2) {
-        if (java.util.Objects.equals(error1, error2)) {
-            return true;
+        String norm1 = normalizeError(error1);
+        String norm2 = normalizeError(error2);
+        return java.util.Objects.equals(norm1, norm2);
+    }
+
+    private String normalizeError(String error) {
+        if (error == null) {
+            return null;
         }
-        if (error1 == null || error2 == null) {
-            return false;
+        if (error.startsWith("WebSocket not receiving newHeads events")) {
+            return "ws-no-new-heads";
         }
-        // Normalize specific error messages that contain variable counters
-        String prefix = "WebSocket not receiving newHeads events";
-        if (error1.startsWith(prefix) && error2.startsWith(prefix)) {
-            return true;
+        if (error.contains("call rate limit exhausted")) {
+            return "rate-limit";
         }
-        // Normalize rate limit errors with variable trace_ids
-        if (error1.contains("call rate limit exhausted") && error2.contains("call rate limit exhausted")) {
-            return true;
+        return error;
+    }
+
+    private String classifyError(Throwable error) {
+        if (error == null) {
+            return "Unknown error";
         }
-        return false;
+        if (error instanceof HttpTimeoutException) {
+            return "HTTP timeout: " + error.getMessage();
+        }
+        if (error instanceof java.net.ConnectException) {
+            return "Connect error: " + error.getMessage();
+        }
+        if (error instanceof HttpStatusException statusEx) {
+            return "HTTP " + statusEx.getStatusCode() + ": " + statusEx.getMessage();
+        }
+        return error.getMessage();
     }
 
     private void checkAndCloseAnomaly(NodeDefinition node, String currentError, MetricSource source) {
@@ -230,6 +304,8 @@ public class RpcMonitorService {
                 recordFailure(node, MetricSource.HTTP, blockTag + " block not found");
                 return;
             }
+
+            maybeCompareToReference(node, blockNumber, checkpointBlock.blockHash());
             
             // Successfully fetched all data - this counts as a success sample for HTTP
             checkAndCloseAnomaly(node, null, MetricSource.HTTP);
@@ -292,12 +368,63 @@ public class RpcMonitorService {
             state.lastHttpBlockHash = checkpointBlock.blockHash();
         } catch (HttpStatusException ex) {
             logger.error("HTTP RPC failure ({} / http): status {} ({})", node.name(), ex.getStatusCode(), ex.getMessage());
-            recordFailure(node, MetricSource.HTTP, ex.getMessage());
+            recordFailure(node, MetricSource.HTTP, classifyError(ex));
         } catch (IOException | InterruptedException ex) {
-            recordFailure(node, MetricSource.HTTP, ex.getMessage());
+            recordFailure(node, MetricSource.HTTP, classifyError(ex));
         } catch (RuntimeException ex) {
             logger.error("HTTP RPC failure ({}): {}", node.name(), ex.getMessage());
             recordFailure(node, MetricSource.HTTP, ex.getMessage());
+        }
+    }
+
+    private void maybeCompareToReference(NodeDefinition node, Long blockNumber, String blockHash) {
+        ReferenceState ref = referenceState.get();
+        if (ref == null || ref.headNumber == null || blockNumber == null || blockHash == null) {
+            return;
+        }
+
+        NodeState state = nodeStates.get(node.key());
+        if (state != null && state.lastWsError != null
+                && state.lastWsError.startsWith("WebSocket not receiving newHeads events")) {
+            return;
+        }
+
+        // Skip WRONG_HEAD until a reference node exists and at least 10 newHead events were observed
+        if (referenceFirstSetAtBlock == null || ref.headNumber - referenceFirstSetAtBlock < 10) {
+            return;
+        }
+
+        long lag = ref.headNumber - blockNumber;
+
+        // Only flag as anomaly if lag exceeds configurable threshold
+        // Small differences are normal and expected
+        Integer configuredLag = properties.getAnomalyDetection() != null
+            ? properties.getAnomalyDetection().getMaxBlockLag()
+            : null;
+        int lagThreshold = configuredLag != null ? configuredLag : 5;
+        
+        if (lag > lagThreshold) {
+            AnomalyEvent anomaly = detector.wrongHead(
+                    node.key(),
+                    Instant.now(),
+                    MetricSource.HTTP,
+                    blockNumber,
+                    blockHash,
+                    "Node significantly behind reference: reference head " + ref.headNumber + " vs node " + blockNumber);
+            store.addAnomaly(node.key(), anomaly);
+            return;
+        }
+
+        // Only flag hash mismatch at same height (lag = 0) as anomaly, not at different heights
+        if (lag == 0 && ref.headHash != null && !ref.headHash.equals(blockHash)) {
+            AnomalyEvent anomaly = detector.wrongHead(
+                    node.key(),
+                    Instant.now(),
+                    MetricSource.HTTP,
+                    blockNumber,
+                    blockHash,
+                    "Hash mismatch at height " + blockNumber + " (reference " + ref.headHash + ")");
+            store.addAnomaly(node.key(), anomaly);
         }
     }
 
@@ -317,7 +444,7 @@ public class RpcMonitorService {
                 continue;
             }
             state.lastWsAttemptEpochMs = now;
-            httpClient.newWebSocketBuilder()
+                getHttpClient(properties.getDefaults().getConnectTimeoutMs()).newWebSocketBuilder()
                     .buildAsync(URI.create(node.ws()), new WsListener(node, state))
                     .thenAccept(state.webSocketRef::set)
                     .exceptionally(ex -> {
@@ -342,8 +469,141 @@ public class RpcMonitorService {
         }
     }
 
+    private void refreshReferenceFromNodes() {
+        List<NodeDefinition> nodes = nodeRegistry.getNodes();
+        if (nodes.isEmpty()) {
+            referenceState.set(null);
+            return;
+        }
+
+        for (NodeDefinition node : nodes) {
+            if (node.ws() == null || node.ws().isBlank()) {
+                continue;
+            }
+            NodeState state = nodeStates.get(node.key());
+            if (state == null) {
+                referenceState.set(null);
+                return;
+            }
+            if (state.lastWsError != null) {
+                continue;
+            }
+            if (state.wsNewHeadCount < 10) {
+                referenceState.set(null);
+                return;
+            }
+        }
+
+        Instant now = Instant.now();
+        List<ReferenceCandidate> candidates = new ArrayList<>();
+        long maxHeight = Long.MIN_VALUE;
+
+        for (NodeDefinition node : nodes) {
+            NodeState state = nodeStates.get(node.key());
+            if (state == null) {
+                continue;
+            }
+
+            boolean wsFresh = state.lastWsEventReceivedAt != null
+                    && Duration.between(state.lastWsEventReceivedAt, now).toSeconds() < 30;
+
+            if (wsFresh && state.lastWsBlockNumber != null && state.lastWsBlockHash != null) {
+                candidates.add(new ReferenceCandidate(node.key(), state.lastWsBlockNumber, state.lastWsBlockHash, true));
+                maxHeight = Math.max(maxHeight, state.lastWsBlockNumber);
+                continue;
+            }
+
+            if (state.lastHttpBlockNumber != null && state.lastHttpBlockHash != null) {
+                candidates.add(new ReferenceCandidate(node.key(), state.lastHttpBlockNumber, state.lastHttpBlockHash, false));
+                maxHeight = Math.max(maxHeight, state.lastHttpBlockNumber);
+            }
+        }
+
+        if (candidates.isEmpty() || maxHeight == Long.MIN_VALUE) {
+            referenceState.set(null);
+            return;
+        }
+
+        long freshestHeight = maxHeight;
+        List<ReferenceCandidate> nearTip = candidates.stream()
+                .filter(c -> c.blockNumber != null && freshestHeight - c.blockNumber <= 2)
+                .toList();
+
+        boolean manyStalled = nearTip.size() * 2 < candidates.size();
+        List<ReferenceCandidate> healthyWs = nearTip.stream()
+                .filter(ReferenceCandidate::wsFresh)
+                .toList();
+
+        List<ReferenceCandidate> selectionPool = (!healthyWs.isEmpty() && manyStalled) ? healthyWs : candidates;
+        ReferenceCandidate majority = selectMajority(selectionPool);
+
+        if (majority != null) {
+            ReferenceState oldRef = referenceState.get();
+            referenceState.set(new ReferenceState(majority.blockNumber(), majority.blockHash(), Instant.now()));
+            
+            // Track when reference was first established for grace period calculation
+            if (oldRef == null && referenceFirstSetAtBlock == null) {
+                referenceFirstSetAtBlock = majority.blockNumber();
+                logger.info("Reference head established at block {}", majority.blockNumber());
+            }
+        } else {
+            referenceState.set(null);
+        }
+    }
+
+    private ReferenceCandidate selectMajority(List<ReferenceCandidate> candidates) {
+        if (candidates.isEmpty()) {
+            return null;
+        }
+
+        Map<ReferenceKey, MajorityCounter> counts = new HashMap<>();
+        for (ReferenceCandidate candidate : candidates) {
+            if (candidate.blockNumber == null || candidate.blockHash == null) {
+                continue;
+            }
+            ReferenceKey key = new ReferenceKey(candidate.blockNumber, candidate.blockHash);
+            counts.computeIfAbsent(key, unused -> new MajorityCounter()).increment(candidate.wsFresh);
+        }
+
+        if (counts.isEmpty()) {
+            return null;
+        }
+
+        Map.Entry<ReferenceKey, MajorityCounter> firstEntry = counts.entrySet().iterator().next();
+        ReferenceKey bestKey = firstEntry.getKey();
+        MajorityCounter bestCounter = firstEntry.getValue();
+
+        for (Map.Entry<ReferenceKey, MajorityCounter> entry : counts.entrySet()) {
+            ReferenceKey key = entry.getKey();
+            MajorityCounter counter = entry.getValue();
+            if (counter.count > bestCounter.count
+                    || (counter.count == bestCounter.count && key.blockNumber() > bestKey.blockNumber())
+                    || (counter.count == bestCounter.count && key.blockNumber().equals(bestKey.blockNumber())
+                        && counter.wsFreshCount > bestCounter.wsFreshCount)) {
+                bestKey = key;
+                bestCounter = counter;
+            }
+        }
+
+        ReferenceKey winningKey = bestKey;
+        MajorityCounter winningCounter = bestCounter;
+        return candidates.stream()
+                .filter(candidate -> winningKey.equals(new ReferenceKey(candidate.blockNumber(), candidate.blockHash())))
+                .sorted((left, right) -> Boolean.compare(right.wsFresh(), left.wsFresh()))
+                .findFirst()
+                .orElseGet(() -> new ReferenceCandidate("majority", winningKey.blockNumber(), winningKey.blockHash(), winningCounter.wsFreshCount > 0));
+    }
+
     private Long fetchBlockNumber(NodeDefinition node) throws IOException, InterruptedException {
-        JsonNode response = sendRpc(node.http(), "eth_blockNumber", mapper.createArrayNode());
+        JsonNode response = sendRpcWithRetry(
+                node.http(),
+                node.headers(),
+                node.readTimeoutMs(),
+                node.maxRetries(),
+                node.retryBackoffMs(),
+                node.connectTimeoutMs(),
+                "eth_blockNumber",
+                mapper.createArrayNode());
         if (response.has("error")) {
             throw new IOException(response.get("error").toString());
         }
@@ -355,10 +615,20 @@ public class RpcMonitorService {
     }
 
     private BlockInfo fetchBlockByTag(NodeDefinition node, String blockTag) throws IOException, InterruptedException {
+        return fetchBlockByTag(node.http(), node.readTimeoutMs(), node.headers(), node.maxRetries(), node.retryBackoffMs(), node.connectTimeoutMs(), blockTag);
+    }
+
+    private BlockInfo fetchBlockByTag(String httpUrl,
+                                      long readTimeoutMs,
+                                      Map<String, String> headers,
+                                      int maxRetries,
+                                      long retryBackoffMs,
+                                      long connectTimeoutMs,
+                                      String blockTag) throws IOException, InterruptedException {
         JsonNode params = mapper.createArrayNode()
                 .add(blockTag)
                 .add(false);
-        JsonNode response = sendRpc(node.http(), "eth_getBlockByNumber", params);
+        JsonNode response = sendRpcWithRetry(httpUrl, headers, readTimeoutMs, maxRetries, retryBackoffMs, connectTimeoutMs, "eth_getBlockByNumber", params);
         if (response.has("error")) {
             throw new IOException(response.get("error").toString());
         }
@@ -389,18 +659,70 @@ public class RpcMonitorService {
         return new BlockInfo(blockHash, parentHash, txCount, gasPriceWei, blockTimestamp);
     }
 
-    private JsonNode sendRpc(String httpUrl, String method, JsonNode params) throws IOException, InterruptedException {
+    private JsonNode sendRpcWithRetry(String httpUrl,
+                                      Map<String, String> headers,
+                                      long readTimeoutMs,
+                                      int maxRetries,
+                                      long retryBackoffMs,
+                                      long connectTimeoutMs,
+                                      String method,
+                                      JsonNode params) throws IOException, InterruptedException {
+        int attempts = Math.max(0, maxRetries);
+        IOException lastIo = null;
+        for (int attempt = 0; attempt <= attempts; attempt++) {
+            try {
+                return sendRpcOnce(httpUrl, headers, readTimeoutMs, connectTimeoutMs, method, params);
+            } catch (HttpStatusException statusEx) {
+                if (!shouldRetryStatus(statusEx.getStatusCode()) || attempt == attempts) {
+                    throw statusEx;
+                }
+                sleepBackoff(retryBackoffMs, attempt);
+            } catch (IOException | InterruptedException ioEx) {
+                lastIo = ioEx instanceof IOException ? (IOException) ioEx : new IOException(ioEx);
+                if (attempt == attempts) {
+                    throw ioEx;
+                }
+                sleepBackoff(retryBackoffMs, attempt);
+            }
+        }
+        if (lastIo != null) {
+            throw lastIo;
+        }
+        throw new IOException("RPC call failed after retries");
+    }
+
+    private void sleepBackoff(long backoffMs, int attempt) throws InterruptedException {
+        long delay = Math.max(0, backoffMs) * (attempt + 1);
+        if (delay > 0) {
+            Thread.sleep(delay);
+        }
+    }
+
+    private boolean shouldRetryStatus(int statusCode) {
+        return statusCode == 429 || statusCode >= 500;
+    }
+
+    private JsonNode sendRpcOnce(String httpUrl,
+                                 Map<String, String> headers,
+                                 long readTimeoutMs,
+                                 long connectTimeoutMs,
+                                 String method,
+                                 JsonNode params) throws IOException, InterruptedException {
         JsonNode body = mapper.createObjectNode()
                 .put("jsonrpc", JSONRPC_VERSION)
                 .put("id", 1)
                 .put("method", method)
                 .set("params", params);
-        HttpRequest request = HttpRequest.newBuilder()
+        HttpRequest.Builder builder = HttpRequest.newBuilder()
                 .uri(URI.create(httpUrl))
                 .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
-                .build();
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+                .POST(HttpRequest.BodyPublishers.ofString(body.toString()));
+        if (readTimeoutMs > 0) {
+            builder.timeout(Duration.ofMillis(readTimeoutMs));
+        }
+        headers.forEach(builder::header);
+        HttpClient client = getHttpClient(connectTimeoutMs);
+        HttpResponse<String> response = client.send(builder.build(), HttpResponse.BodyHandlers.ofString());
         if (response.statusCode() != 200) {
             throw new HttpStatusException(response.statusCode(), httpUrl);
         }
@@ -501,6 +823,7 @@ public class RpcMonitorService {
                     
                     // Track that we received a WS event
                     state.lastWsEventReceivedAt = now;
+                    state.wsNewHeadCount++;
                     
                     Long headDelayMs = null;
                     if (blockTimestamp != null) {
@@ -568,7 +891,7 @@ public class RpcMonitorService {
         }
     }
 
-    private static class NodeState {
+    static class NodeState {
         final AtomicReference<WebSocket> webSocketRef = new AtomicReference<>();
         long lastPollEpochMs = 0;
         long lastWsAttemptEpochMs = 0;
@@ -578,8 +901,30 @@ public class RpcMonitorService {
         String lastWsBlockHash;
         Instant lastWsBlockTimestamp;
         Instant lastWsEventReceivedAt;  // Timestamp when last WS newHeads event was received
+        int wsNewHeadCount = 0;
         int pollCounter = 0;
         String lastHttpError;
         String lastWsError;
+    }
+
+    private static class MajorityCounter {
+        int count = 0;
+        int wsFreshCount = 0;
+
+        void increment(boolean wsFresh) {
+            count++;
+            if (wsFresh) {
+                wsFreshCount++;
+            }
+        }
+    }
+
+    private record ReferenceCandidate(String nodeKey, Long blockNumber, String blockHash, boolean wsFresh) {
+    }
+
+    private record ReferenceKey(Long blockNumber, String blockHash) {
+    }
+
+    private record ReferenceState(Long headNumber, String headHash, Instant fetchedAt) {
     }
 }

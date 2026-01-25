@@ -39,6 +39,9 @@ public class DashboardView {
     private final List<Long> chartHeadDelays;
     private final List<Long> chartSafeDelays;
     private final List<Long> chartFinalizedDelays;
+    private final List<Long> chartReferenceHeadDelays;
+    private final List<Long> chartReferenceSafeDelays;
+    private final List<Long> chartReferenceFinalizedDelays;
     private final boolean httpConfigured;
     private final boolean wsConfigured;
     private final boolean safeBlocksEnabled;
@@ -54,6 +57,8 @@ public class DashboardView {
     private final int anomalyPageSize;
     private final int totalAnomalies;
     private final Instant generatedAt;
+    private final ReferenceComparison referenceComparison;
+    private final boolean isReferenceNode;
 
     public DashboardView(TimeRange range,
                          DashboardSummary summary,
@@ -68,6 +73,9 @@ public class DashboardView {
                          List<Long> chartHeadDelays,
                          List<Long> chartSafeDelays,
                          List<Long> chartFinalizedDelays,
+                         List<Long> chartReferenceHeadDelays,
+                         List<Long> chartReferenceSafeDelays,
+                         List<Long> chartReferenceFinalizedDelays,
                          boolean httpConfigured,
                          boolean wsConfigured,
                          boolean safeBlocksEnabled,
@@ -82,7 +90,9 @@ public class DashboardView {
                          int anomalyTotalPages,
                          int anomalyPageSize,
                          int totalAnomalies,
-                         Instant generatedAt) {
+                         Instant generatedAt,
+                         ReferenceComparison referenceComparison,
+                         boolean isReferenceNode) {
         this.range = range;
         this.summary = summary;
         this.anomalies = anomalies;
@@ -96,6 +106,9 @@ public class DashboardView {
         this.chartHeadDelays = chartHeadDelays;
         this.chartSafeDelays = chartSafeDelays;
         this.chartFinalizedDelays = chartFinalizedDelays;
+        this.chartReferenceHeadDelays = chartReferenceHeadDelays;
+        this.chartReferenceSafeDelays = chartReferenceSafeDelays;
+        this.chartReferenceFinalizedDelays = chartReferenceFinalizedDelays;
         this.httpConfigured = httpConfigured;
         this.wsConfigured = wsConfigured;
         this.safeBlocksEnabled = safeBlocksEnabled;
@@ -111,6 +124,8 @@ public class DashboardView {
         this.anomalyPageSize = anomalyPageSize;
         this.totalAnomalies = totalAnomalies;
         this.generatedAt = generatedAt;
+        this.referenceComparison = referenceComparison;
+        this.isReferenceNode = isReferenceNode;
     }
 
     public TimeRange getRange() {
@@ -157,12 +172,24 @@ public class DashboardView {
         return chartHeadDelays;
     }
 
+    public List<Long> getChartReferenceHeadDelays() {
+        return chartReferenceHeadDelays;
+    }
+
     public List<Long> getChartSafeDelays() {
         return chartSafeDelays;
     }
 
+    public List<Long> getChartReferenceSafeDelays() {
+        return chartReferenceSafeDelays;
+    }
+
     public List<Long> getChartFinalizedDelays() {
         return chartFinalizedDelays;
+    }
+
+    public List<Long> getChartReferenceFinalizedDelays() {
+        return chartReferenceFinalizedDelays;
     }
 
     public boolean isHttpConfigured() {
@@ -223,5 +250,13 @@ public class DashboardView {
 
     public Instant getGeneratedAt() {
         return generatedAt;
+    }
+
+    public ReferenceComparison getReferenceComparison() {
+        return referenceComparison;
+    }
+
+    public boolean isReferenceNode() {
+        return isReferenceNode;
     }
 }

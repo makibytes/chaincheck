@@ -1,0 +1,23 @@
+<section th:fragment="reference-comparison">
+    <div th:if="${view.referenceComparison != null}">
+        <div th:if="${view.referenceComparison.currentNodeReference}" class="card">
+            <div style="display: flex; align-items: center; gap: 8px; padding: 12px;">
+                <span style="background-color: #2ecc71; color: white; padding: 4px 8px; border-radius: 4px; font-weight: bold;">REFERENCE</span>
+                <span class="muted">This node is the consensus reference head</span>
+            </div>
+        </div>
+        <div th:unless="${view.referenceComparison.currentNodeReference}" class="card">
+            <h3>Comparison to Reference</h3>
+            <div th:if="${view.referenceComparison.blockLag != null}">
+                <span class="muted">Block Lag:</span>
+                <span th:text="${view.referenceComparison.blockLag}">0</span>
+                <span class="muted">block(s)</span>
+            </div>
+            <div th:if="${view.referenceComparison.avgPropagationDeltaMs != null}">
+                <span class="muted">Avg Propagation Δ:</span>
+                <span th:text="${#numbers.formatDecimal(view.referenceComparison.avgPropagationDeltaMs, 1, 0)}">0</span>
+                <span class="muted">ms</span>
+            </div>
+        </div>
+    </div>
+</section>

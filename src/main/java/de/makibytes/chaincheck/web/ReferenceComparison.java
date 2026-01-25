@@ -15,12 +15,16 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-package de.makibytes.chaincheck.model;
+package de.makibytes.chaincheck.web;
 
-public enum AnomalyType {
-    ERROR,
-    DELAY,
-    BLOCK_GAP,
-    REORG,
-    WRONG_HEAD
+public class ReferenceComparison {
+    private final boolean isCurrentNodeReference;
+
+    public ReferenceComparison(boolean isCurrentNodeReference) {
+        this.isCurrentNodeReference = isCurrentNodeReference;
+    }
+
+    public boolean isCurrentNodeReference() {
+        return isCurrentNodeReference;
+    }
 }

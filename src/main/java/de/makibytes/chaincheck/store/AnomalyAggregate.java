@@ -29,6 +29,7 @@ public class AnomalyAggregate {
     private long reorgCount;
     private long blockGapCount;
     private long errorCount;
+    private long wrongHeadCount;
 
     public AnomalyAggregate(Instant bucketStart) {
         this.bucketStart = bucketStart;
@@ -41,6 +42,7 @@ public class AnomalyAggregate {
             case REORG -> reorgCount++;
             case BLOCK_GAP -> blockGapCount++;
             case ERROR -> errorCount++;
+            case WRONG_HEAD -> wrongHeadCount++;
         }
     }
 
@@ -50,6 +52,7 @@ public class AnomalyAggregate {
         reorgCount += aggregate.reorgCount;
         blockGapCount += aggregate.blockGapCount;
         errorCount += aggregate.errorCount;
+        wrongHeadCount += aggregate.wrongHeadCount;
     }
 
     public Instant getBucketStart() {
@@ -74,5 +77,9 @@ public class AnomalyAggregate {
 
     public long getErrorCount() {
         return errorCount;
+    }
+
+    public long getWrongHeadCount() {
+        return wrongHeadCount;
     }
 }

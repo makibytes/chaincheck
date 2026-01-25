@@ -17,6 +17,8 @@
  */
 package de.makibytes.chaincheck.store;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -32,6 +34,9 @@ import java.util.concurrent.ConcurrentSkipListMap;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+import de.makibytes.chaincheck.config.ChainCheckProperties;
 import de.makibytes.chaincheck.model.AnomalyEvent;
 import de.makibytes.chaincheck.model.MetricSample;
 import de.makibytes.chaincheck.model.MetricSource;
@@ -52,6 +57,32 @@ public class InMemoryMetricsStore {
     private final Duration rawRetention = Duration.ofHours(2);
     private final Duration hourlyRetention = Duration.ofDays(3);
     private final Duration aggregateRetention = TimeRange.MONTH_1.getDuration();
+    private final boolean persistenceEnabled;
+    private final Path persistenceFile;
+    private final Duration flushInterval;
+    private final ObjectMapper objectMapper;
+    private volatile Instant lastFlush = Instant.EPOCH;
+
+    public InMemoryMetricsStore() {
+        this(defaultProperties());
+    }
+
+    public InMemoryMetricsStore(ChainCheckProperties properties) {
+        ChainCheckProperties.Persistence persistence = properties.getPersistence();
+        this.persistenceEnabled = persistence.isEnabled();
+        this.persistenceFile = Path.of(persistence.getFile());
+        this.flushInterval = Duration.ofSeconds(Math.max(5, persistence.getFlushIntervalSeconds()));
+        this.objectMapper = new ObjectMapper().findAndRegisterModules();
+        if (persistenceEnabled) {
+            loadSnapshot();
+        }
+    }
+
+    private static ChainCheckProperties defaultProperties() {
+        ChainCheckProperties props = new ChainCheckProperties();
+        props.getPersistence().setEnabled(false);
+        return props;
+    }
 
     public void addSample(String nodeKey, MetricSample sample) {
         rawSamplesByNode.computeIfAbsent(nodeKey, key -> new ConcurrentLinkedDeque<>()).add(sample);
@@ -161,6 +192,19 @@ public class InMemoryMetricsStore {
         return latestBlockNumber.get(nodeKey);
     }
 
+    @Scheduled(fixedDelay = 5000)
+    public void flushIfNeeded() {
+        if (!persistenceEnabled) {
+            return;
+        }
+        Instant now = Instant.now();
+        if (lastFlush.plus(flushInterval).isAfter(now)) {
+            return;
+        }
+        writeSnapshot();
+        lastFlush = now;
+    }
+
     @Scheduled(fixedDelay = 300000)
     public void aggregateOldData() {
         Instant now = Instant.now();
@@ -242,6 +286,74 @@ public class InMemoryMetricsStore {
                 dailyAnomalyAggregates.headMap(aggregateCutoff, false).clear();
             }
         }
+    }
+
+    private void loadSnapshot() {
+        try {
+            if (!Files.exists(persistenceFile)) {
+                return;
+            }
+            byte[] data = Files.readAllBytes(persistenceFile);
+            Snapshot snapshot = objectMapper.readValue(data, Snapshot.class);
+            if (snapshot.rawSamples() != null) {
+                snapshot.rawSamples().forEach((node, samples) -> {
+                    Deque<MetricSample> deque = rawSamplesByNode.computeIfAbsent(node, key -> new ConcurrentLinkedDeque<>());
+                    deque.addAll(samples);
+                });
+            }
+            if (snapshot.rawAnomalies() != null) {
+                snapshot.rawAnomalies().forEach((node, anomalies) -> {
+                    Deque<AnomalyEvent> deque = rawAnomaliesByNode.computeIfAbsent(node, key -> new ConcurrentLinkedDeque<>());
+                    deque.addAll(anomalies);
+                    anomalies.forEach(anomaly -> anomalyById.put(anomaly.getId(), anomaly));
+                });
+            }
+            if (snapshot.latestBlockNumber() != null) {
+                latestBlockNumber.putAll(snapshot.latestBlockNumber());
+            }
+            if (snapshot.latestHttpBlockNumber() != null) {
+                latestHttpBlockNumber.putAll(snapshot.latestHttpBlockNumber());
+            }
+            aggregateOldData();
+        } catch (java.io.IOException ex) {
+            // Persistence is optional; log to stdout to avoid introducing logger here.
+            System.err.println("Failed to load persistence snapshot: " + ex.getMessage());
+        }
+    }
+
+    private void writeSnapshot() {
+        try {
+            Snapshot snapshot = new Snapshot(
+                    toMetricListCopy(rawSamplesByNode),
+                    toAnomalyListCopy(rawAnomaliesByNode),
+                    new ConcurrentHashMap<>(latestBlockNumber),
+                    new ConcurrentHashMap<>(latestHttpBlockNumber));
+            byte[] bytes = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsBytes(snapshot);
+            if (persistenceFile.getParent() != null) {
+                Files.createDirectories(persistenceFile.getParent());
+            }
+            Files.writeString(persistenceFile, new String(bytes, java.nio.charset.StandardCharsets.UTF_8));
+        } catch (java.io.IOException ex) {
+            System.err.println("Failed to write persistence snapshot: " + ex.getMessage());
+        }
+    }
+
+    private Map<String, List<MetricSample>> toMetricListCopy(Map<String, Deque<MetricSample>> source) {
+        Map<String, List<MetricSample>> copy = new ConcurrentHashMap<>();
+        source.forEach((node, deque) -> copy.put(node, new ArrayList<>(deque)));
+        return copy;
+    }
+
+    private Map<String, List<AnomalyEvent>> toAnomalyListCopy(Map<String, Deque<AnomalyEvent>> source) {
+        Map<String, List<AnomalyEvent>> copy = new ConcurrentHashMap<>();
+        source.forEach((node, deque) -> copy.put(node, new ArrayList<>(deque)));
+        return copy;
+    }
+
+    private record Snapshot(Map<String, List<MetricSample>> rawSamples,
+                            Map<String, List<AnomalyEvent>> rawAnomalies,
+                            Map<String, Long> latestBlockNumber,
+                            Map<String, Long> latestHttpBlockNumber) {
     }
 
     private Instant truncateToHour(Instant timestamp) {

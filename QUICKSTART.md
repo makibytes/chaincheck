@@ -1,6 +1,6 @@
 # Quick Start Guide
 
-## ChainCheck 1.0.0
+## ChainCheck
 
 This guide will help you get ChainCheck up and running in minutes.
 
@@ -20,12 +20,12 @@ java -version
 
 ### Option 1: Run Pre-built JAR (Recommended)
 
-1. Download `chaincheck-1.0.0.jar` from the releases page
+1. Download `chaincheck-*.jar` from the releases page
 2. Create an `application.yml` configuration file (see below)
 3. Run the application:
 
 ```bash
-java -jar chaincheck-1.0.0.jar
+java -jar chaincheck-*.jar
 ```
 
 ### Option 2: Build from Source
@@ -39,7 +39,7 @@ cd chaincheck
 ./mvnw clean package
 
 # Run the application
-java -jar target/chaincheck-1.0.0.jar
+java -jar target/chaincheck-*.jar
 ```
 
 ## Configuration
@@ -82,32 +82,32 @@ rpc:
 ### Standard Mode
 
 ```bash
-java -jar chaincheck-1.0.0.jar
+java -jar chaincheck-*.jar
 ```
 
 ### Custom Port
 
 ```bash
-java -jar chaincheck-1.0.0.jar --server.port=9090
+java -jar chaincheck-*.jar --server.port=9090
 ```
 
 ### Custom Configuration File
 
 ```bash
-java -jar chaincheck-1.0.0.jar --spring.config.location=file:./my-config.yml
+java -jar chaincheck-*.jar --spring.config.location=file:./my-config.yml
 ```
 
 ### With Increased Memory
 
 ```bash
-java -Xmx1g -jar chaincheck-1.0.0.jar
+java -Xmx1g -jar chaincheck-*.jar
 ```
 
 ## Accessing the Dashboard
 
 Once started, open your browser and navigate to:
 
-```
+```text
 http://localhost:8080
 ```
 
@@ -120,7 +120,7 @@ Create a `Dockerfile`:
 ```dockerfile
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
-COPY chaincheck-1.0.0.jar app.jar
+COPY chaincheck-*.jar app.jar
 COPY application.yml application.yml
 EXPOSE 8080
 ENTRYPOINT ["java", "-jar", "app.jar"]
@@ -190,11 +190,13 @@ Use the dropdown in the dashboard to switch between nodes.
 ### Application won't start
 
 Check if port 8080 is already in use:
+
 ```bash
 lsof -i :8080
 ```
 
 Use a different port if needed:
+
 ```bash
 java -jar chaincheck-1.0.0.jar --server.port=9090
 ```
@@ -202,19 +204,21 @@ java -jar chaincheck-1.0.0.jar --server.port=9090
 ### No data appearing in dashboard
 
 1. Check your RPC endpoint is accessible:
+
 ```bash
 curl -X POST https://your-rpc-endpoint \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}'
 ```
 
-2. Check application logs for connection errors
+1. Check application logs for connection errors
 
-3. Verify your configuration file is loaded correctly
+1. Verify your configuration file is loaded correctly
 
 ### High memory usage
 
 Adjust the retention period or reduce polling frequency:
+
 ```yaml
 rpc:
   nodes:

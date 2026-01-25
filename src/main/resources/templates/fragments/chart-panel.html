@@ -1,4 +1,10 @@
 <section class="panel" th:fragment="chartPanel">
-    <h2>Network Latency &amp; Block Propagation</h2>
+    <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+        <h2 style="margin: 0;">Network Latency &amp; Block Propagation</h2>
+        <label style="display: flex; align-items: center; gap: 6px; font-size: 0.85rem;" th:if="${!view.referenceNode}">
+            <input type="checkbox" id="toggleReferenceLines" />
+            <span>Reference Node</span>
+        </label>
+    </div>
     <canvas id="latencyChart" height="120"></canvas>
 </section>
