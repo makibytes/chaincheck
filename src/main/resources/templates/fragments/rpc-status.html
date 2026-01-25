@@ -1,5 +1,8 @@
 <section class="panel" th:fragment="rpcStatus">
-    <h2>RPC Status</h2>
+    <div style="display: flex; align-items: center; gap: 12px;">
+        <h2 style="margin: 0;">RPC Status</h2>
+        <span th:if="${view.referenceNode}" style="background-color: #808080; color: #ffffff; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 0.75rem;">REFERENCE</span>
+    </div>
     <div class="status-grid">
         <div class="status-item">
             <span class="status-light"
@@ -15,6 +18,7 @@
             <span class="label">Latest Block</span>
             <span th:text="${view.latestBlockNumber != null ? view.latestBlockNumber : '-'}">-</span>
         </div>
+
     </div>
     <div class="rpc-columns">
         <div class="rpc-column">

@@ -43,6 +43,7 @@ public class NodeRegistry {
         Map<String, HttpConnectionTracker> httpTrackerMap = new HashMap<>();
         Set<String> usedKeys = new HashSet<>();
         int index = 1;
+        ChainCheckProperties.Defaults defaults = properties.getDefaults();
         for (ChainCheckProperties.RpcNodeProperties node : properties.getNodes()) {
             String baseKey = node.getName() != null && !node.getName().isBlank()
                     ? node.getName().trim().toLowerCase().replaceAll("[^a-z0-9]+", "-")
@@ -53,6 +54,12 @@ public class NodeRegistry {
                 key = baseKey + "-" + suffix++;
             }
             usedKeys.add(key);
+                long connectTimeoutMs = node.getConnectTimeoutMs() > 0 ? node.getConnectTimeoutMs() : defaults.getConnectTimeoutMs();
+                long readTimeoutMs = node.getReadTimeoutMs() > 0 ? node.getReadTimeoutMs() : defaults.getReadTimeoutMs();
+                int maxRetries = node.getMaxRetries() >= 0 ? node.getMaxRetries() : defaults.getMaxRetries();
+                long retryBackoffMs = node.getRetryBackoffMs() > 0 ? node.getRetryBackoffMs() : defaults.getRetryBackoffMs();
+                Map<String, String> headers = new HashMap<>(defaults.getHeaders());
+                headers.putAll(node.getHeaders());
             NodeDefinition definition = new NodeDefinition(
                     key,
                     node.getName() == null || node.getName().isBlank() ? "Node " + index : node.getName(),
@@ -60,7 +67,12 @@ public class NodeRegistry {
                     node.getWs(),
                     node.getPollIntervalMs(),
                     node.getAnomalyDelayMs(),
-                    node.isSafeBlocksEnabled());
+                    node.isSafeBlocksEnabled(),
+                    connectTimeoutMs,
+                    readTimeoutMs,
+                    maxRetries,
+                    retryBackoffMs,
+                    Map.copyOf(headers));
             temp.add(definition);
             byKey.put(key, definition);
             if (node.getWs() != null && !node.getWs().isBlank()) {
@@ -103,6 +115,11 @@ public class NodeRegistry {
                                  String ws,
                                  long pollIntervalMs,
                                  long anomalyDelayMs,
-                                 boolean safeBlocksEnabled) {
+                                 boolean safeBlocksEnabled,
+                                 long connectTimeoutMs,
+                                 long readTimeoutMs,
+                                 int maxRetries,
+                                 long retryBackoffMs,
+                                 Map<String, String> headers) {
     }
 }

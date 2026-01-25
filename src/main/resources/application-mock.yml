@@ -1,0 +1,20 @@
+spring:
+  application:
+    name: ChainCheck (Mock)
+  task:
+    scheduling:
+      enabled: false
+
+server:
+  port: 8080
+
+rpc:
+  title: "Mock RPC"
+  title-color: "#777777"
+  nodes:
+    - name: Mock Node
+      http: "http://mock.local"
+      ws: "ws://mock.local"
+      poll-interval-ms: 60000
+      anomaly-delay-ms: 2000
+      safe-blocks-enabled: false

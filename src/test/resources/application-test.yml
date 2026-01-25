@@ -1,0 +1,17 @@
+spring:
+  application:
+    name: ChainCheck (Tests)
+  task:
+    scheduling:
+      enabled: false
+
+rpc:
+  title: "Mock RPC"
+  title-color: "#777777"
+  nodes:
+    - name: Mock Node
+      http: ""
+      ws: ""
+      poll-interval-ms: 60000
+      anomaly-delay-ms: 2000
+      safe-blocks-enabled: false

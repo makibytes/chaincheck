@@ -30,6 +30,7 @@ import de.makibytes.chaincheck.model.AnomalyEvent;
 import de.makibytes.chaincheck.model.TimeRange;
 import de.makibytes.chaincheck.monitor.NodeRegistry;
 import de.makibytes.chaincheck.monitor.NodeRegistry.NodeDefinition;
+import de.makibytes.chaincheck.monitor.RpcMonitorService;
 
 @Controller
 public class DashboardController {
@@ -37,11 +38,13 @@ public class DashboardController {
     private final DashboardService dashboardService;
     private final NodeRegistry nodeRegistry;
     private final ChainCheckProperties properties;
+    private final RpcMonitorService rpcMonitorService;
 
-    public DashboardController(DashboardService dashboardService, NodeRegistry nodeRegistry, ChainCheckProperties properties) {
+    public DashboardController(DashboardService dashboardService, NodeRegistry nodeRegistry, ChainCheckProperties properties, RpcMonitorService rpcMonitorService) {
         this.dashboardService = dashboardService;
         this.nodeRegistry = nodeRegistry;
         this.properties = properties;
+        this.rpcMonitorService = rpcMonitorService;
     }
 
     @GetMapping({"/", "/dashboard"})
@@ -66,6 +69,7 @@ public class DashboardController {
         model.addAttribute("nodeName", selectedNode == null ? "Node" : selectedNode.name());
         model.addAttribute("nodeKey", selectedKey);
         model.addAttribute("nodes", nodeRegistry.getNodes());
+        model.addAttribute("referenceNodeKey", rpcMonitorService.getReferenceNodeKey());
         model.addAttribute("range", range);
         model.addAttribute("ranges", TimeRange.values());
         model.addAttribute("view", view);

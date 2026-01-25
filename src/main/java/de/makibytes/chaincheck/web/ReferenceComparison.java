@@ -15,4 +15,16 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-package de.makibytes.chaincheck;
+package de.makibytes.chaincheck.web;
+
+public class ReferenceComparison {
+    private final boolean isCurrentNodeReference;
+
+    public ReferenceComparison(boolean isCurrentNodeReference) {
+        this.isCurrentNodeReference = isCurrentNodeReference;
+    }
+
+    public boolean isCurrentNodeReference() {
+        return isCurrentNodeReference;
+    }
+}

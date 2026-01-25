@@ -15,8 +15,14 @@
 - **Metric Aggregation**: Efficiently stores raw samples (2 hours) and aggregated metrics (30 days) for long-term analysis
 - **Responsive Dashboard**: Modern web interface built with Thymeleaf and Chart.js
 - **Multi-Node Support**: Monitor multiple RPC endpoints and easily switch between them
+- **Reference Consensus**: Automatically selects a reference head via node majority; when many nodes stall, it trusts the majority of nodes still emitting `newHeads`
+- **Pluggable Storage**: In-memory by default with optional on-disk snapshotting for persistence across restarts
 
 ## Getting Started
+
+### Supported Chains
+
+ChainCheck targets EVM chains that expose `eth_blockNumber`, `eth_getBlockByNumber`, and `eth_subscribe` (newHeads). Finality tracking (safe/finalized) is accurate on chains that surface those tags (e.g., Ethereum mainnet, Sepolia, Holesky, recent Geth/Nethermind). On networks without safe/finalized tags, the dashboard still works but finalized/safe delay charts remain empty.
 
 ### Prerequisites
 
@@ -52,13 +58,26 @@ server:
 rpc:
   title: "Polygon Mainnet"  # Optional: Dashboard title
   title-color: "#8247e5"     # Optional: Title color
+  defaults:
+    connect-timeout-ms: 1500
+    read-timeout-ms: 2500
+    max-retries: 2
+    retry-backoff-ms: 150
+  persistence:
+    enabled: false
+    file: ./data/chaincheck-snapshot.json
+    flush-interval-seconds: 30
   nodes:
     - name: polygon-rpc.com
       http: https://polygon-rpc.com
-      ws: wss://polygon-rpc.com  # Optional: WebSocket endpoint
-      poll-interval-ms: 1000     # HTTP polling interval (milliseconds)
-      anomaly-delay-ms: 2000     # Threshold for delay anomalies (milliseconds)
-      safe-blocks-enabled: false # Only enable when available (e.g. on Ethereum)
+      ws: wss://polygon-rpc.com            # Optional: WebSocket endpoint
+      poll-interval-ms: 1000               # HTTP polling interval (milliseconds)
+      anomaly-delay-ms: 2000               # Threshold for delay anomalies (milliseconds)
+      safe-blocks-enabled: false           # Only enable when available (e.g. on Ethereum)
+      headers:                             # Optional: custom headers / auth
+        Authorization: "Bearer <token>"
+      read-timeout-ms: 2500                # Optional per-node override
+      max-retries: 2
 ```
 
 ### Configuration Options
@@ -68,6 +87,11 @@ rpc:
 - **safe-blocks-enabled**: When true, HTTP queries alternate between safe and finalized blocks
 - **http**: HTTP RPC endpoint URL (required)
 - **ws**: WebSocket RPC endpoint URL (optional, enables real-time head block tracking)
+- **headers**: Map of custom headers (useful for API keys and auth)
+- **connect-timeout-ms / read-timeout-ms**: HTTP connect and read timeouts
+- **max-retries / retry-backoff-ms**: Retry attempts and base backoff for transient HTTP failures
+- **Reference selection**: Reference head is chosen automatically by majority; when many nodes are stale, only nodes still emitting newHeads are trusted and their majority is used
+- **persistence.enabled/file/flush-interval-seconds**: Enable simple on-disk snapshots of recent data
 
 ## Development
 
@@ -75,11 +99,11 @@ We welcome contributions!
 
 ### Contributing
 
-1.  Fork the repository.
-2.  Create a feature branch (`git checkout -b feature/amazing-feature`).
-3.  Commit your changes (`git commit -m 'Add some amazing feature'`).
-4.  Push to the branch (`git push origin feature/amazing-feature`).
-5.  Open a Pull Request.
+1. Fork the repository.
+2. Create a feature branch (`git checkout -b feature/amazing-feature`).
+3. Commit your changes (`git commit -m 'Add some amazing feature'`).
+4. Push to the branch (`git push origin feature/amazing-feature`).
+5. Open a Pull Request.
 
 ### Project Structure
 

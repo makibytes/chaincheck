@@ -9,7 +9,7 @@
             Node:
             <select id="nodeSelect">
                 <option th:each="node : ${nodes}" th:value="${node.key}" th:selected="${node.key} == ${nodeKey}"
-                    th:text="${node.name}"></option>
+                    th:text="${node.name} + (${referenceNodeKey != null && referenceNodeKey == node.key} ? ' (reference)' : '')"></option>
             </select>
         </label>
         <div class="range-selector">

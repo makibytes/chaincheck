@@ -98,6 +98,34 @@ body {
         border-color: #2b4cff;
     }
 
+    .modal-backdrop {
+        background: rgba(0, 0, 0, 0.3);
+    }
+
+    .modal-card {
+        background: #ffffff;
+        border: 1px solid #d0d0d0;
+        color: #1a1a1a;
+    }
+
+    .modal-card h2 {
+        color: #1a1a1a;
+    }
+
+    .modal-content {
+        color: #1a1a1a;
+    }
+
+    .modal-content .label {
+        color: #666666;
+    }
+
+    .modal-content pre {
+        background: #f5f5f5;
+        color: #1a1a1a;
+        border: 1px solid #e0e0e0;
+    }
+
     .title {
         color: #1a1a1a;
     }
@@ -585,6 +613,34 @@ pre {
     .detail-block,
     .modal-content {
         color: #1a1a1a;
+    }
+
+    .modal-backdrop {
+        background: rgba(0, 0, 0, 0.3);
+    }
+
+    .modal-card {
+        background: #ffffff;
+        border: 1px solid #d0d0d0;
+        color: #1a1a1a;
+    }
+
+    .modal-card h2 {
+        color: #1a1a1a;
+    }
+
+    .modal-content {
+        color: #1a1a1a;
+    }
+
+    .modal-content .label {
+        color: #666666;
+    }
+
+    .modal-content pre {
+        background: #f5f5f5;
+        color: #1a1a1a;
+        border: 1px solid #e0e0e0;
     }
 
     .range-selector {

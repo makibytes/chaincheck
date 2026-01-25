@@ -21,5 +21,6 @@ public enum AnomalyType {
     ERROR,
     DELAY,
     BLOCK_GAP,
-    REORG
+    REORG,
+    WRONG_HEAD
 }
