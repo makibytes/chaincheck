@@ -38,8 +38,8 @@ class InMemoryMetricsStoreAggregationTest {
     private static final String NODE_KEY = "node-1";
 
     @Test
-    @DisplayName("aggregateOldData: raw older than 2h becomes hourly")
-    void aggregatesRawToHourlyWithinThreeDays() {
+    @DisplayName("aggregateOldData: raw older than 2h becomes minutely")
+    void aggregatesRawToMinutelyWithinThreeDays() {
         InMemoryMetricsStore store = new InMemoryMetricsStore();
         Instant now = Instant.now();
         Instant sampleTime = now.minus(Duration.ofDays(2)).minus(Duration.ofHours(1));
@@ -50,13 +50,13 @@ class InMemoryMetricsStoreAggregationTest {
         assertTrue(store.getRawSamplesSince(NODE_KEY, now.minus(Duration.ofDays(10))).isEmpty(),
                 "Raw samples should be pruned after aggregation");
         List<SampleAggregate> aggregates = store.getAggregatedSamplesSince(NODE_KEY, now.minus(Duration.ofDays(10)));
-        assertEquals(1, aggregates.size(), "Expected one hourly aggregate within 3 days");
+        assertEquals(1, aggregates.size(), "Expected one minutely aggregate within 3 days");
         assertEquals(1, aggregates.get(0).getTotalCount());
     }
 
     @Test
-    @DisplayName("aggregateOldData: hourly older than 3 days becomes daily")
-    void aggregatesHourlyToDailyAfterThreeDays() {
+    @DisplayName("aggregateOldData: minutely older than 3 days becomes hourly")
+    void aggregatesMinutelyToHourlyAfterThreeDays() {
         InMemoryMetricsStore store = new InMemoryMetricsStore();
         Instant now = Instant.now();
         Instant sampleTime = now.minus(Duration.ofDays(5)).minus(Duration.ofHours(1));
@@ -66,7 +66,7 @@ class InMemoryMetricsStoreAggregationTest {
 
         assertTrue(store.getRawSamplesSince(NODE_KEY, now.minus(Duration.ofDays(10))).isEmpty());
         List<SampleAggregate> aggregates = store.getAggregatedSamplesSince(NODE_KEY, now.minus(Duration.ofDays(10)));
-        assertEquals(1, aggregates.size(), "Expected daily aggregate after 3 days");
+        assertEquals(1, aggregates.size(), "Expected hourly aggregate after 3 days");
         assertEquals(1, aggregates.get(0).getTotalCount());
     }
 

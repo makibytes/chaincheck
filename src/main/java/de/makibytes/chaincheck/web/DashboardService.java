@@ -479,14 +479,16 @@ public class DashboardService {
                     groupCount++;
                 } else {
                     // Different type or source or previous closed - finish current group and start new one
-                    anomalyRows.add(createAnomalyRow(firstInGroup, lastInGroup, groupCount, anomalyFormatter));
+                    boolean isFirstRow = anomalyRows.isEmpty();
+                    anomalyRows.add(createAnomalyRow(firstInGroup, lastInGroup, groupCount, anomalyFormatter, isFirstRow));
                     firstInGroup = current;
                     lastInGroup = current;
                     groupCount = 1;
                 }
             }
             // Add the last group
-            anomalyRows.add(createAnomalyRow(firstInGroup, lastInGroup, groupCount, anomalyFormatter));
+            boolean isFirstRow = anomalyRows.isEmpty();
+            anomalyRows.add(createAnomalyRow(firstInGroup, lastInGroup, groupCount, anomalyFormatter, isFirstRow));
         }
 
         int totalAnomalies = anomalyRows.size();
@@ -907,7 +909,7 @@ public class DashboardService {
         return new DelayChartData(baseTimestamps, headDelays, safeDelays, finalizedDelays);
     }
 
-    private AnomalyRow createAnomalyRow(AnomalyEvent firstEvent, AnomalyEvent lastEvent, int count, DateTimeFormatter formatter) {
+    private AnomalyRow createAnomalyRow(AnomalyEvent firstEvent, AnomalyEvent lastEvent, int count, DateTimeFormatter formatter, boolean isFirstRow) {
         if (count == 1) {
             // Single anomaly - use standard format
             return new AnomalyRow(
@@ -918,9 +920,10 @@ public class DashboardService {
                     firstEvent.getMessage());
         } else {
             // Multiple anomalies - show time range and use newest ID
-                String endLabel = lastEvent.isClosed()
-                    ? formatter.format(firstEvent.getTimestamp())
-                    : "(ongoing)";
+            // Only show "(ongoing)" for the first row (latest anomaly) if not closed
+                String endLabel = (isFirstRow && !lastEvent.isClosed())
+                    ? "(ongoing)"
+                    : formatter.format(firstEvent.getTimestamp());
                 String timeRange = formatter.format(lastEvent.getTimestamp()) + " ↔ " + endLabel;
             String message = lastEvent.getMessage(); // Use the latest message
             return new AnomalyRow(
