@@ -34,11 +34,21 @@ public class DashboardView {
     private final List<Long> chartTimestamps;
     private final List<String> chartLabels;
     private final List<Long> chartLatencies;
+    private final List<Long> chartLatencyMins;
+    private final List<Long> chartLatencyMaxs;
     private final List<Double> chartErrorRates;
     private final List<Double> chartWsErrorRates;
+    private final List<Boolean> chartHttpErrors;
+    private final List<Boolean> chartWsErrors;
     private final List<Long> chartHeadDelays;
+    private final List<Long> chartHeadDelayMins;
+    private final List<Long> chartHeadDelayMaxs;
     private final List<Long> chartSafeDelays;
+    private final List<Long> chartSafeDelayMins;
+    private final List<Long> chartSafeDelayMaxs;
     private final List<Long> chartFinalizedDelays;
+    private final List<Long> chartFinalizedDelayMins;
+    private final List<Long> chartFinalizedDelayMaxs;
     private final List<Long> chartReferenceHeadDelays;
     private final List<Long> chartReferenceSafeDelays;
     private final List<Long> chartReferenceFinalizedDelays;
@@ -68,11 +78,21 @@ public class DashboardView {
                          List<Long> chartTimestamps,
                          List<String> chartLabels,
                          List<Long> chartLatencies,
+                         List<Long> chartLatencyMins,
+                         List<Long> chartLatencyMaxs,
                          List<Double> chartErrorRates,
                          List<Double> chartWsErrorRates,
+                         List<Boolean> chartHttpErrors,
+                         List<Boolean> chartWsErrors,
                          List<Long> chartHeadDelays,
+                         List<Long> chartHeadDelayMins,
+                         List<Long> chartHeadDelayMaxs,
                          List<Long> chartSafeDelays,
+                         List<Long> chartSafeDelayMins,
+                         List<Long> chartSafeDelayMaxs,
                          List<Long> chartFinalizedDelays,
+                         List<Long> chartFinalizedDelayMins,
+                         List<Long> chartFinalizedDelayMaxs,
                          List<Long> chartReferenceHeadDelays,
                          List<Long> chartReferenceSafeDelays,
                          List<Long> chartReferenceFinalizedDelays,
@@ -101,11 +121,21 @@ public class DashboardView {
         this.chartTimestamps = chartTimestamps;
         this.chartLabels = chartLabels;
         this.chartLatencies = chartLatencies;
+        this.chartLatencyMins = chartLatencyMins;
+        this.chartLatencyMaxs = chartLatencyMaxs;
         this.chartErrorRates = chartErrorRates;
         this.chartWsErrorRates = chartWsErrorRates;
+        this.chartHttpErrors = chartHttpErrors;
+        this.chartWsErrors = chartWsErrors;
         this.chartHeadDelays = chartHeadDelays;
+        this.chartHeadDelayMins = chartHeadDelayMins;
+        this.chartHeadDelayMaxs = chartHeadDelayMaxs;
         this.chartSafeDelays = chartSafeDelays;
+        this.chartSafeDelayMins = chartSafeDelayMins;
+        this.chartSafeDelayMaxs = chartSafeDelayMaxs;
         this.chartFinalizedDelays = chartFinalizedDelays;
+        this.chartFinalizedDelayMins = chartFinalizedDelayMins;
+        this.chartFinalizedDelayMaxs = chartFinalizedDelayMaxs;
         this.chartReferenceHeadDelays = chartReferenceHeadDelays;
         this.chartReferenceSafeDelays = chartReferenceSafeDelays;
         this.chartReferenceFinalizedDelays = chartReferenceFinalizedDelays;
@@ -160,6 +190,14 @@ public class DashboardView {
         return chartLatencies;
     }
 
+    public List<Long> getChartLatencyMins() {
+        return chartLatencyMins;
+    }
+
+    public List<Long> getChartLatencyMaxs() {
+        return chartLatencyMaxs;
+    }
+
     public List<Double> getChartErrorRates() {
         return chartErrorRates;
     }
@@ -168,8 +206,24 @@ public class DashboardView {
         return chartWsErrorRates;
     }
 
+    public List<Boolean> getChartHttpErrors() {
+        return chartHttpErrors;
+    }
+
+    public List<Boolean> getChartWsErrors() {
+        return chartWsErrors;
+    }
+
     public List<Long> getChartHeadDelays() {
         return chartHeadDelays;
+    }
+
+    public List<Long> getChartHeadDelayMins() {
+        return chartHeadDelayMins;
+    }
+
+    public List<Long> getChartHeadDelayMaxs() {
+        return chartHeadDelayMaxs;
     }
 
     public List<Long> getChartReferenceHeadDelays() {
@@ -180,12 +234,28 @@ public class DashboardView {
         return chartSafeDelays;
     }
 
+    public List<Long> getChartSafeDelayMins() {
+        return chartSafeDelayMins;
+    }
+
+    public List<Long> getChartSafeDelayMaxs() {
+        return chartSafeDelayMaxs;
+    }
+
     public List<Long> getChartReferenceSafeDelays() {
         return chartReferenceSafeDelays;
     }
 
     public List<Long> getChartFinalizedDelays() {
         return chartFinalizedDelays;
+    }
+
+    public List<Long> getChartFinalizedDelayMins() {
+        return chartFinalizedDelayMins;
+    }
+
+    public List<Long> getChartFinalizedDelayMaxs() {
+        return chartFinalizedDelayMaxs;
     }
 
     public List<Long> getChartReferenceFinalizedDelays() {

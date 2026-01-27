@@ -38,8 +38,8 @@ class InMemoryMetricsStoreAggregationTest {
     private static final String NODE_KEY = "node-1";
 
     @Test
-    @DisplayName("aggregateOldData: raw older than 2h becomes hourly")
-    void aggregatesRawToHourlyWithinThreeDays() {
+    @DisplayName("aggregateOldData: raw older than 2h becomes minutely")
+    void aggregatesRawToMinutelyWithinThreeDays() {
         InMemoryMetricsStore store = new InMemoryMetricsStore();
         Instant now = Instant.now();
         Instant sampleTime = now.minus(Duration.ofDays(2)).minus(Duration.ofHours(1));
@@ -50,13 +50,13 @@ class InMemoryMetricsStoreAggregationTest {
         assertTrue(store.getRawSamplesSince(NODE_KEY, now.minus(Duration.ofDays(10))).isEmpty(),
                 "Raw samples should be pruned after aggregation");
         List<SampleAggregate> aggregates = store.getAggregatedSamplesSince(NODE_KEY, now.minus(Duration.ofDays(10)));
-        assertEquals(1, aggregates.size(), "Expected one hourly aggregate within 3 days");
+        assertEquals(1, aggregates.size(), "Expected one minutely aggregate within 3 days");
         assertEquals(1, aggregates.get(0).getTotalCount());
     }
 
     @Test
-    @DisplayName("aggregateOldData: hourly older than 3 days becomes daily")
-    void aggregatesHourlyToDailyAfterThreeDays() {
+    @DisplayName("aggregateOldData: minutely older than 3 days becomes hourly")
+    void aggregatesMinutelyToHourlyAfterThreeDays() {
         InMemoryMetricsStore store = new InMemoryMetricsStore();
         Instant now = Instant.now();
         Instant sampleTime = now.minus(Duration.ofDays(5)).minus(Duration.ofHours(1));
@@ -66,7 +66,7 @@ class InMemoryMetricsStoreAggregationTest {
 
         assertTrue(store.getRawSamplesSince(NODE_KEY, now.minus(Duration.ofDays(10))).isEmpty());
         List<SampleAggregate> aggregates = store.getAggregatedSamplesSince(NODE_KEY, now.minus(Duration.ofDays(10)));
-        assertEquals(1, aggregates.size(), "Expected daily aggregate after 3 days");
+        assertEquals(1, aggregates.size(), "Expected hourly aggregate after 3 days");
         assertEquals(1, aggregates.get(0).getTotalCount());
     }
 
@@ -91,6 +91,31 @@ class InMemoryMetricsStoreAggregationTest {
         assertNull(store.getAnomaly(1L), "Old anomalies should be purged from index");
     }
 
+    @Test
+    @DisplayName("aggregateOldData: captures min/max latency and delays")
+    void aggregatesMinMaxLatencyAndDelays() {
+        InMemoryMetricsStore store = new InMemoryMetricsStore();
+        Instant now = Instant.now();
+        Instant sampleTime = now.minus(Duration.ofHours(3)).minus(Duration.ofMinutes(5));
+
+        store.addSample(NODE_KEY, sampleAt(sampleTime, 50, 100L, 200L, 300L));
+        store.addSample(NODE_KEY, sampleAt(sampleTime.plusSeconds(30), 150, 400L, 500L, 600L));
+        store.aggregateOldData();
+
+        List<SampleAggregate> aggregates = store.getAggregatedSamplesSince(NODE_KEY, now.minus(Duration.ofDays(10)));
+        assertEquals(1, aggregates.size(), "Expected one aggregate for the bucket");
+        SampleAggregate aggregate = aggregates.get(0);
+
+        assertEquals(50, aggregate.getMinLatencyMs());
+        assertEquals(150, aggregate.getMaxLatencyMs());
+        assertEquals(100L, aggregate.getMinHeadDelayMs());
+        assertEquals(400L, aggregate.getMaxHeadDelayMs());
+        assertEquals(200L, aggregate.getMinSafeDelayMs());
+        assertEquals(500L, aggregate.getMaxSafeDelayMs());
+        assertEquals(300L, aggregate.getMinFinalizedDelayMs());
+        assertEquals(600L, aggregate.getMaxFinalizedDelayMs());
+    }
+
     private MetricSample sampleAt(Instant timestamp) {
         return new MetricSample(
                 timestamp,
@@ -107,6 +132,24 @@ class InMemoryMetricsStoreAggregationTest {
                 null,
                 2000L,
                 2500L);
+    }
+
+    private MetricSample sampleAt(Instant timestamp, long latencyMs, Long headDelayMs, Long safeDelayMs, Long finalizedDelayMs) {
+        return new MetricSample(
+                timestamp,
+                MetricSource.WS,
+                true,
+                latencyMs,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                headDelayMs,
+                safeDelayMs,
+                finalizedDelayMs);
     }
 
     private AnomalyEvent anomalyAt(Instant timestamp, long id) {

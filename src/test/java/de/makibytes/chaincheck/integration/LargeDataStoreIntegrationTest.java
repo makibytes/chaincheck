@@ -108,6 +108,27 @@ class LargeDataStoreIntegrationTest {
                 "Expected at least one WS chart bucket with no samples during outage");
     }
 
+    @Test
+    @DisplayName("Chart includes min/max series and error flags")
+    void chartMinMaxAndErrorFlagsAreAvailable() {
+        String nodeKey = requireNodeKey();
+
+        DashboardView view = dashboardService.getDashboard(nodeKey, TimeRange.HOURS_2);
+
+        assertEquals(view.getChartLatencies().size(), view.getChartLatencyMins().size());
+        assertEquals(view.getChartLatencies().size(), view.getChartLatencyMaxs().size());
+        assertEquals(view.getChartLatencies().size(), view.getChartHttpErrors().size());
+        assertEquals(view.getChartLatencies().size(), view.getChartWsErrors().size());
+
+        for (int i = 0; i < view.getChartLatencies().size(); i++) {
+            Long min = view.getChartLatencyMins().get(i);
+            Long max = view.getChartLatencyMaxs().get(i);
+            if (min != null && max != null) {
+                assertTrue(min <= max, "Expected latency min to be <= max");
+            }
+        }
+    }
+
     private String requireNodeKey() {
         String nodeKey = nodeRegistry.getDefaultNodeKey();
         assertNotNull(nodeKey, "Default node key should be available in test profile");

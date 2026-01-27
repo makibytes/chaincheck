@@ -58,7 +58,7 @@ public class InMemoryMetricsStore {
     private final Map<String, Long> latestHttpBlockNumber = new ConcurrentHashMap<>();
     private final Map<String, Long> latestBlockNumber = new ConcurrentHashMap<>();
     private final Duration rawRetention = Duration.ofHours(2);
-    private final Duration hourlyRetention = Duration.ofDays(3);
+    private final Duration minutelyRetention = Duration.ofDays(3);
     private final Duration aggregateRetention = TimeRange.MONTH_1.getDuration();
     private final boolean persistenceEnabled;
     private final Path persistenceFile;
@@ -212,7 +212,7 @@ public class InMemoryMetricsStore {
     public void aggregateOldData() {
         Instant now = Instant.now();
         Instant rawCutoff = now.minus(rawRetention);
-        Instant hourlyCutoff = now.minus(hourlyRetention);
+        Instant minutelyCutoff = now.minus(minutelyRetention);
         Instant aggregateCutoff = now.minus(aggregateRetention);
 
         for (String nodeKey : rawSamplesByNode.keySet()) {
@@ -224,7 +224,7 @@ public class InMemoryMetricsStore {
                         break;
                     }
                     samples.pollFirst();
-                    Instant bucketStart = truncateToHour(sample.getTimestamp());
+                    Instant bucketStart = truncateToMinute(sample.getTimestamp());
                     SampleAggregate aggregate = sampleAggregatesByNode
                             .computeIfAbsent(nodeKey, key -> new ConcurrentSkipListMap<>())
                             .computeIfAbsent(bucketStart, SampleAggregate::new);
@@ -241,7 +241,7 @@ public class InMemoryMetricsStore {
                     }
                     anomalies.pollFirst();
                     anomalyById.remove(event.getId());
-                    Instant bucketStart = truncateToHour(event.getTimestamp());
+                    Instant bucketStart = truncateToMinute(event.getTimestamp());
                     AnomalyAggregate aggregate = anomalyAggregatesByNode
                             .computeIfAbsent(nodeKey, key -> new ConcurrentSkipListMap<>())
                             .computeIfAbsent(bucketStart, AnomalyAggregate::new);
@@ -251,42 +251,42 @@ public class InMemoryMetricsStore {
 
             NavigableMap<Instant, SampleAggregate> sampleAggregates = sampleAggregatesByNode.get(nodeKey);
             if (sampleAggregates != null) {
-                NavigableMap<Instant, SampleAggregate> expiredHourly = sampleAggregates.headMap(hourlyCutoff, false);
-                if (!expiredHourly.isEmpty()) {
-                    NavigableMap<Instant, SampleAggregate> dailyAggregates = sampleDailyAggregatesByNode
+                NavigableMap<Instant, SampleAggregate> expiredMinutely = sampleAggregates.headMap(minutelyCutoff, false);
+                if (!expiredMinutely.isEmpty()) {
+                    NavigableMap<Instant, SampleAggregate> hourlyAggregates = sampleDailyAggregatesByNode
                             .computeIfAbsent(nodeKey, key -> new ConcurrentSkipListMap<>());
-                    for (SampleAggregate aggregate : new ArrayList<>(expiredHourly.values())) {
-                        Instant dayStart = truncateToDay(aggregate.getBucketStart());
-                        dailyAggregates
-                                .computeIfAbsent(dayStart, SampleAggregate::new)
+                    for (SampleAggregate aggregate : new ArrayList<>(expiredMinutely.values())) {
+                        Instant hourStart = truncateToHour(aggregate.getBucketStart());
+                        hourlyAggregates
+                                .computeIfAbsent(hourStart, SampleAggregate::new)
                                 .addAggregate(aggregate);
                     }
-                    expiredHourly.clear();
+                    expiredMinutely.clear();
                 }
             }
             NavigableMap<Instant, AnomalyAggregate> anomalyAggregates = anomalyAggregatesByNode.get(nodeKey);
             if (anomalyAggregates != null) {
-                NavigableMap<Instant, AnomalyAggregate> expiredHourly = anomalyAggregates.headMap(hourlyCutoff, false);
-                if (!expiredHourly.isEmpty()) {
-                    NavigableMap<Instant, AnomalyAggregate> dailyAggregates = anomalyDailyAggregatesByNode
+                NavigableMap<Instant, AnomalyAggregate> expiredMinutely = anomalyAggregates.headMap(minutelyCutoff, false);
+                if (!expiredMinutely.isEmpty()) {
+                    NavigableMap<Instant, AnomalyAggregate> hourlyAggregates = anomalyDailyAggregatesByNode
                             .computeIfAbsent(nodeKey, key -> new ConcurrentSkipListMap<>());
-                    for (AnomalyAggregate aggregate : new ArrayList<>(expiredHourly.values())) {
-                        Instant dayStart = truncateToDay(aggregate.getBucketStart());
-                        dailyAggregates
-                                .computeIfAbsent(dayStart, AnomalyAggregate::new)
+                    for (AnomalyAggregate aggregate : new ArrayList<>(expiredMinutely.values())) {
+                        Instant hourStart = truncateToHour(aggregate.getBucketStart());
+                        hourlyAggregates
+                                .computeIfAbsent(hourStart, AnomalyAggregate::new)
                                 .addAggregate(aggregate);
                     }
-                    expiredHourly.clear();
+                    expiredMinutely.clear();
                 }
             }
 
-            NavigableMap<Instant, SampleAggregate> dailySampleAggregates = sampleDailyAggregatesByNode.get(nodeKey);
-            if (dailySampleAggregates != null) {
-                dailySampleAggregates.headMap(aggregateCutoff, false).clear();
+            NavigableMap<Instant, SampleAggregate> hourlySampleAggregates = sampleDailyAggregatesByNode.get(nodeKey);
+            if (hourlySampleAggregates != null) {
+                hourlySampleAggregates.headMap(aggregateCutoff, false).clear();
             }
-            NavigableMap<Instant, AnomalyAggregate> dailyAnomalyAggregates = anomalyDailyAggregatesByNode.get(nodeKey);
-            if (dailyAnomalyAggregates != null) {
-                dailyAnomalyAggregates.headMap(aggregateCutoff, false).clear();
+            NavigableMap<Instant, AnomalyAggregate> hourlyAnomalyAggregates = anomalyDailyAggregatesByNode.get(nodeKey);
+            if (hourlyAnomalyAggregates != null) {
+                hourlyAnomalyAggregates.headMap(aggregateCutoff, false).clear();
             }
         }
     }
@@ -359,15 +359,15 @@ public class InMemoryMetricsStore {
                             Map<String, Long> latestHttpBlockNumber) {
     }
 
-    private Instant truncateToHour(Instant timestamp) {
+    private Instant truncateToMinute(Instant timestamp) {
         long epochSeconds = timestamp.getEpochSecond();
-        long truncatedSeconds = (epochSeconds / 3600) * 3600;
+        long truncatedSeconds = (epochSeconds / 60) * 60;
         return Instant.ofEpochSecond(truncatedSeconds);
     }
 
-    private Instant truncateToDay(Instant timestamp) {
+    private Instant truncateToHour(Instant timestamp) {
         long epochSeconds = timestamp.getEpochSecond();
-        long truncatedSeconds = (epochSeconds / 86400) * 86400;
+        long truncatedSeconds = (epochSeconds / 3600) * 3600;
         return Instant.ofEpochSecond(truncatedSeconds);
     }
 }

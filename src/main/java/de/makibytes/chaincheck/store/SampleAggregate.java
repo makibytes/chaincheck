@@ -31,6 +31,7 @@ public class SampleAggregate {
     private long errorCount;
     private long latencySumMs;
     private long latencyCount;
+    private long minLatencyMs = Long.MAX_VALUE;
     private long maxLatencyMs;
     private long httpCount;
     private long wsCount;
@@ -41,12 +42,15 @@ public class SampleAggregate {
     private long staleBlockCount;
     private long headDelaySumMs;
     private long headDelayCount;
+    private long minHeadDelayMs = Long.MAX_VALUE;
     private long maxHeadDelayMs;
     private long safeDelaySumMs;
     private long safeDelayCount;
+    private long minSafeDelayMs = Long.MAX_VALUE;
     private long maxSafeDelayMs;
     private long finalizedDelaySumMs;
     private long finalizedDelayCount;
+    private long minFinalizedDelayMs = Long.MAX_VALUE;
     private long maxFinalizedDelayMs;
 
     public SampleAggregate(Instant bucketStart) {
@@ -63,6 +67,9 @@ public class SampleAggregate {
         if (sample.getLatencyMs() >= 0) {
             latencySumMs += sample.getLatencyMs();
             latencyCount++;
+            if (sample.getLatencyMs() < minLatencyMs) {
+                minLatencyMs = sample.getLatencyMs();
+            }
             if (sample.getLatencyMs() > maxLatencyMs) {
                 maxLatencyMs = sample.getLatencyMs();
             }
@@ -91,6 +98,9 @@ public class SampleAggregate {
         if (sample.getSource() == MetricSource.WS && sample.getHeadDelayMs() != null) {
             headDelaySumMs += sample.getHeadDelayMs();
             headDelayCount++;
+            if (sample.getHeadDelayMs() < minHeadDelayMs) {
+                minHeadDelayMs = sample.getHeadDelayMs();
+            }
             if (sample.getHeadDelayMs() > maxHeadDelayMs) {
                 maxHeadDelayMs = sample.getHeadDelayMs();
             }
@@ -98,6 +108,9 @@ public class SampleAggregate {
         if (sample.getSafeDelayMs() != null) {
             safeDelaySumMs += sample.getSafeDelayMs();
             safeDelayCount++;
+            if (sample.getSafeDelayMs() < minSafeDelayMs) {
+                minSafeDelayMs = sample.getSafeDelayMs();
+            }
             if (sample.getSafeDelayMs() > maxSafeDelayMs) {
                 maxSafeDelayMs = sample.getSafeDelayMs();
             }
@@ -105,6 +118,9 @@ public class SampleAggregate {
         if (sample.getFinalizedDelayMs() != null) {
             finalizedDelaySumMs += sample.getFinalizedDelayMs();
             finalizedDelayCount++;
+            if (sample.getFinalizedDelayMs() < minFinalizedDelayMs) {
+                minFinalizedDelayMs = sample.getFinalizedDelayMs();
+            }
             if (sample.getFinalizedDelayMs() > maxFinalizedDelayMs) {
                 maxFinalizedDelayMs = sample.getFinalizedDelayMs();
             }
@@ -117,6 +133,9 @@ public class SampleAggregate {
         errorCount += aggregate.errorCount;
         latencySumMs += aggregate.latencySumMs;
         latencyCount += aggregate.latencyCount;
+        if (aggregate.latencyCount > 0) {
+            minLatencyMs = Math.min(minLatencyMs, aggregate.minLatencyMs);
+        }
         maxLatencyMs = Math.max(maxLatencyMs, aggregate.maxLatencyMs);
         httpCount += aggregate.httpCount;
         wsCount += aggregate.wsCount;
@@ -127,12 +146,21 @@ public class SampleAggregate {
         staleBlockCount += aggregate.staleBlockCount;
         headDelaySumMs += aggregate.headDelaySumMs;
         headDelayCount += aggregate.headDelayCount;
+        if (aggregate.headDelayCount > 0) {
+            minHeadDelayMs = Math.min(minHeadDelayMs, aggregate.minHeadDelayMs);
+        }
         maxHeadDelayMs = Math.max(maxHeadDelayMs, aggregate.maxHeadDelayMs);
         safeDelaySumMs += aggregate.safeDelaySumMs;
         safeDelayCount += aggregate.safeDelayCount;
+        if (aggregate.safeDelayCount > 0) {
+            minSafeDelayMs = Math.min(minSafeDelayMs, aggregate.minSafeDelayMs);
+        }
         maxSafeDelayMs = Math.max(maxSafeDelayMs, aggregate.maxSafeDelayMs);
         finalizedDelaySumMs += aggregate.finalizedDelaySumMs;
         finalizedDelayCount += aggregate.finalizedDelayCount;
+        if (aggregate.finalizedDelayCount > 0) {
+            minFinalizedDelayMs = Math.min(minFinalizedDelayMs, aggregate.minFinalizedDelayMs);
+        }
         maxFinalizedDelayMs = Math.max(maxFinalizedDelayMs, aggregate.maxFinalizedDelayMs);
     }
 
@@ -158,6 +186,10 @@ public class SampleAggregate {
 
     public long getLatencyCount() {
         return latencyCount;
+    }
+
+    public long getMinLatencyMs() {
+        return minLatencyMs;
     }
 
     public long getMaxLatencyMs() {
@@ -200,6 +232,10 @@ public class SampleAggregate {
         return headDelayCount;
     }
 
+    public long getMinHeadDelayMs() {
+        return minHeadDelayMs;
+    }
+
     public long getMaxHeadDelayMs() {
         return maxHeadDelayMs;
     }
@@ -212,6 +248,10 @@ public class SampleAggregate {
         return safeDelayCount;
     }
 
+    public long getMinSafeDelayMs() {
+        return minSafeDelayMs;
+    }
+
     public long getMaxSafeDelayMs() {
         return maxSafeDelayMs;
     }
@@ -222,6 +262,10 @@ public class SampleAggregate {
 
     public long getFinalizedDelayCount() {
         return finalizedDelayCount;
+    }
+
+    public long getMinFinalizedDelayMs() {
+        return minFinalizedDelayMs;
     }
 
     public long getMaxFinalizedDelayMs() {

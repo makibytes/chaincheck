@@ -47,11 +47,12 @@ public class MockMetricsStoreSeeded extends InMemoryMetricsStore {
     public MockMetricsStoreSeeded(de.makibytes.chaincheck.config.ChainCheckProperties properties) {
         super(properties);
         seedLargeDataset();
+        super.aggregateOldData();
     }
 
     @Override
     public void aggregateOldData() {
-        // No-op for mock profile: keep raw samples/anomalies for charting.
+        super.aggregateOldData();
     }
 
     private void seedLargeDataset() {
