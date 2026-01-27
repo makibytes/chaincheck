@@ -19,6 +19,7 @@ package de.makibytes.chaincheck.store;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -96,7 +97,10 @@ class InMemoryMetricsStoreAggregationTest {
     void aggregatesMinMaxLatencyAndDelays() {
         InMemoryMetricsStore store = new InMemoryMetricsStore();
         Instant now = Instant.now();
-        Instant sampleTime = now.minus(Duration.ofHours(3)).minus(Duration.ofMinutes(5));
+        Instant bucketStart = now.minus(Duration.ofHours(3))
+            .minus(Duration.ofMinutes(5))
+            .truncatedTo(ChronoUnit.MINUTES);
+        Instant sampleTime = bucketStart.plusSeconds(5);
 
         store.addSample(NODE_KEY, sampleAt(sampleTime, 50, 100L, 200L, 300L));
         store.addSample(NODE_KEY, sampleAt(sampleTime.plusSeconds(30), 150, 400L, 500L, 600L));
