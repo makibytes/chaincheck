@@ -330,7 +330,7 @@ public class RpcMonitorService {
                 return;
             }
 
-            maybeCompareToReference(node, blockNumber, checkpointBlock.blockHash());
+            maybeCompareToReference(node);
             
             // Successfully fetched all data - this counts as a success sample for HTTP
             checkAndCloseAnomaly(node, null, MetricSource.HTTP);
@@ -402,15 +402,35 @@ public class RpcMonitorService {
         }
     }
 
-    private void maybeCompareToReference(NodeDefinition node, Long blockNumber, String blockHash) {
+    private void maybeCompareToReference(NodeDefinition node) {
         ReferenceState ref = referenceState.get();
-        if (ref == null || ref.headNumber == null || blockNumber == null || blockHash == null) {
+        if (ref == null || ref.headNumber == null) {
             return;
         }
 
         NodeState state = nodeStates.get(node.key());
         if (state != null && state.lastWsError != null
                 && state.lastWsError.startsWith("WebSocket not receiving newHeads events")) {
+            return;
+        }
+
+        MetricSource source = MetricSource.HTTP;
+        Long blockNumber = null;
+        String blockHash = null;
+        if (state != null) {
+            boolean wsFresh = state.lastWsEventReceivedAt != null
+                    && Duration.between(state.lastWsEventReceivedAt, Instant.now()).toSeconds() < 30;
+            if (wsFresh && state.lastWsBlockNumber != null && state.lastWsBlockHash != null) {
+                source = MetricSource.WS;
+                blockNumber = state.lastWsBlockNumber;
+                blockHash = state.lastWsBlockHash;
+            } else if (state.lastHttpBlockNumber != null && state.lastHttpBlockHash != null) {
+                blockNumber = state.lastHttpBlockNumber;
+                blockHash = state.lastHttpBlockHash;
+            }
+        }
+
+        if (blockNumber == null || blockHash == null) {
             return;
         }
 
@@ -432,7 +452,7 @@ public class RpcMonitorService {
             AnomalyEvent anomaly = detector.wrongHead(
                     node.key(),
                     Instant.now(),
-                    MetricSource.HTTP,
+                source,
                     blockNumber,
                     blockHash,
                     "Node significantly behind reference: reference head " + ref.headNumber + " vs node " + blockNumber);
@@ -445,7 +465,7 @@ public class RpcMonitorService {
             AnomalyEvent anomaly = detector.wrongHead(
                     node.key(),
                     Instant.now(),
-                    MetricSource.HTTP,
+                    source,
                     blockNumber,
                     blockHash,
                     "Hash mismatch at height " + blockNumber + " (reference " + ref.headHash + ")");
