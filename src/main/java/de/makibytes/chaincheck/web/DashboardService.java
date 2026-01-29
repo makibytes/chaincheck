@@ -449,6 +449,11 @@ public class DashboardService {
         List<Long> chartFinalizedDelayMins = delayChartData.finalizedDelayMins();
         List<Long> chartFinalizedDelayMaxs = delayChartData.finalizedDelayMaxs();
 
+        boolean hasAggregatedDelays = aggregateSamples.stream().anyMatch(sample ->
+            sample.getHeadDelayCount() > 0
+                || sample.getSafeDelayCount() > 0
+                || sample.getFinalizedDelayCount() > 0);
+
         String referenceNodeKey = rpcMonitorService.getReferenceNodeKey();
         boolean isReferenceNode = referenceNodeKey != null && referenceNodeKey.equals(nodeKey);
         List<Long> chartReferenceHeadDelays = List.of();
@@ -558,6 +563,7 @@ public class DashboardService {
                 chartReferenceHeadDelays,
                 chartReferenceSafeDelays,
                 chartReferenceFinalizedDelays,
+                hasAggregatedDelays,
                 httpConfigured,
                 wsConfigured,
                 nodeDefinition != null && nodeDefinition.safeBlocksEnabled(),
