@@ -264,6 +264,66 @@ public class DashboardService {
         Long currentLatest = store.getLatestBlockNumber(nodeKey);
         long blockLagBlocks = currentLatest == null ? 0 : Math.max(0, maxBlockNumber - currentLatest);
 
+        ChartData chartData = buildLatencyChart(rawSamples, aggregateSamples, range);
+        List<String> chartLabels = chartData.labels();
+        List<Long> chartLatencies = chartData.latencies();
+        List<Long> chartLatencyMins = chartData.latencyMins();
+        List<Long> chartLatencyMaxs = chartData.latencyMaxs();
+        List<Double> chartErrorRates = chartData.errorRates();
+        List<Double> chartWsErrorRates = chartData.wsErrorRates();
+        List<Boolean> chartHttpErrors = chartData.httpErrorBuckets();
+        List<Boolean> chartWsErrors = chartData.wsErrorBuckets();
+
+        DelayChartData delayChartData = buildDelayChart(rawSamples, aggregateSamples, range);
+        List<Long> chartHeadDelays = delayChartData.headDelays();
+        List<Long> chartHeadDelayMins = delayChartData.headDelayMins();
+        List<Long> chartHeadDelayMaxs = delayChartData.headDelayMaxs();
+        List<Long> chartSafeDelays = delayChartData.safeDelays();
+        List<Long> chartSafeDelayMins = delayChartData.safeDelayMins();
+        List<Long> chartSafeDelayMaxs = delayChartData.safeDelayMaxs();
+        List<Long> chartFinalizedDelays = delayChartData.finalizedDelays();
+        List<Long> chartFinalizedDelayMins = delayChartData.finalizedDelayMins();
+        List<Long> chartFinalizedDelayMaxs = delayChartData.finalizedDelayMaxs();
+
+        List<Long> headDelaySeries = chartHeadDelays.stream()
+                .filter(value -> value != null && value >= 0)
+                .toList();
+        if (!headDelaySeries.isEmpty()) {
+            long headDelaySum = headDelaySeries.stream().mapToLong(Long::longValue).sum();
+            avgNewBlockPropagation = (double) headDelaySum / headDelaySeries.size();
+            List<Long> sortedHeadDelaySeries = headDelaySeries.stream().sorted().toList();
+            p95NewBlockPropagation = percentile(sortedHeadDelaySeries, 0.95);
+            p99NewBlockPropagation = percentile(sortedHeadDelaySeries, 0.99);
+        }
+
+        List<Long> safeDelaySeries = chartSafeDelays.stream()
+                .filter(value -> value != null && value >= 0)
+                .toList();
+        if (!safeDelaySeries.isEmpty()) {
+            long safeDelaySum = safeDelaySeries.stream().mapToLong(Long::longValue).sum();
+            avgSafePropagation = (double) safeDelaySum / safeDelaySeries.size();
+            List<Long> sortedSafeDelaySeries = safeDelaySeries.stream().sorted().toList();
+            p95SafePropagation = percentile(sortedSafeDelaySeries, 0.95);
+            p99SafePropagation = percentile(sortedSafeDelaySeries, 0.99);
+        }
+
+        List<Long> finalizedDelaySeries = chartFinalizedDelays.stream()
+                .filter(value -> value != null && value >= 0)
+                .toList();
+        if (!finalizedDelaySeries.isEmpty()) {
+            long finalizedDelaySum = finalizedDelaySeries.stream().mapToLong(Long::longValue).sum();
+            avgFinalizedPropagation = (double) finalizedDelaySum / finalizedDelaySeries.size();
+            List<Long> sortedFinalizedDelaySeries = finalizedDelaySeries.stream().sorted().toList();
+            p95FinalizedPropagation = percentile(sortedFinalizedDelaySeries, 0.95);
+            p99FinalizedPropagation = percentile(sortedFinalizedDelaySeries, 0.99);
+        }
+
+        boolean hasAggregatedLatencies = aggregateSamples.stream().anyMatch(sample -> sample.getLatencyCount() > 0);
+        boolean hasAggregatedDelays = aggregateSamples.stream().anyMatch(sample ->
+            sample.getHeadDelayCount() > 0
+                || sample.getSafeDelayCount() > 0
+                || sample.getFinalizedDelayCount() > 0);
+
         DashboardSummary summary = new DashboardSummary(
                 total,
             httpCount,
@@ -433,33 +493,6 @@ public class DashboardService {
 
         int totalSamples = sampleRows.size();
         int totalPages = Math.max(1, Math.min(MAX_PAGES, (int) Math.ceil(totalSamples / (double) PAGE_SIZE)));
-
-        ChartData chartData = buildLatencyChart(rawSamples, aggregateSamples, range);
-        List<String> chartLabels = chartData.labels();
-        List<Long> chartLatencies = chartData.latencies();
-        List<Long> chartLatencyMins = chartData.latencyMins();
-        List<Long> chartLatencyMaxs = chartData.latencyMaxs();
-        List<Double> chartErrorRates = chartData.errorRates();
-        List<Double> chartWsErrorRates = chartData.wsErrorRates();
-        List<Boolean> chartHttpErrors = chartData.httpErrorBuckets();
-        List<Boolean> chartWsErrors = chartData.wsErrorBuckets();
-        
-        DelayChartData delayChartData = buildDelayChart(rawSamples, aggregateSamples, range);
-        List<Long> chartHeadDelays = delayChartData.headDelays();
-        List<Long> chartHeadDelayMins = delayChartData.headDelayMins();
-        List<Long> chartHeadDelayMaxs = delayChartData.headDelayMaxs();
-        List<Long> chartSafeDelays = delayChartData.safeDelays();
-        List<Long> chartSafeDelayMins = delayChartData.safeDelayMins();
-        List<Long> chartSafeDelayMaxs = delayChartData.safeDelayMaxs();
-        List<Long> chartFinalizedDelays = delayChartData.finalizedDelays();
-        List<Long> chartFinalizedDelayMins = delayChartData.finalizedDelayMins();
-        List<Long> chartFinalizedDelayMaxs = delayChartData.finalizedDelayMaxs();
-
-        boolean hasAggregatedLatencies = aggregateSamples.stream().anyMatch(sample -> sample.getLatencyCount() > 0);
-        boolean hasAggregatedDelays = aggregateSamples.stream().anyMatch(sample ->
-            sample.getHeadDelayCount() > 0
-                || sample.getSafeDelayCount() > 0
-                || sample.getFinalizedDelayCount() > 0);
 
         String referenceNodeKey = rpcMonitorService.getReferenceNodeKey();
         boolean isReferenceNode = referenceNodeKey != null && referenceNodeKey.equals(nodeKey);
