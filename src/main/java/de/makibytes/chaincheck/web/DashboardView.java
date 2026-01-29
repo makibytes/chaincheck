@@ -52,6 +52,7 @@ public class DashboardView {
     private final List<Long> chartReferenceHeadDelays;
     private final List<Long> chartReferenceSafeDelays;
     private final List<Long> chartReferenceFinalizedDelays;
+    private final boolean hasAggregatedDelays;
     private final boolean httpConfigured;
     private final boolean wsConfigured;
     private final boolean safeBlocksEnabled;
@@ -96,6 +97,7 @@ public class DashboardView {
                          List<Long> chartReferenceHeadDelays,
                          List<Long> chartReferenceSafeDelays,
                          List<Long> chartReferenceFinalizedDelays,
+                         boolean hasAggregatedDelays,
                          boolean httpConfigured,
                          boolean wsConfigured,
                          boolean safeBlocksEnabled,
@@ -139,6 +141,7 @@ public class DashboardView {
         this.chartReferenceHeadDelays = chartReferenceHeadDelays;
         this.chartReferenceSafeDelays = chartReferenceSafeDelays;
         this.chartReferenceFinalizedDelays = chartReferenceFinalizedDelays;
+        this.hasAggregatedDelays = hasAggregatedDelays;
         this.httpConfigured = httpConfigured;
         this.wsConfigured = wsConfigured;
         this.safeBlocksEnabled = safeBlocksEnabled;
@@ -260,6 +263,10 @@ public class DashboardView {
 
     public List<Long> getChartReferenceFinalizedDelays() {
         return chartReferenceFinalizedDelays;
+    }
+
+    public boolean hasAggregatedDelays() {
+        return hasAggregatedDelays;
     }
 
     public boolean isHttpConfigured() {
