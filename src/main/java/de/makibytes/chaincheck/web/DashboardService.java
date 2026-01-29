@@ -131,8 +131,8 @@ public class DashboardService {
             }
         }
         latencyValues = latencyValues.stream().sorted().toList();
-        long p95Latency = percentile(latencyValues, 0.95);
-        long p99Latency = percentile(latencyValues, 0.99);
+        double p95Latency = percentile(latencyValues, 0.95);
+        double p99Latency = percentile(latencyValues, 0.99);
 
         long httpCount = rawSamples.stream().filter(sample -> sample.getSource() == MetricSource.HTTP).count()
                 + aggregateSamples.stream().mapToLong(SampleAggregate::getHttpCount).sum();
@@ -173,8 +173,8 @@ public class DashboardService {
             }
         }
         newBlockValues = newBlockValues.stream().sorted().toList();
-        long p95NewBlockPropagation = percentile(newBlockValues, 0.95);
-        long p99NewBlockPropagation = percentile(newBlockValues, 0.99);
+        double p95NewBlockPropagation = percentile(newBlockValues, 0.95);
+        double p99NewBlockPropagation = percentile(newBlockValues, 0.99);
 
         List<Long> safeDelays = rawSamples.stream()
                 .map(MetricSample::getSafeDelayMs)
@@ -198,8 +198,8 @@ public class DashboardService {
             }
         }
         safeValues = safeValues.stream().sorted().toList();
-        long p95SafePropagation = percentile(safeValues, 0.95);
-        long p99SafePropagation = percentile(safeValues, 0.99);
+        double p95SafePropagation = percentile(safeValues, 0.95);
+        double p99SafePropagation = percentile(safeValues, 0.99);
 
         List<Long> finalizedDelays = rawSamples.stream()
                 .map(MetricSample::getFinalizedDelayMs)
@@ -223,8 +223,8 @@ public class DashboardService {
             }
         }
         finalizedValues = finalizedValues.stream().sorted().toList();
-        long p95FinalizedPropagation = percentile(finalizedValues, 0.95);
-        long p99FinalizedPropagation = percentile(finalizedValues, 0.99);
+        double p95FinalizedPropagation = percentile(finalizedValues, 0.95);
+        double p99FinalizedPropagation = percentile(finalizedValues, 0.99);
 
         List<Long> propagationValues = new ArrayList<>(propagationDelays);
         for (SampleAggregate aggregate : aggregateSamples) {
@@ -629,13 +629,24 @@ public class DashboardService {
     public AnomalyEvent getAnomaly(long id) {
         return store.getAnomaly(id);
     }
-    private static long percentile(List<Long> sortedValues, double percentile) {
+    private static double percentile(List<Long> sortedValues, double percentile) {
         if (sortedValues == null || sortedValues.isEmpty()) {
             return 0;
         }
-        int index = (int) Math.ceil(percentile * sortedValues.size()) - 1;
-        int safeIndex = Math.min(Math.max(index, 0), sortedValues.size() - 1);
-        return sortedValues.get(safeIndex);
+        int size = sortedValues.size();
+        if (size == 1) {
+            return sortedValues.get(0);
+        }
+        double position = percentile * (size - 1);
+        int lowerIndex = (int) Math.floor(position);
+        int upperIndex = (int) Math.ceil(position);
+        double lowerValue = sortedValues.get(lowerIndex);
+        double upperValue = sortedValues.get(upperIndex);
+        if (lowerIndex == upperIndex) {
+            return lowerValue;
+        }
+        double fraction = position - lowerIndex;
+        return lowerValue + (upperValue - lowerValue) * fraction;
     }
 
     private ChartData buildLatencyChart(List<MetricSample> rawSamples,
