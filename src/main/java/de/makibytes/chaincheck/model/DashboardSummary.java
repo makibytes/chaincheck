@@ -26,21 +26,21 @@ public class DashboardSummary {
     private final long errorCount;
     private final double avgLatencyMs;
     private final long maxLatencyMs;
-    private final long p95LatencyMs;
-    private final long p99LatencyMs;
+    private final double p95LatencyMs;
+    private final double p99LatencyMs;
     private final double httpRps;
     private final double wsEventsPerMinute;
     private final double uptimePercent;
     private final double errorRatePercent;
     private final double avgNewBlockPropagationMs;
-    private final long p95NewBlockPropagationMs;
-    private final long p99NewBlockPropagationMs;
+    private final double p95NewBlockPropagationMs;
+    private final double p99NewBlockPropagationMs;
     private final double avgSafeBlockPropagationMs;
-    private final long p95SafeBlockPropagationMs;
-    private final long p99SafeBlockPropagationMs;
+    private final double p95SafeBlockPropagationMs;
+    private final double p99SafeBlockPropagationMs;
     private final double avgFinalizedBlockPropagationMs;
-    private final long p95FinalizedBlockPropagationMs;
-    private final long p99FinalizedBlockPropagationMs;
+    private final double p95FinalizedBlockPropagationMs;
+    private final double p99FinalizedBlockPropagationMs;
     private final long staleBlockCount;
     private final long blockLagBlocks;
     private final long delayCount;
@@ -57,21 +57,21 @@ public class DashboardSummary {
                             long errorCount,
                             double avgLatencyMs,
                             long maxLatencyMs,
-                            long p95LatencyMs,
-                            long p99LatencyMs,
+                            double p95LatencyMs,
+                            double p99LatencyMs,
                             double httpRps,
                             double wsEventsPerMinute,
                             double uptimePercent,
                             double errorRatePercent,
                             double avgNewBlockPropagationMs,
-                            long p95NewBlockPropagationMs,
-                            long p99NewBlockPropagationMs,
+                            double p95NewBlockPropagationMs,
+                            double p99NewBlockPropagationMs,
                             double avgSafeBlockPropagationMs,
-                            long p95SafeBlockPropagationMs,
-                            long p99SafeBlockPropagationMs,
+                            double p95SafeBlockPropagationMs,
+                            double p99SafeBlockPropagationMs,
                             double avgFinalizedBlockPropagationMs,
-                            long p95FinalizedBlockPropagationMs,
-                            long p99FinalizedBlockPropagationMs,
+                            double p95FinalizedBlockPropagationMs,
+                            double p99FinalizedBlockPropagationMs,
                             long staleBlockCount,
                             long blockLagBlocks,
                             long delayCount,
@@ -140,11 +140,11 @@ public class DashboardSummary {
         return maxLatencyMs;
     }
 
-    public long getP95LatencyMs() {
+    public double getP95LatencyMs() {
         return p95LatencyMs;
     }
 
-    public long getP99LatencyMs() {
+    public double getP99LatencyMs() {
         return p99LatencyMs;
     }
 
@@ -168,11 +168,11 @@ public class DashboardSummary {
         return avgNewBlockPropagationMs;
     }
 
-    public long getP95NewBlockPropagationMs() {
+    public double getP95NewBlockPropagationMs() {
         return p95NewBlockPropagationMs;
     }
 
-    public long getP99NewBlockPropagationMs() {
+    public double getP99NewBlockPropagationMs() {
         return p99NewBlockPropagationMs;
     }
 
@@ -180,11 +180,11 @@ public class DashboardSummary {
         return avgSafeBlockPropagationMs;
     }
 
-    public long getP95SafeBlockPropagationMs() {
+    public double getP95SafeBlockPropagationMs() {
         return p95SafeBlockPropagationMs;
     }
 
-    public long getP99SafeBlockPropagationMs() {
+    public double getP99SafeBlockPropagationMs() {
         return p99SafeBlockPropagationMs;
     }
 
@@ -192,11 +192,11 @@ public class DashboardSummary {
         return avgFinalizedBlockPropagationMs;
     }
 
-    public long getP95FinalizedBlockPropagationMs() {
+    public double getP95FinalizedBlockPropagationMs() {
         return p95FinalizedBlockPropagationMs;
     }
 
-    public long getP99FinalizedBlockPropagationMs() {
+    public double getP99FinalizedBlockPropagationMs() {
         return p99FinalizedBlockPropagationMs;
     }
 
