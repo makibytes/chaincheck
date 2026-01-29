@@ -21,6 +21,7 @@
     const referenceHeadDelayData = /*[[${view.chartReferenceHeadDelays}]]*/[];
     const referenceSafeDelayData = /*[[${view.chartReferenceSafeDelays}]]*/[];
     const referenceFinalizedDelayData = /*[[${view.chartReferenceFinalizedDelays}]]*/[];
+    const hasAggregatedLatencies = /*[[${view.hasAggregatedLatencies}]]*/ false;
     const hasAggregatedDelays = /*[[${view.hasAggregatedDelays}]]*/ false;
     const wsConfigured = /*[[${view.wsConfigured}]]*/ false;
     const safeBlocksEnabled = /*[[${view.safeBlocksEnabled}]]*/ false;
@@ -169,7 +170,9 @@
                 };
 
                 ctx.save();
-                drawBand(latencyMinScaled, latencyMaxScaled, `rgba(${theme.primaryRgb}, 0.12)`);
+                if (hasAggregatedLatencies) {
+                    drawBand(latencyMinScaled, latencyMaxScaled, `rgba(${theme.primaryRgb}, 0.12)`);
+                }
                 if (wsConfigured && hasAggregatedDelays) {
                     drawBand(headDelayMinScaled, headDelayMaxScaled, `rgba(${theme.warningRgb}, 0.12)`);
                     if (safeBlocksEnabled) {
@@ -221,35 +224,37 @@
             order: 2
         }];
 
-        datasets.push({
-            label: 'Network Latency (Low)',
-            data: latencyMinScaled,
-            originalData: latencyMinData,
-            borderColor: `rgba(${theme.primaryRgb}, 0.45)`,
-            backgroundColor: `rgba(${theme.primaryRgb}, 0.0)`,
-            spanGaps: true,
-            tension: 0.2,
-            yAxisID: 'y',
-            pointRadius: 0,
-            borderWidth: 1,
-            bandLine: true,
-            order: 1
-        });
+        if (hasAggregatedLatencies) {
+            datasets.push({
+                label: 'Network Latency (Low)',
+                data: latencyMinScaled,
+                originalData: latencyMinData,
+                borderColor: `rgba(${theme.primaryRgb}, 0.45)`,
+                backgroundColor: `rgba(${theme.primaryRgb}, 0.0)`,
+                spanGaps: true,
+                tension: 0.2,
+                yAxisID: 'y',
+                pointRadius: 0,
+                borderWidth: 1,
+                bandLine: true,
+                order: 1
+            });
 
-        datasets.push({
-            label: 'Network Latency (High)',
-            data: latencyMaxScaled,
-            originalData: latencyMaxData,
-            borderColor: `rgba(${theme.primaryRgb}, 0.45)`,
-            backgroundColor: `rgba(${theme.primaryRgb}, 0.0)`,
-            spanGaps: true,
-            tension: 0.2,
-            yAxisID: 'y',
-            pointRadius: 0,
-            borderWidth: 1,
-            bandLine: true,
-            order: 1
-        });
+            datasets.push({
+                label: 'Network Latency (High)',
+                data: latencyMaxScaled,
+                originalData: latencyMaxData,
+                borderColor: `rgba(${theme.primaryRgb}, 0.45)`,
+                backgroundColor: `rgba(${theme.primaryRgb}, 0.0)`,
+                spanGaps: true,
+                tension: 0.2,
+                yAxisID: 'y',
+                pointRadius: 0,
+                borderWidth: 1,
+                bandLine: true,
+                order: 1
+            });
+        }
 
         const errorBarPlugin = {
             id: 'errorBars',

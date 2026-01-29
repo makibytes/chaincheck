@@ -19,6 +19,8 @@ package de.makibytes.chaincheck.model;
 
 public enum AnomalyType {
     ERROR,
+    RATE_LIMIT,
+    TIMEOUT,
     DELAY,
     BLOCK_GAP,
     REORG,

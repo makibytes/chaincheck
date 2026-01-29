@@ -62,7 +62,7 @@ class AnomalyDetectorTest {
         var anomalies = detector.detect("node1", sample, 1000, null, null);
 
         assertEquals(1, anomalies.size());
-        assertEquals(AnomalyType.ERROR, anomalies.get(0).getType());
+        assertEquals(AnomalyType.TIMEOUT, anomalies.get(0).getType());
         assertEquals("Connection timeout", anomalies.get(0).getMessage());
     }
 

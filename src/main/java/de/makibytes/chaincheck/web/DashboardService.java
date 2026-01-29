@@ -246,6 +246,10 @@ public class DashboardService {
                 anomalyCounts.getOrDefault(AnomalyType.BLOCK_GAP, 0L) + aggregate.getBlockGapCount());
             anomalyCounts.put(AnomalyType.ERROR,
                 anomalyCounts.getOrDefault(AnomalyType.ERROR, 0L) + aggregate.getErrorCount());
+            anomalyCounts.put(AnomalyType.RATE_LIMIT,
+                anomalyCounts.getOrDefault(AnomalyType.RATE_LIMIT, 0L) + aggregate.getRateLimitCount());
+            anomalyCounts.put(AnomalyType.TIMEOUT,
+                anomalyCounts.getOrDefault(AnomalyType.TIMEOUT, 0L) + aggregate.getTimeoutCount());
             anomalyCounts.put(AnomalyType.WRONG_HEAD,
                 anomalyCounts.getOrDefault(AnomalyType.WRONG_HEAD, 0L) + aggregate.getWrongHeadCount());
         });
@@ -288,6 +292,8 @@ public class DashboardService {
                 anomalyCounts.getOrDefault(AnomalyType.DELAY, 0L),
                 anomalyCounts.getOrDefault(AnomalyType.REORG, 0L),
                 anomalyCounts.getOrDefault(AnomalyType.BLOCK_GAP, 0L),
+                anomalyCounts.getOrDefault(AnomalyType.RATE_LIMIT, 0L),
+                anomalyCounts.getOrDefault(AnomalyType.TIMEOUT, 0L),
                 anomalyCounts.getOrDefault(AnomalyType.WRONG_HEAD, 0L));
 
         // Group samples by blockhash and merge them
@@ -449,6 +455,7 @@ public class DashboardService {
         List<Long> chartFinalizedDelayMins = delayChartData.finalizedDelayMins();
         List<Long> chartFinalizedDelayMaxs = delayChartData.finalizedDelayMaxs();
 
+        boolean hasAggregatedLatencies = aggregateSamples.stream().anyMatch(sample -> sample.getLatencyCount() > 0);
         boolean hasAggregatedDelays = aggregateSamples.stream().anyMatch(sample ->
             sample.getHeadDelayCount() > 0
                 || sample.getSafeDelayCount() > 0
@@ -563,6 +570,7 @@ public class DashboardService {
                 chartReferenceHeadDelays,
                 chartReferenceSafeDelays,
                 chartReferenceFinalizedDelays,
+                hasAggregatedLatencies,
                 hasAggregatedDelays,
                 httpConfigured,
                 wsConfigured,

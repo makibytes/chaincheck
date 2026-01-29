@@ -149,9 +149,61 @@ body {
 
 .summary-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
     gap: 16px;
     margin-bottom: 24px;
+}
+
+.anomaly-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0 16px;
+    position: relative;
+    padding: 0 6px;
+    margin-top: 0;
+}
+
+.anomaly-item {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    line-height: inherit;
+}
+
+.anomalies-card .anomaly-grid::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    width: 1px;
+    background: var(--color-border);
+    opacity: 0.7;
+    transform: translateX(-0.5px);
+    pointer-events: none;
+}
+
+.metric-row {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 12px;
+    align-items: baseline;
+}
+
+.metric-group {
+    display: grid;
+    grid-template-columns: max-content max-content;
+    gap: 6px;
+    justify-self: center;
+}
+
+.metric-value {
+    text-align: right;
+    min-width: 2ch;
+}
+
+.metric-unit {
+    text-align: left;
 }
 
 .card {
@@ -159,6 +211,23 @@ body {
     padding: 16px;
     border-radius: 12px;
     border: 1px solid var(--color-border);
+    min-width: 0;
+}
+
+.anomalies-card {
+    grid-column: span 2;
+    min-width: 300px;
+}
+
+.metric-card {
+    min-width: 160px;
+}
+
+@media (max-width: 720px) {
+    .anomalies-card {
+        grid-column: span 1;
+        min-width: 0;
+    }
 }
 
 .panel {

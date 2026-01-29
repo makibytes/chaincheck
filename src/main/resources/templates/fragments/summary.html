@@ -17,95 +17,133 @@
             <span class="muted">%</span>
         </div>
     </div>
-    <div class="card">
+    <div class="card anomalies-card">
         <h3>Anomalies</h3>
-        <div>
-            <span class="muted">Delay:</span>
-            <span th:text="${view.summary.delayCount}">0</span>
-        </div>
-        <div>
-            <span class="muted">Reorg:</span>
-            <span th:text="${view.summary.reorgCount}">0</span>
-        </div>
-        <div>
-            <span class="muted">Block Gap:</span>
-            <span th:text="${view.summary.blockGapCount}">0</span>
-        </div>
-        <div>
-            <span class="muted">Stale Blocks:</span>
-            <span th:text="${view.summary.staleBlockCount}">0</span>
+        <div class="anomaly-grid">
+            <div class="anomaly-item">
+                <span class="muted">Delay:</span>
+                <span th:text="${view.summary.delayCount}">0</span>
+            </div>
+            <div class="anomaly-item">
+                <span class="muted">Reorg:</span>
+                <span th:text="${view.summary.reorgCount}">0</span>
+            </div>
+            <div class="anomaly-item">
+                <span class="muted">Block Gap:</span>
+                <span th:text="${view.summary.blockGapCount}">0</span>
+            </div>
+            <div class="anomaly-item">
+                <span class="muted">Rate Limit:</span>
+                <span th:text="${view.summary.rateLimitCount}">0</span>
+            </div>
+            <div class="anomaly-item">
+                <span class="muted">Timeout:</span>
+                <span th:text="${view.summary.timeoutCount}">0</span>
+            </div>
+            <div class="anomaly-item">
+                <span class="muted">Wrong Head:</span>
+                <span th:text="${view.summary.wrongHeadCount}">0</span>
+            </div>
+            <div class="anomaly-item">
+                <span class="muted">Stale Blocks:</span>
+                <span th:text="${view.summary.staleBlockCount}">0</span>
+            </div>
         </div>
     </div>
-    <div class="card">
+    <div class="card metric-card">
         <h3>Network Latency</h3>
-        <div>
-            <span class="muted">Avg</span>
-            <span th:text="${#numbers.formatDecimal(view.summary.avgLatencyMs, 1, 2)}">0</span>
-            <span class="muted">ms</span>
+        <div class="metric-row">
+            <span class="metric-label muted">Avg</span>
+            <span class="metric-group">
+                <span class="metric-value" th:text="${#numbers.formatDecimal(view.summary.avgLatencyMs, 1, 2)}">0</span>
+                <span class="metric-unit muted">ms</span>
+            </span>
         </div>
-        <div>
-            <span class="muted">P95</span>
-            <span th:text="${#numbers.formatDecimal(view.summary.p95LatencyMs, 1, 2)}">0</span>
-            <span class="muted">ms</span>
+        <div class="metric-row">
+            <span class="metric-label muted">P95</span>
+            <span class="metric-group">
+                <span class="metric-value" th:text="${#numbers.formatDecimal(view.summary.p95LatencyMs, 1, 2)}">0</span>
+                <span class="metric-unit muted">ms</span>
+            </span>
         </div>
-        <div>
-            <span class="muted">P99</span>
-            <span th:text="${#numbers.formatDecimal(view.summary.p99LatencyMs, 1, 2)}">0</span>
-            <span class="muted">ms</span>
+        <div class="metric-row">
+            <span class="metric-label muted">P99</span>
+            <span class="metric-group">
+                <span class="metric-value" th:text="${#numbers.formatDecimal(view.summary.p99LatencyMs, 1, 2)}">0</span>
+                <span class="metric-unit muted">ms</span>
+            </span>
         </div>
     </div>
-    <div class="card" th:if="${view.wsConfigured}">
+    <div class="card metric-card" th:if="${view.wsConfigured}">
         <h3>New Blocks</h3>
-        <div>
-            <span class="muted">Avg</span>
-            <span th:text="${#numbers.formatDecimal(view.summary.avgNewBlockPropagationMs / 1000, 1, 2)}">0</span>
-            <span class="muted">s</span>
+        <div class="metric-row">
+            <span class="metric-label muted">Avg</span>
+            <span class="metric-group">
+                <span class="metric-value" th:text="${#numbers.formatDecimal(view.summary.avgNewBlockPropagationMs / 1000, 1, 2)}">0</span>
+                <span class="metric-unit muted">s</span>
+            </span>
         </div>
-        <div>
-            <span class="muted">P95</span>
-            <span th:text="${#numbers.formatDecimal(view.summary.p95NewBlockPropagationMs / 1000, 1, 2)}">0</span>
-            <span class="muted">s</span>
+        <div class="metric-row">
+            <span class="metric-label muted">P95</span>
+            <span class="metric-group">
+                <span class="metric-value" th:text="${#numbers.formatDecimal(view.summary.p95NewBlockPropagationMs / 1000, 1, 2)}">0</span>
+                <span class="metric-unit muted">s</span>
+            </span>
         </div>
-        <div>
-            <span class="muted">P99</span>
-            <span th:text="${#numbers.formatDecimal(view.summary.p99NewBlockPropagationMs / 1000, 1, 2)}">0</span>
-            <span class="muted">s</span>
+        <div class="metric-row">
+            <span class="metric-label muted">P99</span>
+            <span class="metric-group">
+                <span class="metric-value" th:text="${#numbers.formatDecimal(view.summary.p99NewBlockPropagationMs / 1000, 1, 2)}">0</span>
+                <span class="metric-unit muted">s</span>
+            </span>
         </div>
     </div>
-    <div class="card" th:if="${view.safeBlocksEnabled}">
+    <div class="card metric-card" th:if="${view.safeBlocksEnabled}">
         <h3>Safe Blocks</h3>
-        <div>
-            <span class="muted">Avg</span>
-            <span th:text="${#numbers.formatDecimal(view.summary.avgSafeBlockPropagationMs / 1000, 1, 2)}">0</span>
-            <span class="muted">s</span>
+        <div class="metric-row">
+            <span class="metric-label muted">Avg</span>
+            <span class="metric-group">
+                <span class="metric-value" th:text="${#numbers.formatDecimal(view.summary.avgSafeBlockPropagationMs / 1000, 1, 2)}">0</span>
+                <span class="metric-unit muted">s</span>
+            </span>
         </div>
-        <div>
-            <span class="muted">P95</span>
-            <span th:text="${#numbers.formatDecimal(view.summary.p95SafeBlockPropagationMs / 1000, 1, 2)}">0</span>
-            <span class="muted">s</span>
+        <div class="metric-row">
+            <span class="metric-label muted">P95</span>
+            <span class="metric-group">
+                <span class="metric-value" th:text="${#numbers.formatDecimal(view.summary.p95SafeBlockPropagationMs / 1000, 1, 2)}">0</span>
+                <span class="metric-unit muted">s</span>
+            </span>
         </div>
-        <div>
-            <span class="muted">P99</span>
-            <span th:text="${#numbers.formatDecimal(view.summary.p99SafeBlockPropagationMs / 1000, 1, 2)}">0</span>
-            <span class="muted">s</span>
+        <div class="metric-row">
+            <span class="metric-label muted">P99</span>
+            <span class="metric-group">
+                <span class="metric-value" th:text="${#numbers.formatDecimal(view.summary.p99SafeBlockPropagationMs / 1000, 1, 2)}">0</span>
+                <span class="metric-unit muted">s</span>
+            </span>
         </div>
     </div>
-    <div class="card" th:if="${view.httpConfigured}">
+    <div class="card metric-card" th:if="${view.httpConfigured}">
         <h3>Finalized Blocks</h3>
-        <div>
-            <span class="muted">Avg</span>
-            <span th:text="${#numbers.formatDecimal(view.summary.avgFinalizedBlockPropagationMs / 1000, 1, 2)}">0</span>
-            <span class="muted">s</span>
+        <div class="metric-row">
+            <span class="metric-label muted">Avg</span>
+            <span class="metric-group">
+                <span class="metric-value" th:text="${#numbers.formatDecimal(view.summary.avgFinalizedBlockPropagationMs / 1000, 1, 2)}">0</span>
+                <span class="metric-unit muted">s</span>
+            </span>
         </div>
-        <div>
-            <span class="muted">P95</span>
-            <span th:text="${#numbers.formatDecimal(view.summary.p95FinalizedBlockPropagationMs / 1000, 1, 2)}">0</span>
-            <span class="muted">s</span>
+        <div class="metric-row">
+            <span class="metric-label muted">P95</span>
+            <span class="metric-group">
+                <span class="metric-value" th:text="${#numbers.formatDecimal(view.summary.p95FinalizedBlockPropagationMs / 1000, 1, 2)}">0</span>
+                <span class="metric-unit muted">s</span>
+            </span>
         </div>
-        <div>
-            <span class="muted">P99</span>
-            <span th:text="${#numbers.formatDecimal(view.summary.p99FinalizedBlockPropagationMs / 1000, 1, 2)}">0</span>
-            <span class="muted">s</span>
+        <div class="metric-row">
+            <span class="metric-label muted">P99</span>
+            <span class="metric-group">
+                <span class="metric-value" th:text="${#numbers.formatDecimal(view.summary.p99FinalizedBlockPropagationMs / 1000, 1, 2)}">0</span>
+                <span class="metric-unit muted">s</span>
+            </span>
         </div>
     </div>
 </section>

@@ -66,12 +66,13 @@ public class AnomalyDetector {
             String shortError = sample.getError() != null && sample.getError().length() > 50
                     ? sample.getError().substring(0, 50) + "..."
                     : sample.getError();
+            AnomalyType errorType = classifyErrorType(sample.getError());
             anomalies.add(new AnomalyEvent(
                     idSequence.getAndIncrement(),
                     nodeKey,
                     now,
                     source,
-                    AnomalyType.ERROR,
+                errorType,
                     shortError == null ? "RPC error" : shortError,
                     sample.getBlockNumber(),
                     sample.getBlockHash(),
@@ -155,5 +156,19 @@ public class AnomalyDetector {
         }
 
         return anomalies;
+    }
+
+    private AnomalyType classifyErrorType(String error) {
+        if (error == null) {
+            return AnomalyType.ERROR;
+        }
+        String lower = error.toLowerCase();
+        if (lower.contains("rate limit") || lower.contains("rate-limit") || lower.contains("http 429")) {
+            return AnomalyType.RATE_LIMIT;
+        }
+        if (lower.contains("timeout") || lower.contains("timed out")) {
+            return AnomalyType.TIMEOUT;
+        }
+        return AnomalyType.ERROR;
     }
 }
