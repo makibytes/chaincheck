@@ -32,6 +32,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -124,6 +125,30 @@ public class RpcMonitorService {
         }
         
         return null; // No node currently matches reference
+    }
+
+    /**
+     * Returns whether the given node matches the current reference head, or empty if reference state is unavailable.
+     */
+    public Optional<Boolean> isReferenceNode(String nodeKey) {
+        if (nodeKey == null || nodeKey.isBlank()) {
+            return Optional.empty();
+        }
+        ReferenceState ref = referenceState.get();
+        if (ref == null || ref.headNumber == null) {
+            return Optional.empty();
+        }
+        NodeState state = nodeStates.get(nodeKey);
+        if (state == null) {
+            return Optional.empty();
+        }
+        Long nodeBlockNumber = state.lastWsBlockNumber != null
+                ? state.lastWsBlockNumber
+                : state.lastHttpBlockNumber;
+        if (nodeBlockNumber == null) {
+            return Optional.empty();
+        }
+        return Optional.of(nodeBlockNumber.equals(ref.headNumber));
     }
 
     @Scheduled(fixedDelay = 250, initialDelay = 500)

@@ -119,17 +119,17 @@ public class DashboardService {
         double avgLatency = latencyCount == 0 ? 0 : (double) latencySum / latencyCount;
         long maxLatency = Math.max(rawMaxLatency, aggMaxLatency);
 
-                List<Long> latencyValues = rawSamples.stream()
-                        .filter(sample -> sample.getLatencyMs() >= 0)
-                        .map(MetricSample::getLatencyMs)
-                        .collect(Collectors.toCollection(java.util.ArrayList::new));
-                if (latencyValues.isEmpty()) {
-                    for (SampleAggregate aggregate : aggregateSamples) {
-                        if (aggregate.getLatencyCount() > 0) {
-                            latencyValues.add(Math.round((double) aggregate.getLatencySumMs() / aggregate.getLatencyCount()));
-                        }
-                    }
+        List<Long> latencyValues = rawSamples.stream()
+                .filter(sample -> sample.getLatencyMs() >= 0)
+                .map(MetricSample::getLatencyMs)
+                .collect(Collectors.toCollection(java.util.ArrayList::new));
+        if (latencyValues.isEmpty()) {
+            for (SampleAggregate aggregate : aggregateSamples) {
+                if (aggregate.getLatencyCount() > 0) {
+                    latencyValues.add(Math.round((double) aggregate.getLatencySumMs() / aggregate.getLatencyCount()));
                 }
+            }
+        }
         latencyValues = latencyValues.stream().sorted().toList();
         long p95Latency = percentile(latencyValues, 0.95);
         long p99Latency = percentile(latencyValues, 0.99);
@@ -1079,64 +1079,9 @@ public class DashboardService {
             return null; // Single node setup - no reference to compare against
         }
 
-        try {
-            // Use Java reflection to access reference state (private field of RpcMonitorService)
-            java.lang.reflect.Field referenceStateField = RpcMonitorService.class.getDeclaredField("referenceState");
-            referenceStateField.setAccessible(true);
-            Object referenceState = referenceStateField.get(rpcMonitorService);
-
-            if (referenceState == null) {
-                return null;
-            }
-
-            java.util.concurrent.atomic.AtomicReference<?> atomicRef = (java.util.concurrent.atomic.AtomicReference<?>) referenceState;
-            Object refValue = atomicRef.get();
-            if (refValue == null) {
-                return null;
-            }
-
-            java.lang.reflect.Field headNumberField = refValue.getClass().getDeclaredField("headNumber");
-            headNumberField.setAccessible(true);
-            Long referenceBlockNumber = (Long) headNumberField.get(refValue);
-
-            if (referenceBlockNumber == null) {
-                return null;
-            }
-
-            java.lang.reflect.Field nodeStatesField = RpcMonitorService.class.getDeclaredField("nodeStates");
-            nodeStatesField.setAccessible(true);
-            Object nodeStatesObj = nodeStatesField.get(rpcMonitorService);
-
-            @SuppressWarnings("unchecked")
-            Map<String, Object> nodeStates = (Map<String, Object>) nodeStatesObj;
-            Object nodeState = nodeStates.get(nodeKey);
-            if (nodeState == null) {
-                return null;
-            }
-
-            java.lang.reflect.Field lastHttpBlockNumberField = nodeState.getClass().getDeclaredField("lastHttpBlockNumber");
-            java.lang.reflect.Field lastWsBlockNumberField = nodeState.getClass().getDeclaredField("lastWsBlockNumber");
-
-            lastHttpBlockNumberField.setAccessible(true);
-            lastWsBlockNumberField.setAccessible(true);
-
-            Long nodeHttpBlockNumber = (Long) lastHttpBlockNumberField.get(nodeState);
-            Long nodeWsBlockNumber = (Long) lastWsBlockNumberField.get(nodeState);
-
-            Long nodeBlockNumber = nodeWsBlockNumber != null ? nodeWsBlockNumber : nodeHttpBlockNumber;
-
-            if (nodeBlockNumber == null) {
-                return null;
-            }
-
-            // Check if current node IS the reference (matching head block numbers)
-            boolean isReference = nodeBlockNumber.equals(referenceBlockNumber);
-
-            return new ReferenceComparison(isReference);
-        } catch (ReflectiveOperationException | ClassCastException e) {
-            // Silently fail if reflection fails - reference comparison is optional feature
-            return null;
-        }
+        return rpcMonitorService.isReferenceNode(nodeKey)
+            .map(isRef -> new ReferenceComparison(Boolean.TRUE.equals(isRef)))
+                .orElse(null);
     }
 
     private static class BlockTagInfo {
