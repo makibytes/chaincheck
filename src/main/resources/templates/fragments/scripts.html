@@ -55,9 +55,19 @@
     };
 
     const referenceToggle = document.getElementById('toggleReferenceLines');
+    const boundsToggle = document.getElementById('toggleBounds');
     let showReferences = referenceToggle ? referenceToggle.checked : false;
+    let showBounds = boundsToggle ? boundsToggle.checked : false;
     const referenceAvailable = !isReferenceNode
         && (referenceHeadDelayData.length > 0 || referenceSafeDelayData.length > 0 || referenceFinalizedDelayData.length > 0);
+    const referenceToggleLabel = document.getElementById('referenceToggleLabel');
+    if (referenceToggleLabel && !referenceAvailable) {
+        referenceToggleLabel.style.display = 'none';
+        showReferences = false;
+        if (referenceToggle) {
+            referenceToggle.checked = false;
+        }
+    }
     const maxDelayValue = Math.max(
         0,
         ...latencyData.filter(value => value != null),
@@ -169,6 +179,9 @@
                     }
                 };
 
+                if (!showBounds) {
+                    return;
+                }
                 ctx.save();
                 if (hasAggregatedLatencies) {
                     drawBand(latencyMinScaled, latencyMaxScaled, `rgba(${theme.primaryRgb}, 0.12)`);
@@ -237,6 +250,7 @@
                 pointRadius: 0,
                 borderWidth: 1,
                 bandLine: true,
+                hidden: !showBounds,
                 order: 1
             });
 
@@ -252,6 +266,7 @@
                 pointRadius: 0,
                 borderWidth: 1,
                 bandLine: true,
+                hidden: !showBounds,
                 order: 1
             });
         }
@@ -416,6 +431,7 @@
                     pointRadius: 0,
                     borderWidth: 1,
                     bandLine: true,
+                    hidden: !showBounds,
                     order: 1
                 });
 
@@ -431,6 +447,7 @@
                     pointRadius: 0,
                     borderWidth: 1,
                     bandLine: true,
+                    hidden: !showBounds,
                     order: 1
                 });
             }
@@ -477,6 +494,7 @@
                         pointRadius: 0,
                         borderWidth: 1,
                         bandLine: true,
+                        hidden: !showBounds,
                         order: 1
                     });
 
@@ -492,6 +510,7 @@
                         pointRadius: 0,
                         borderWidth: 1,
                         bandLine: true,
+                        hidden: !showBounds,
                         order: 1
                     });
                 }
@@ -538,6 +557,7 @@
                     pointRadius: 0,
                     borderWidth: 1,
                     bandLine: true,
+                    hidden: !showBounds,
                     order: 1
                 });
 
@@ -553,6 +573,7 @@
                     pointRadius: 0,
                     borderWidth: 1,
                     bandLine: true,
+                    hidden: !showBounds,
                     order: 1
                 });
             }
@@ -680,6 +701,18 @@
                 chartInstance.data.datasets.forEach((dataset) => {
                     if (dataset.referenceLine) {
                         dataset.hidden = !showReferences;
+                    }
+                });
+                chartInstance.update();
+            });
+        }
+
+        if (boundsToggle) {
+            boundsToggle.addEventListener('change', (event) => {
+                showBounds = event.target.checked;
+                chartInstance.data.datasets.forEach((dataset) => {
+                    if (dataset.bandLine) {
+                        dataset.hidden = !showBounds;
                     }
                 });
                 chartInstance.update();
