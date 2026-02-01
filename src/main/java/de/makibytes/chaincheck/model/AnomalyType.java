@@ -23,6 +23,7 @@ public enum AnomalyType {
     TIMEOUT,
     DELAY,
     BLOCK_GAP,
+    CONFLICT,
     REORG,
     WRONG_HEAD
 }

@@ -17,6 +17,8 @@
  */
 package de.makibytes.chaincheck.web;
 
+import java.time.Instant;
+
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
@@ -39,19 +41,35 @@ public class DashboardController {
     private final NodeRegistry nodeRegistry;
     private final ChainCheckProperties properties;
     private final RpcMonitorService rpcMonitorService;
+    private final AppVersionProvider appVersionProvider;
 
-    public DashboardController(DashboardService dashboardService, NodeRegistry nodeRegistry, ChainCheckProperties properties, RpcMonitorService rpcMonitorService) {
+    public DashboardController(DashboardService dashboardService,
+                               NodeRegistry nodeRegistry,
+                               ChainCheckProperties properties,
+                               RpcMonitorService rpcMonitorService,
+                               AppVersionProvider appVersionProvider) {
         this.dashboardService = dashboardService;
         this.nodeRegistry = nodeRegistry;
         this.properties = properties;
         this.rpcMonitorService = rpcMonitorService;
+        this.appVersionProvider = appVersionProvider;
     }
 
     @GetMapping({"/", "/dashboard"})
     public String dashboard(@RequestParam(name = "range", required = false) String rangeKey,
                             @RequestParam(name = "node", required = false) String nodeKey,
+                            @RequestParam(name = "end", required = false) Long endEpochMs,
                             Model model) {
         TimeRange range = TimeRange.fromKey(rangeKey);
+        Instant now = Instant.now();
+        Instant end = endEpochMs == null ? now : Instant.ofEpochMilli(endEpochMs);
+        if (end.isAfter(now)) {
+            end = now;
+        }
+        Instant oldestEnd = now.minus(TimeRange.MONTH_1.getDuration());
+        if (end.isBefore(oldestEnd)) {
+            end = oldestEnd;
+        }
         String selectedKey = nodeKey;
         if (selectedKey == null || nodeRegistry.getNode(selectedKey) == null) {
             selectedKey = nodeRegistry.getDefaultNodeKey();
@@ -60,7 +78,7 @@ public class DashboardController {
             model.addAttribute("message", "No RPC nodes configured");
             return "not-found";
         }
-        DashboardView view = dashboardService.getDashboard(selectedKey, range);
+        DashboardView view = dashboardService.getDashboard(selectedKey, range, end);
         NodeDefinition selectedNode = nodeRegistry.getNode(selectedKey);
 
         model.addAttribute("appName", "ChainCheck");
@@ -72,7 +90,10 @@ public class DashboardController {
         model.addAttribute("referenceNodeKey", rpcMonitorService.getReferenceNodeKey());
         model.addAttribute("range", range);
         model.addAttribute("ranges", TimeRange.values());
+        model.addAttribute("endParam", endEpochMs);
+        model.addAttribute("endEpochMs", end.toEpochMilli());
         model.addAttribute("view", view);
+        model.addAttribute("appVersion", appVersionProvider.getVersion());
         return "dashboard";
     }
 

@@ -60,9 +60,12 @@ public class NodeRegistry {
             long retryBackoffMs = node.getRetryBackoffMs() > 0 ? node.getRetryBackoffMs() : defaults.getRetryBackoffMs();
             Map<String, String> headers = new HashMap<>(defaults.getHeaders());
             headers.putAll(node.getHeaders());
-            long anomalyDelayMs = node.getAnomalyDelayMs() > 0
-                    ? node.getAnomalyDelayMs()
-                    : properties.getAnomalyDelayMs();
+                long nodeHighLatencyMs = node.getAnomalyDetection() != null
+                    ? node.getAnomalyDetection().getHighLatencyMs()
+                    : -1;
+                long anomalyDelayMs = nodeHighLatencyMs > 0
+                    ? nodeHighLatencyMs
+                    : properties.getAnomalyDetection().getHighLatencyMs();
             boolean safeBlocksEnabled = node.getSafeBlocksEnabled() != null
                     ? node.getSafeBlocksEnabled()
                     : properties.isSafeBlocksEnabled();

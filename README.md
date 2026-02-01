@@ -43,6 +43,11 @@ mvn spring-boot:run
 
 The dashboard will be available at `http://localhost:8080`.
 
+## Documentation
+
+- [docs/QUICKSTART.md](docs/QUICKSTART.md)
+- [docs/ANOMALIES.md](docs/ANOMALIES.md)
+
 ## Configuration
 
 Configuration is managed via `application.yml`. Example configuration:
@@ -67,12 +72,14 @@ rpc:
     enabled: false
     file: ./data/chaincheck-snapshot.json
     flush-interval-seconds: 30
+  anomaly-detection:
+    high-latency-ms: 2000
+    long-delay-block-count: 15
   nodes:
     - name: polygon-rpc.com
       http: https://polygon-rpc.com
       ws: wss://polygon-rpc.com            # Optional: WebSocket endpoint
       poll-interval-ms: 1000               # HTTP polling interval (milliseconds)
-      anomaly-delay-ms: 2000               # Threshold for delay anomalies (milliseconds)
       safe-blocks-enabled: false           # Only enable when available (e.g. on Ethereum)
       headers:                             # Optional: custom headers / auth
         Authorization: "Bearer <token>"
@@ -83,7 +90,8 @@ rpc:
 ### Configuration Options
 
 - **poll-interval-ms**: How often to poll the HTTP endpoint (default: 1000ms)
-- **anomaly-delay-ms**: Threshold for flagging delay anomalies (default: 2000ms)
+- **anomaly-detection.high-latency**: Threshold for flagging high latency anomalies (default: 2000ms)
+- **nodes[].anomaly-detection.high-latency**: Optional per-node override for high latency anomalies
 - **safe-blocks-enabled**: When true, HTTP queries alternate between safe and finalized blocks
 - **http**: HTTP RPC endpoint URL (required)
 - **ws**: WebSocket RPC endpoint URL (optional, enables real-time head block tracking)

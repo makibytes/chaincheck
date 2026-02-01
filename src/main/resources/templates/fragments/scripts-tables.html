@@ -1,0 +1,219 @@
+<th:block th:fragment="scripts-tables">
+<script>
+    const samplesBody = document.getElementById('samplesBody');
+    const pagination = document.getElementById('pagination');
+    const pageInfo = document.getElementById('pageInfo');
+    const samplesSearch = document.getElementById('samplesSearch');
+    const normalizeText = (value) => (value ?? '').toString().toLowerCase();
+
+    const sampleSearchText = (sample) => [
+        sample.time,
+        ...(Array.isArray(sample.sources) ? sample.sources : []),
+        sample.status,
+        sample.latencyMs,
+        sample.blockNumber,
+        sample.blockHash,
+        sample.parentHash,
+        sample.blockTime,
+        sample.finalized ? 'finalized' : '',
+        sample.safe ? 'safe' : '',
+        sample.invalid ? 'invalid' : '',
+        sample.conflict ? 'conflict' : '',
+        sample.transactionCount,
+        sample.gasPriceWei
+    ].join(' ').toLowerCase();
+
+    let filteredSamples = samples;
+    let filteredSamplePages = Math.max(1, Math.ceil(filteredSamples.length / pageSize));
+
+    const renderPage = (page) => {
+        if (!samplesBody) {
+            return;
+        }
+        const safePage = Math.min(Math.max(page, 1), filteredSamplePages);
+        const start = (safePage - 1) * pageSize;
+        const end = Math.min(start + pageSize, filteredSamples.length);
+        samplesBody.innerHTML = '';
+        for (let i = start; i < end; i += 1) {
+            const s = filteredSamples[i];
+
+            // Build block display with finalized tag if applicable
+            let blockDisplay = s.blockNumber ? String(s.blockNumber) : '-';
+            if (s.blockNumber && s.conflict) {
+                blockDisplay += ' <span class="tag tag-conflict">conflict</span>';
+            } else if (s.blockNumber && s.invalid) {
+                blockDisplay += ' <span class="tag tag-invalid">invalid</span>';
+            } else if (s.blockNumber && s.finalized) {
+                blockDisplay += ' <span class="tag tag-finalized">finalized</span>';
+            } else if (s.blockNumber && s.safe) {
+                blockDisplay += ' <span class="tag tag-safe">safe</span>';
+            }
+
+            // Build source display with multiple tags if applicable
+            let sourceDisplay = '';
+            if (s.sources && Array.isArray(s.sources)) {
+                sourceDisplay = s.sources.map(src => {
+                    if (src === 'WS') {
+                        return '<span class="tag tag-ws">WS</span>';
+                    } else if (src === 'HTTP') {
+                        return '<span class="tag tag-http">HTTP</span>';
+                    }
+                    return '';
+                }).join(' ');
+            }
+
+            const row = document.createElement('tr');
+            row.innerHTML = `
+            <td>${s.time ?? '-'}</td>
+            <td>${sourceDisplay || '-'}</td>
+            <td>${s.status ?? '-'}</td>
+            <td>${s.latencyMs !== null && s.latencyMs !== undefined ? s.latencyMs + ' ms' : 'n/a'}</td>
+            <td>${blockDisplay}</td>
+            <td>${s.transactionCount ?? '-'}</td>
+            <td>${s.gasPriceWei ? (s.gasPriceWei / 1_000_000_000).toFixed(4) : '-'}</td>
+            <td><button class="button ghost sample-link" data-hash="${s.blockHash ?? ''}">Open</button></td>
+        `;
+            samplesBody.appendChild(row);
+        }
+        if (pageInfo) {
+            pageInfo.textContent = `Showing page ${safePage} of ${filteredSamplePages}`;
+        }
+        if (pagination) {
+            Array.from(pagination.children).forEach((child, index) => {
+                child.classList.toggle('active', index + 1 === safePage);
+            });
+        }
+    };
+
+    const updateSamplesPagination = (page = 1) => {
+        filteredSamplePages = Math.max(1, Math.ceil(filteredSamples.length / pageSize));
+        if (pagination) {
+            pagination.innerHTML = '';
+            for (let p = 1; p <= filteredSamplePages; p += 1) {
+                const link = document.createElement('a');
+                link.href = '#';
+                link.textContent = String(p);
+                link.addEventListener('click', (event) => {
+                    event.preventDefault();
+                    renderPage(p);
+                });
+                pagination.appendChild(link);
+            }
+        }
+        renderPage(page);
+    };
+
+    const debounce = (fn, waitMs) => {
+        let timeoutId;
+        return (...args) => {
+            if (timeoutId) {
+                window.clearTimeout(timeoutId);
+            }
+            timeoutId = window.setTimeout(() => fn(...args), waitMs);
+        };
+    };
+
+    if (samplesSearch) {
+        const onSampleSearch = debounce((value) => {
+            const query = normalizeText(value).trim();
+            filteredSamples = query
+                ? samples.filter(sample => sampleSearchText(sample).includes(query))
+                : samples;
+            updateSamplesPagination(1);
+        }, 150);
+        samplesSearch.addEventListener('input', (event) => {
+            onSampleSearch(event.target.value);
+        });
+    }
+
+    updateSamplesPagination(1);
+
+    const anomaliesBody = document.getElementById('anomaliesBody');
+    const anomaliesPagination = document.getElementById('anomaliesPagination');
+    const anomalyPageInfo = document.getElementById('anomalyPageInfo');
+    const anomaliesSearch = document.getElementById('anomaliesSearch');
+
+    const anomalySearchText = (anomaly) => [
+        anomaly.time,
+        anomaly.type,
+        anomaly.source,
+        anomaly.message,
+        anomaly.id,
+        anomaly.count
+    ].join(' ').toLowerCase();
+
+    let filteredAnomalies = anomalies;
+    let filteredAnomalyPages = Math.max(1, Math.ceil(filteredAnomalies.length / anomalyPageSize));
+
+    const renderAnomalies = (page) => {
+        if (!anomaliesBody) {
+            return;
+        }
+        const safePage = Math.min(Math.max(page, 1), filteredAnomalyPages);
+        const start = (safePage - 1) * anomalyPageSize;
+        const end = Math.min(start + anomalyPageSize, filteredAnomalies.length);
+        anomaliesBody.innerHTML = '';
+        for (let i = start; i < end; i += 1) {
+            const a = filteredAnomalies[i];
+            const row = document.createElement('tr');
+
+            let messageContent = a.message ?? '-';
+            if (a.count > 1) {
+                messageContent += ` <span class="count-badge">${a.count}</span>`;
+            }
+
+            const openButton = `<button class="button ghost anomaly-link" data-id="${a.id ?? ''}">Open</button>`;
+
+            row.innerHTML = `
+            <td>${a.time ?? '-'}</td>
+            <td>${a.type ?? '-'}</td>
+            <td>${a.source ?? '-'}</td>
+            <td>${messageContent}</td>
+            <td>${openButton}</td>
+        `;
+            anomaliesBody.appendChild(row);
+        }
+        if (anomalyPageInfo) {
+            anomalyPageInfo.textContent = `Showing page ${safePage} of ${filteredAnomalyPages}`;
+        }
+        if (anomaliesPagination) {
+            Array.from(anomaliesPagination.children).forEach((child, index) => {
+                child.classList.toggle('active', index + 1 === safePage);
+            });
+        }
+    };
+
+    const updateAnomaliesPagination = (page = 1) => {
+        filteredAnomalyPages = Math.max(1, Math.ceil(filteredAnomalies.length / anomalyPageSize));
+        if (anomaliesPagination) {
+            anomaliesPagination.innerHTML = '';
+            for (let p = 1; p <= filteredAnomalyPages; p += 1) {
+                const link = document.createElement('a');
+                link.href = '#';
+                link.textContent = String(p);
+                link.addEventListener('click', (event) => {
+                    event.preventDefault();
+                    renderAnomalies(p);
+                });
+                anomaliesPagination.appendChild(link);
+            }
+        }
+        renderAnomalies(page);
+    };
+
+    if (anomaliesSearch) {
+        const onAnomalySearch = debounce((value) => {
+            const query = normalizeText(value).trim();
+            filteredAnomalies = query
+                ? anomalies.filter(anomaly => anomalySearchText(anomaly).includes(query))
+                : anomalies;
+            updateAnomaliesPagination(1);
+        }, 150);
+        anomaliesSearch.addEventListener('input', (event) => {
+            onAnomalySearch(event.target.value);
+        });
+    }
+
+    updateAnomaliesPagination(1);
+</script>
+</th:block>

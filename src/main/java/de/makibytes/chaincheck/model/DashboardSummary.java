@@ -49,6 +49,7 @@ public class DashboardSummary {
     private final long rateLimitCount;
     private final long timeoutCount;
     private final long wrongHeadCount;
+    private final long conflictCount;
 
     public DashboardSummary(long totalSamples,
                             long httpSamples,
@@ -79,7 +80,8 @@ public class DashboardSummary {
                             long blockGapCount,
                             long rateLimitCount,
                             long timeoutCount,
-                            long wrongHeadCount) {
+                            long wrongHeadCount,
+                            long conflictCount) {
         this.totalSamples = totalSamples;
         this.httpSamples = httpSamples;
         this.wsSamples = wsSamples;
@@ -110,6 +112,7 @@ public class DashboardSummary {
         this.rateLimitCount = rateLimitCount;
         this.timeoutCount = timeoutCount;
         this.wrongHeadCount = wrongHeadCount;
+        this.conflictCount = conflictCount;
     }
 
     public long getTotalSamples() {
@@ -230,5 +233,9 @@ public class DashboardSummary {
 
     public long getWrongHeadCount() {
         return wrongHeadCount;
+    }
+
+    public long getConflictCount() {
+        return conflictCount;
     }
 }

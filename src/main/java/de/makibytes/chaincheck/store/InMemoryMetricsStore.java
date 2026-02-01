@@ -40,6 +40,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import de.makibytes.chaincheck.config.ChainCheckProperties;
 import de.makibytes.chaincheck.model.AnomalyEvent;
+import de.makibytes.chaincheck.model.AnomalyType;
 import de.makibytes.chaincheck.model.MetricSample;
 import de.makibytes.chaincheck.model.MetricSource;
 import de.makibytes.chaincheck.model.TimeRange;
@@ -119,6 +120,23 @@ public class InMemoryMetricsStore {
         }
     }
 
+    public void closeLastAnomaly(String nodeKey, MetricSource source, AnomalyType type) {
+        java.util.Deque<AnomalyEvent> anomalies = rawAnomaliesByNode.get(nodeKey);
+        if (anomalies == null || anomalies.isEmpty()) {
+            return;
+        }
+        java.util.Iterator<AnomalyEvent> it = anomalies.descendingIterator();
+        while (it.hasNext()) {
+            AnomalyEvent event = it.next();
+            if (event.getSource() == source && event.getType() == type) {
+                if (!event.isClosed()) {
+                    event.setClosed(true);
+                }
+                break;
+            }
+        }
+    }
+
     public List<MetricSample> getRawSamplesSince(String nodeKey, Instant since) {
         Deque<MetricSample> samples = rawSamplesByNode.get(nodeKey);
         if (samples == null || samples.isEmpty()) {
@@ -181,6 +199,22 @@ public class InMemoryMetricsStore {
         }
         result.sort(java.util.Comparator.comparing(AnomalyAggregate::getBucketStart));
         return result;
+    }
+
+    public Instant getOldestAggregateTimestamp(String nodeKey) {
+        NavigableMap<Instant, SampleAggregate> hourlyAggregates = sampleAggregatesByNode.get(nodeKey);
+        NavigableMap<Instant, SampleAggregate> dailyAggregates = sampleDailyAggregatesByNode.get(nodeKey);
+        Instant oldest = null;
+        if (hourlyAggregates != null && !hourlyAggregates.isEmpty()) {
+            oldest = hourlyAggregates.firstKey();
+        }
+        if (dailyAggregates != null && !dailyAggregates.isEmpty()) {
+            Instant dailyOldest = dailyAggregates.firstKey();
+            if (oldest == null || dailyOldest.isBefore(oldest)) {
+                oldest = dailyOldest;
+            }
+        }
+        return oldest;
     }
 
     public AnomalyEvent getAnomaly(long id) {

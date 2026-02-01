@@ -54,6 +54,8 @@ public class DashboardView {
     private final List<Long> chartReferenceFinalizedDelays;
     private final boolean hasAggregatedLatencies;
     private final boolean hasAggregatedDelays;
+    private final boolean httpErrorOngoing;
+    private final boolean wsErrorOngoing;
     private final boolean httpConfigured;
     private final boolean wsConfigured;
     private final boolean safeBlocksEnabled;
@@ -69,6 +71,7 @@ public class DashboardView {
     private final int anomalyPageSize;
     private final int totalAnomalies;
     private final int scaleChangeMs;
+    private final boolean hasOlderAggregates;
     private final Instant generatedAt;
     private final ReferenceComparison referenceComparison;
     private final boolean isReferenceNode;
@@ -101,6 +104,8 @@ public class DashboardView {
                          List<Long> chartReferenceFinalizedDelays,
                          boolean hasAggregatedLatencies,
                          boolean hasAggregatedDelays,
+                         boolean httpErrorOngoing,
+                         boolean wsErrorOngoing,
                          boolean httpConfigured,
                          boolean wsConfigured,
                          boolean safeBlocksEnabled,
@@ -116,6 +121,7 @@ public class DashboardView {
                          int anomalyPageSize,
                          int totalAnomalies,
                          int scaleChangeMs,
+                         boolean hasOlderAggregates,
                          Instant generatedAt,
                          ReferenceComparison referenceComparison,
                          boolean isReferenceNode) {
@@ -147,6 +153,8 @@ public class DashboardView {
         this.chartReferenceFinalizedDelays = chartReferenceFinalizedDelays;
         this.hasAggregatedLatencies = hasAggregatedLatencies;
         this.hasAggregatedDelays = hasAggregatedDelays;
+        this.httpErrorOngoing = httpErrorOngoing;
+        this.wsErrorOngoing = wsErrorOngoing;
         this.httpConfigured = httpConfigured;
         this.wsConfigured = wsConfigured;
         this.safeBlocksEnabled = safeBlocksEnabled;
@@ -162,6 +170,7 @@ public class DashboardView {
         this.anomalyPageSize = anomalyPageSize;
         this.totalAnomalies = totalAnomalies;
         this.scaleChangeMs = scaleChangeMs;
+        this.hasOlderAggregates = hasOlderAggregates;
         this.generatedAt = generatedAt;
         this.referenceComparison = referenceComparison;
         this.isReferenceNode = isReferenceNode;
@@ -279,6 +288,14 @@ public class DashboardView {
         return hasAggregatedDelays;
     }
 
+    public boolean isHttpErrorOngoing() {
+        return httpErrorOngoing;
+    }
+
+    public boolean isWsErrorOngoing() {
+        return wsErrorOngoing;
+    }
+
     public boolean isHttpConfigured() {
         return httpConfigured;
     }
@@ -337,6 +354,10 @@ public class DashboardView {
 
     public int getScaleChangeMs() {
         return scaleChangeMs;
+    }
+
+    public boolean hasOlderAggregates() {
+        return hasOlderAggregates;
     }
 
     public Instant getGeneratedAt() {

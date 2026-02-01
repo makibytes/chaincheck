@@ -16,9 +16,11 @@
     <div th:replace="~{fragments/summary :: summary}"></div>
     <div th:replace="~{fragments/rpc-status :: rpcStatus}"></div>
     <div th:replace="~{fragments/anomaly-modal :: anomalyModal}"></div>
+    <div th:replace="~{fragments/sample-modal :: sampleModal}"></div>
     <div th:replace="~{fragments/chart-panel :: chartPanel}"></div>
     <div th:replace="~{fragments/anomalies-panel :: anomaliesPanel}"></div>
     <div th:replace="~{fragments/samples-panel :: samplesPanel}"></div>
+    <div class="app-version" th:text="|v${appVersion}|"></div>
     <div th:replace="~{fragments/scripts :: scripts}"></div>
 </body>
 

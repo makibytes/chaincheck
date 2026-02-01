@@ -155,6 +155,71 @@ body {
     border-color: var(--color-primary);
 }
 
+.app-version {
+    margin-top: 32px;
+    text-align: right;
+    font-size: 0.8rem;
+    color: var(--color-text-subtle);
+    opacity: 0.85;
+    pointer-events: none;
+}
+
+.chart-wrapper {
+    position: relative;
+    margin-top: 12px;
+}
+
+.chart-nav {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 15%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(7, 10, 18, 0.35);
+    border: none;
+    color: transparent;
+    font-size: 84px;
+    font-weight: 700;
+    -webkit-text-stroke: 6px rgba(230, 232, 238, 0.6);
+    opacity: 0;
+    cursor: pointer;
+    transition: opacity 0.18s ease;
+    padding: 0;
+}
+
+.chart-nav span {
+    text-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+    pointer-events: none;
+}
+
+.chart-nav-left {
+    left: 0;
+}
+
+.chart-nav-right {
+    right: 0;
+}
+
+.chart-wrapper.show-left .chart-nav-left {
+    opacity: 1;
+}
+
+.chart-wrapper.show-right .chart-nav-right {
+    opacity: 1;
+}
+
+.chart-nav.disabled {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.chart-nav:focus-visible {
+    outline: 2px solid rgba(var(--color-primary-rgb), 0.6);
+    outline-offset: -2px;
+}
+
 .summary-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
@@ -274,6 +339,31 @@ body {
     margin-bottom: 12px;
 }
 
+.panel-search {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    padding: 0 12px;
+}
+
+.panel-search input {
+    width: min(360px, 100%);
+    padding: 8px 12px;
+    border-radius: 10px;
+    border: 1px solid var(--color-border);
+    background: var(--color-surface-2);
+    color: var(--color-text);
+}
+
+.panel-search input:focus {
+    outline: 2px solid rgba(var(--color-primary-rgb), 0.35);
+    border-color: var(--color-primary);
+}
+
+.panel:not(.expanded) .panel-search {
+    display: none;
+}
+
 .count-badge {
     display: inline-flex;
     align-items: center;
@@ -311,6 +401,18 @@ body {
     background: rgba(var(--color-success-rgb), 0.15);
     color: var(--color-success);
     border: 1px solid rgba(var(--color-success-rgb), 0.35);
+}
+
+.tag-invalid {
+    background: rgba(var(--color-danger-rgb), 0.16);
+    color: var(--color-danger);
+    border: 1px solid rgba(var(--color-danger-rgb), 0.4);
+}
+
+.tag-conflict {
+    background: rgba(var(--color-purple-rgb), 0.16);
+    color: var(--color-purple);
+    border: 1px solid rgba(var(--color-purple-rgb), 0.4);
 }
 
 .tag-http {

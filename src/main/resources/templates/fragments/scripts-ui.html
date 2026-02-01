@@ -1,0 +1,332 @@
+<th:block th:fragment="scripts-ui">
+<script>
+    const toggleButton = document.getElementById('toggleSamples');
+    const samplesPanel = document.getElementById('samplesPanel');
+    const samplesSection = toggleButton ? toggleButton.closest('.panel') : null;
+    if (toggleButton && samplesPanel) {
+        toggleButton.addEventListener('click', () => {
+            const collapsed = samplesPanel.classList.toggle('collapsed');
+            toggleButton.textContent = collapsed ? 'Show samples' : 'Hide samples';
+            if (samplesSection) {
+                samplesSection.classList.toggle('expanded', !collapsed);
+            }
+        });
+        if (samplesSection && !samplesPanel.classList.contains('collapsed')) {
+            samplesSection.classList.add('expanded');
+        }
+    }
+
+    const toggleAnomalies = document.getElementById('toggleAnomalies');
+    const anomaliesPanel = document.getElementById('anomaliesPanel');
+    const anomaliesSection = toggleAnomalies ? toggleAnomalies.closest('.panel') : null;
+    if (toggleAnomalies && anomaliesPanel) {
+        toggleAnomalies.addEventListener('click', () => {
+            const collapsed = anomaliesPanel.classList.toggle('collapsed');
+            toggleAnomalies.textContent = collapsed ? 'Show anomalies' : 'Hide anomalies';
+            if (anomaliesSection) {
+                anomaliesSection.classList.toggle('expanded', !collapsed);
+            }
+        });
+        if (anomaliesSection && !anomaliesPanel.classList.contains('collapsed')) {
+            anomaliesSection.classList.add('expanded');
+        }
+    }
+
+    const nodeSelect = document.getElementById('nodeSelect');
+    if (nodeSelect) {
+        nodeSelect.addEventListener('change', () => {
+            const selected = nodeSelect.value;
+            const url = new URL(window.location.href);
+            url.searchParams.set('node', selected);
+            if (!url.searchParams.get('range')) {
+                url.searchParams.set('range', '2h');
+            }
+            window.location.href = url.toString();
+        });
+    }
+
+    const anomalyModal = document.getElementById('anomalyModal');
+    const anomalyContent = document.getElementById('anomalyContent');
+    const closeAnomaly = document.getElementById('closeAnomaly');
+    const sampleModal = document.getElementById('sampleModal');
+    const sampleContent = document.getElementById('sampleContent');
+    const closeSample = document.getElementById('closeSample');
+    const openModal = () => {
+        if (anomalyModal) {
+            anomalyModal.classList.remove('hidden');
+            anomalyModal.setAttribute('aria-hidden', 'false');
+        }
+    };
+    const closeModal = () => {
+        if (anomalyModal) {
+            anomalyModal.classList.add('hidden');
+            anomalyModal.setAttribute('aria-hidden', 'true');
+        }
+    };
+    if (closeAnomaly) {
+        closeAnomaly.addEventListener('click', closeModal);
+    }
+    if (anomalyModal) {
+        const backdrop = anomalyModal.querySelector('.modal-backdrop');
+        if (backdrop) {
+            backdrop.addEventListener('click', closeModal);
+        }
+    }
+
+    const openSampleModal = () => {
+        if (sampleModal) {
+            sampleModal.classList.remove('hidden');
+            sampleModal.setAttribute('aria-hidden', 'false');
+        }
+    };
+
+    const closeSampleModal = () => {
+        if (sampleModal) {
+            sampleModal.classList.add('hidden');
+            sampleModal.setAttribute('aria-hidden', 'true');
+        }
+    };
+
+    if (closeSample) {
+        closeSample.addEventListener('click', closeSampleModal);
+    }
+    if (sampleModal) {
+        const backdrop = sampleModal.querySelector('.modal-backdrop');
+        if (backdrop) {
+            backdrop.addEventListener('click', closeSampleModal);
+        }
+    }
+
+    const openAnomaly = async (id) => {
+        if (!anomalyContent) {
+            return;
+        }
+        const numericId = Number(id);
+        openModal();
+
+        const renderDetails = (payload) => {
+            if (!payload) {
+                anomalyContent.innerHTML = '<p class="muted">Unable to load anomaly details.</p>';
+                return;
+            }
+            const timeText = payload.timestamp
+                ? new Date(payload.timestamp).toLocaleString()
+                : (payload.time ?? '-');
+            const formatHash = (hash) => {
+                if (!hash || hash.length < 15) return hash || '-';
+                return hash.substring(0, 6) + '...' + hash.substring(hash.length - 6);
+            };
+            const copyBtn = (text) => {
+                if (!text) return '';
+                return `<button class="copy-btn" onclick="copyToClipboard('${text}')" title="Copy full hash">📋</button>`;
+            };
+            const detailsText = payload.details && String(payload.details).trim().length > 0
+                ? payload.details
+                : (payload.message ?? '-');
+
+            anomalyContent.innerHTML = `
+            <div class="detail-grid">
+                <div><span class="label">ID</span><span>${payload.id ?? '-'}</span></div>
+                <div><span class="label">Node</span><span>${payload.nodeName ?? payload.nodeKey ?? '-'}</span></div>
+                <div><span class="label">Time</span><span>${timeText}</span></div>
+                <div><span class="label">Type</span><span>${payload.type ?? '-'}</span></div>
+                <div><span class="label">Source</span><span>${payload.source ?? '-'}</span></div>
+                <div><span class="label">Block</span><span>${payload.blockNumber ?? '-'}</span></div>
+                <div><span class="label">Block Hash</span><span class="hash-container">${formatHash(payload.blockHash)} ${copyBtn(payload.blockHash)}</span></div>
+                <div><span class="label">Parent Hash</span><span class="hash-container">${formatHash(payload.parentHash)} ${copyBtn(payload.parentHash)}</span></div>
+                <div><span class="label">Message</span><span>${payload.message ?? '-'}</span></div>
+            </div>
+            <div class="detail-block">
+                <span class="label">Details</span>
+                <pre>${detailsText}</pre>
+            </div>
+        `;
+        };
+
+        if (!Number.isFinite(numericId) || numericId <= 0) {
+            const row = anomalies.find(entry => String(entry.id) === String(id));
+            renderDetails(row);
+            return;
+        }
+
+        anomalyContent.innerHTML = '<p class="muted">Loading...</p>';
+        try {
+            const response = await fetch(`/api/anomalies/${numericId}`);
+            if (!response.ok) {
+                const row = anomalies.find(entry => String(entry.id) === String(id));
+                renderDetails(row);
+                return;
+            }
+            const data = await response.json();
+            if (!data.details || String(data.details).trim().length === 0) {
+                const row = anomalies.find(entry => String(entry.id) === String(id));
+                renderDetails({
+                    ...data,
+                    details: row?.details ?? data.details
+                });
+                return;
+            }
+            renderDetails(data);
+        } catch (error) {
+            const row = anomalies.find(entry => String(entry.id) === String(id));
+            renderDetails(row);
+        }
+    };
+
+    window.copyToClipboard = (text) => {
+        if (!text) return;
+        navigator.clipboard.writeText(text).then(() => {
+            // Optional: Show visual feedback
+        }).catch(err => {
+            console.error('Failed to copy text: ', err);
+        });
+    };
+
+    const formatHash = (hash) => {
+        if (!hash || hash.length < 15) return hash || '-';
+        return hash.substring(0, 6) + '...' + hash.substring(hash.length - 6);
+    };
+    const copyBtn = (text) => {
+        if (!text) return '';
+        return `<button class="copy-btn" onclick="copyToClipboard('${text}')" title="Copy full hash">📋</button>`;
+    };
+
+    const openSampleDetails = (sample) => {
+        if (!sample || !sampleContent) {
+            return;
+        }
+        const blockBadge = sample.conflict
+            ? '<span class="tag tag-conflict">conflict</span>'
+            : (sample.invalid
+                ? '<span class="tag tag-invalid">invalid</span>'
+                : (sample.finalized
+                    ? '<span class="tag tag-finalized">finalized</span>'
+                    : (sample.safe ? '<span class="tag tag-safe">safe</span>' : '')));
+        const blockDisplay = `${sample.blockNumber ?? '-'}${blockBadge ? ' ' + blockBadge : ''}`;
+        sampleContent.innerHTML = `
+            <div class="detail-grid">
+                <div><span class="label">Block</span><span>${blockDisplay}</span></div>
+                <div><span class="label">Block Time</span><span>${sample.blockTime ?? '-'}</span></div>
+                <div><span class="label">Sources</span><span>${(sample.sources || []).join(', ') || '-'}</span></div>
+                <div><span class="label">Status</span><span>${sample.status ?? '-'}</span></div>
+                <div><span class="label">Latency</span><span>${sample.latencyMs != null ? sample.latencyMs + ' ms' : 'n/a'}</span></div>
+                <div><span class="label">Transactions</span><span>${sample.transactionCount ?? 'n/a'}</span></div>
+                <div><span class="label">Block Hash</span><span class="hash-container">${formatHash(sample.blockHash)} ${copyBtn(sample.blockHash)}</span></div>
+                <div><span class="label">Parent Hash</span><span class="hash-container">${formatHash(sample.parentHash)} ${copyBtn(sample.parentHash)}</span></div>
+            </div>
+        `;
+        openSampleModal();
+    };
+
+    const anomaliesBodyEl = document.getElementById('anomaliesBody');
+    if (anomaliesBodyEl) {
+        anomaliesBodyEl.addEventListener('click', (event) => {
+            const target = event.target;
+            if (target && target.classList && target.classList.contains('anomaly-link')) {
+                event.preventDefault();
+                openAnomaly(target.getAttribute('data-id'));
+            }
+        });
+    }
+
+    const samplesBodyEl = document.getElementById('samplesBody');
+    if (samplesBodyEl) {
+        samplesBodyEl.addEventListener('click', (event) => {
+            const target = event.target;
+            if (target && target.classList && target.classList.contains('sample-link')) {
+                event.preventDefault();
+                const blockHash = target.getAttribute('data-hash');
+                const sample = samples.find(entry => entry.blockHash === blockHash);
+                openSampleDetails(sample);
+            }
+        });
+    }
+
+    const chartWrapper = document.getElementById('latencyChartWrapper');
+    const navLeft = document.getElementById('chartNavLeft');
+    const navRight = document.getElementById('chartNavRight');
+    if (chartWrapper && navLeft && navRight) {
+        const rangeSteps = {
+            '2h': 90 * 60 * 1000,
+            '3d': (2 * 24 + 8) * 60 * 60 * 1000
+        };
+        const rangeFromData = chartWrapper.dataset.range;
+        const rangeFromScript = typeof rangeKey !== 'undefined' ? rangeKey : null;
+        const activeRange = rangeFromScript || rangeFromData || '2h';
+        const stepMs = rangeSteps[activeRange];
+        if (!stepMs) {
+            navLeft.classList.add('disabled');
+            navRight.classList.add('disabled');
+        } else {
+            const nowEpochMs = Date.now();
+            const oldestEndEpochMs = nowEpochMs - (30 * 24 * 60 * 60 * 1000);
+            const newestThresholdMs = 60 * 1000;
+            let currentEndEpochMs = typeof viewEndEpochMs !== 'undefined' ? viewEndEpochMs : nowEpochMs;
+            if (chartWrapper.dataset.end) {
+                const parsed = Number(chartWrapper.dataset.end);
+                if (!Number.isNaN(parsed)) {
+                    currentEndEpochMs = parsed;
+                }
+            }
+
+            const currentUrl = new URL(window.location.href);
+            const endParam = currentUrl.searchParams.get('end');
+            if (endParam) {
+                const parsed = Number(endParam);
+                if (!Number.isNaN(parsed)) {
+                    currentEndEpochMs = parsed;
+                }
+            }
+
+            currentEndEpochMs = Math.min(currentEndEpochMs, nowEpochMs);
+            currentEndEpochMs = Math.max(currentEndEpochMs, oldestEndEpochMs);
+
+            const isNewest = !endParam || currentEndEpochMs >= nowEpochMs - newestThresholdMs;
+            const isOldest = currentEndEpochMs <= oldestEndEpochMs + newestThresholdMs;
+            navRight.classList.toggle('disabled', isNewest);
+            const allowLeft = !!hasOlderAggregates;
+            navLeft.classList.toggle('disabled', isOldest || !allowLeft);
+
+            const navigate = (direction) => {
+                let target = currentEndEpochMs + direction * stepMs;
+                target = Math.min(target, nowEpochMs);
+                target = Math.max(target, oldestEndEpochMs);
+
+                const nextUrl = new URL(window.location.href);
+                if (Math.abs(target - nowEpochMs) <= newestThresholdMs) {
+                    nextUrl.searchParams.delete('end');
+                } else {
+                    nextUrl.searchParams.set('end', String(Math.round(target)));
+                }
+                if (!nextUrl.searchParams.get('range')) {
+                    nextUrl.searchParams.set('range', activeRange);
+                }
+                window.location.href = nextUrl.toString();
+            };
+
+            const updateHoverZone = (event) => {
+                if (navLeft.classList.contains('disabled') && navRight.classList.contains('disabled')) {
+                    chartWrapper.classList.remove('show-left', 'show-right');
+                    return;
+                }
+                const rect = chartWrapper.getBoundingClientRect();
+                const x = event.clientX - rect.left;
+                const leftZone = rect.width / 3;
+                const rightZone = rect.width * 2 / 3;
+                const showLeft = x >= 0 && x <= leftZone && !navLeft.classList.contains('disabled');
+                const showRight = x >= rightZone && x <= rect.width && !navRight.classList.contains('disabled');
+                chartWrapper.classList.toggle('show-left', showLeft);
+                chartWrapper.classList.toggle('show-right', showRight);
+            };
+
+            chartWrapper.addEventListener('mousemove', updateHoverZone);
+            chartWrapper.addEventListener('mouseleave', () => {
+                chartWrapper.classList.remove('show-left', 'show-right');
+            });
+
+            navLeft.addEventListener('click', () => navigate(-1));
+            navRight.addEventListener('click', () => navigate(1));
+        }
+    }
+</script>
+</th:block>

@@ -60,7 +60,7 @@ class LargeDataStoreIntegrationTest {
     void anomaliesArePresentInMonthlyRange() {
         String nodeKey = requireNodeKey();
 
-        DashboardView view = dashboardService.getDashboard(nodeKey, TimeRange.MONTH_1);
+        DashboardView view = dashboardService.getDashboard(nodeKey, TimeRange.MONTH_1, java.time.Instant.now());
 
         assertNotNull(view, "Dashboard view should be created");
         assertNotNull(view.getSummary(), "Dashboard summary should be available");
@@ -89,7 +89,7 @@ class LargeDataStoreIntegrationTest {
     void httpOutageVisibleInTwoHourChart() {
         String nodeKey = requireNodeKey();
 
-        DashboardView view = dashboardService.getDashboard(nodeKey, TimeRange.HOURS_2);
+        DashboardView view = dashboardService.getDashboard(nodeKey, TimeRange.HOURS_2, java.time.Instant.now());
 
         List<Double> httpErrorRates = view.getChartErrorRates();
         assertTrue(httpErrorRates.stream().anyMatch(rate -> rate == null),
@@ -101,7 +101,7 @@ class LargeDataStoreIntegrationTest {
     void wsOutageVisibleInThreeDayChart() {
         String nodeKey = requireNodeKey();
 
-        DashboardView view = dashboardService.getDashboard(nodeKey, TimeRange.DAYS_3);
+        DashboardView view = dashboardService.getDashboard(nodeKey, TimeRange.DAYS_3, java.time.Instant.now());
 
         List<Double> wsErrorRates = view.getChartWsErrorRates();
         assertTrue(wsErrorRates.stream().anyMatch(rate -> rate == null),
@@ -113,7 +113,7 @@ class LargeDataStoreIntegrationTest {
     void chartMinMaxAndErrorFlagsAreAvailable() {
         String nodeKey = requireNodeKey();
 
-        DashboardView view = dashboardService.getDashboard(nodeKey, TimeRange.HOURS_2);
+        DashboardView view = dashboardService.getDashboard(nodeKey, TimeRange.HOURS_2, java.time.Instant.now());
 
         assertEquals(view.getChartLatencies().size(), view.getChartLatencyMins().size());
         assertEquals(view.getChartLatencies().size(), view.getChartLatencyMaxs().size());

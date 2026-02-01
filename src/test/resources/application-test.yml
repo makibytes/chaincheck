@@ -13,5 +13,6 @@ rpc:
       http: ""
       ws: ""
       poll-interval-ms: 60000
-      anomaly-delay-ms: 2000
+      anomaly-detection:
+        high-latency: 2000
       safe-blocks-enabled: false

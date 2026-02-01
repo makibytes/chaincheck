@@ -18,6 +18,8 @@
 package de.makibytes.chaincheck.monitor;
 
 import java.lang.reflect.Constructor;
+import java.lang.reflect.Proxy;
+import java.net.http.WebSocket;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -150,6 +152,7 @@ class RpcMonitorServiceTest {
                 state.lastWsBlockNumber = 120L;
                 state.lastWsBlockHash = "0xhead";
                 state.lastWsEventReceivedAt = now;
+                state.webSocketRef.set(dummyWebSocket());
             } else {
                 state.lastHttpBlockNumber = 110L;
                 state.lastHttpBlockHash = "0xstale";
@@ -179,6 +182,7 @@ class RpcMonitorServiceTest {
         referenceState.lastWsBlockHash = "0xref";
         referenceState.lastWsEventReceivedAt = Instant.now();
         referenceState.wsNewHeadCount = 20;
+        referenceState.webSocketRef.set(dummyWebSocket());
         states.put("mock-node-two", referenceState);
 
         RpcMonitorService.NodeState targetState = new RpcMonitorService.NodeState();
@@ -186,6 +190,7 @@ class RpcMonitorServiceTest {
         targetState.lastWsBlockHash = "0xtarget";
         targetState.lastWsEventReceivedAt = Instant.now();
         targetState.wsNewHeadCount = 20;
+        targetState.webSocketRef.set(dummyWebSocket());
         states.put("mock-node", targetState);
 
         setReferenceState(svc, 100L, "0xref");
@@ -215,6 +220,7 @@ class RpcMonitorServiceTest {
         referenceState.lastWsBlockHash = "0xhead";
         referenceState.lastWsEventReceivedAt = Instant.now();
         referenceState.wsNewHeadCount = 20;
+        referenceState.webSocketRef.set(dummyWebSocket());
         referenceState.lastSafeBlockNumber = 200L;
         referenceState.lastSafeBlockHash = "0xbbb";
         states.put("mock-node-two", referenceState);
@@ -224,6 +230,7 @@ class RpcMonitorServiceTest {
         targetState.lastWsBlockHash = "0xhead-target";
         targetState.lastWsEventReceivedAt = Instant.now();
         targetState.wsNewHeadCount = 20;
+        targetState.webSocketRef.set(dummyWebSocket());
         states.put("mock-node", targetState);
 
         setReferenceState(svc, 210L, "0xhead");
@@ -265,6 +272,13 @@ class RpcMonitorServiceTest {
         Long headNumber = (Long) ReflectionTestUtils.getField(value, "headNumber");
         String headHash = (String) ReflectionTestUtils.getField(value, "headHash");
         return new ReferenceSnapshot(headNumber, headHash);
+    }
+
+    private WebSocket dummyWebSocket() {
+        return (WebSocket) Proxy.newProxyInstance(
+                WebSocket.class.getClassLoader(),
+                new Class<?>[] { WebSocket.class },
+                (proxy, method, args) -> null);
     }
 
     private record ReferenceSnapshot(Long headNumber, String headHash) {

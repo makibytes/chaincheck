@@ -27,7 +27,6 @@ public class ChainCheckProperties {
 
     private String title = "";
     private String titleColor = "white";
-    private long anomalyDelayMs = 2000;
     private boolean safeBlocksEnabled = false;
     private int scaleChangeMs = 500;
     private ReferenceNode reference = new ReferenceNode();
@@ -50,14 +49,6 @@ public class ChainCheckProperties {
 
     public void setTitleColor(String titleColor) {
         this.titleColor = titleColor;
-    }
-
-    public long getAnomalyDelayMs() {
-        return anomalyDelayMs;
-    }
-
-    public void setAnomalyDelayMs(long anomalyDelayMs) {
-        this.anomalyDelayMs = anomalyDelayMs;
     }
 
     public boolean isSafeBlocksEnabled() {
@@ -122,7 +113,7 @@ public class ChainCheckProperties {
         private String http;
         private String ws;
         private long pollIntervalMs = 3000;
-        private long anomalyDelayMs = -1;
+        private AnomalyDetection anomalyDetection = new AnomalyDetection();
         private Boolean safeBlocksEnabled;
         private long connectTimeoutMs = -1;
         private long readTimeoutMs = -1;
@@ -162,12 +153,12 @@ public class ChainCheckProperties {
             this.pollIntervalMs = pollIntervalMs;
         }
 
-        public long getAnomalyDelayMs() {
-            return anomalyDelayMs;
+        public AnomalyDetection getAnomalyDetection() {
+            return anomalyDetection;
         }
 
-        public void setAnomalyDelayMs(long anomalyDelayMs) {
-            this.anomalyDelayMs = anomalyDelayMs;
+        public void setAnomalyDetection(AnomalyDetection anomalyDetection) {
+            this.anomalyDetection = anomalyDetection;
         }
 
         public Boolean getSafeBlocksEnabled() {
@@ -329,6 +320,7 @@ public class ChainCheckProperties {
 
     public static class AnomalyDetection {
         private Integer longDelayBlockCount = 15;
+        private long highLatencyMs = 2000;
 
         public Integer getLongDelayBlockCount() {
             return longDelayBlockCount;
@@ -336,6 +328,14 @@ public class ChainCheckProperties {
 
         public void setLongDelayBlockCount(Integer longDelayBlockCount) {
             this.longDelayBlockCount = longDelayBlockCount;
+        }
+
+        public long getHighLatencyMs() {
+            return highLatencyMs;
+        }
+
+        public void setHighLatencyMs(long highLatencyMs) {
+            this.highLatencyMs = highLatencyMs;
         }
     }
 }

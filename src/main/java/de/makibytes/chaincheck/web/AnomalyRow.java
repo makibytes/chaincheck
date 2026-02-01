@@ -24,19 +24,49 @@ public class AnomalyRow {
     private final String type;
     private final String source;
     private final String message;
+    private final Long blockNumber;
+    private final String blockHash;
+    private final String parentHash;
+    private final String details;
     private final int count;
     private final boolean isGrouped;
 
     public AnomalyRow(long id, String time, String type, String source, String message) {
-        this(id, time, type, source, message, 1, false);
+        this(id, time, type, source, message, null, null, null, null, 1, false);
     }
 
-    public AnomalyRow(long id, String time, String type, String source, String message, int count, boolean isGrouped) {
+    public AnomalyRow(long id,
+                      String time,
+                      String type,
+                      String source,
+                      String message,
+                      Long blockNumber,
+                      String blockHash,
+                      String parentHash,
+                      String details) {
+        this(id, time, type, source, message, blockNumber, blockHash, parentHash, details, 1, false);
+    }
+
+    public AnomalyRow(long id,
+                      String time,
+                      String type,
+                      String source,
+                      String message,
+                      Long blockNumber,
+                      String blockHash,
+                      String parentHash,
+                      String details,
+                      int count,
+                      boolean isGrouped) {
         this.id = id;
         this.time = time;
         this.type = type;
         this.source = source;
         this.message = message;
+        this.blockNumber = blockNumber;
+        this.blockHash = blockHash;
+        this.parentHash = parentHash;
+        this.details = details;
         this.count = count;
         this.isGrouped = isGrouped;
     }
@@ -59,6 +89,22 @@ public class AnomalyRow {
 
     public String getMessage() {
         return message;
+    }
+
+    public Long getBlockNumber() {
+        return blockNumber;
+    }
+
+    public String getBlockHash() {
+        return blockHash;
+    }
+
+    public String getParentHash() {
+        return parentHash;
+    }
+
+    public String getDetails() {
+        return details;
     }
 
     public int getCount() {

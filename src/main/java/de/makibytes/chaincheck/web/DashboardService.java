@@ -27,6 +27,7 @@ import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
@@ -53,10 +54,10 @@ public class DashboardService {
     private final NodeRegistry nodeRegistry;
     private final RpcMonitorService rpcMonitorService;
     private final ChainCheckProperties properties;
-    private static final int MAX_SAMPLES = 1000;
+    private static final int MAX_SAMPLES = 10000;
     private static final int PAGE_SIZE = 50;
     private static final int MAX_PAGES = 20;
-    private static final int MAX_ANOMALIES = 1000;
+    private static final int MAX_ANOMALIES = 10000;
 
     public DashboardService(InMemoryMetricsStore store,
                             MetricsCache cache,
@@ -70,8 +71,8 @@ public class DashboardService {
         this.properties = properties;
     }
 
-    public DashboardView getDashboard(String nodeKey, TimeRange range) {
-        DashboardView cached = cache.get(nodeKey, range);
+    public DashboardView getDashboard(String nodeKey, TimeRange range, Instant end) {
+        DashboardView cached = cache.get(nodeKey, range, end);
         if (cached != null) {
             return cached;
         }
@@ -84,7 +85,7 @@ public class DashboardService {
             && nodeDefinition.ws() != null
             && !nodeDefinition.ws().isBlank();
 
-        Instant now = Instant.now();
+        Instant now = end == null ? Instant.now() : end;
         Instant since = now.minus(range.getDuration());
 
         List<MetricSample> rawSamples = store.getRawSamplesSince(nodeKey, since);
@@ -250,6 +251,8 @@ public class DashboardService {
                 anomalyCounts.getOrDefault(AnomalyType.DELAY, 0L) + aggregate.getDelayCount());
             anomalyCounts.put(AnomalyType.REORG,
                 anomalyCounts.getOrDefault(AnomalyType.REORG, 0L) + aggregate.getReorgCount());
+            anomalyCounts.put(AnomalyType.CONFLICT,
+                anomalyCounts.getOrDefault(AnomalyType.CONFLICT, 0L) + aggregate.getConflictCount());
             anomalyCounts.put(AnomalyType.BLOCK_GAP,
                 anomalyCounts.getOrDefault(AnomalyType.BLOCK_GAP, 0L) + aggregate.getBlockGapCount());
             anomalyCounts.put(AnomalyType.ERROR,
@@ -332,38 +335,6 @@ public class DashboardService {
                 || sample.getSafeDelayCount() > 0
                 || sample.getFinalizedDelayCount() > 0);
 
-        DashboardSummary summary = new DashboardSummary(
-                total,
-            httpCount,
-            wsCount,
-                success,
-                errors,
-                avgLatency,
-                maxLatency,
-                p95Latency,
-                p99Latency,
-                httpRps,
-                wsEventsPerMinute,
-                uptimePercent,
-                errorRatePercent,
-                avgNewBlockPropagation,
-                p95NewBlockPropagation,
-                p99NewBlockPropagation,
-                avgSafePropagation,
-                p95SafePropagation,
-                p99SafePropagation,
-                avgFinalizedPropagation,
-                p95FinalizedPropagation,
-                p99FinalizedPropagation,
-                staleBlockCount,
-                blockLagBlocks,
-                anomalyCounts.getOrDefault(AnomalyType.DELAY, 0L),
-                anomalyCounts.getOrDefault(AnomalyType.REORG, 0L),
-                anomalyCounts.getOrDefault(AnomalyType.BLOCK_GAP, 0L),
-                anomalyCounts.getOrDefault(AnomalyType.RATE_LIMIT, 0L),
-                anomalyCounts.getOrDefault(AnomalyType.TIMEOUT, 0L),
-                anomalyCounts.getOrDefault(AnomalyType.WRONG_HEAD, 0L));
-
         // Group samples by blockhash and merge them
         Map<String, List<MetricSample>> samplesByHash = rawSamples.stream()
                 .filter(s -> s.getBlockHash() != null && !s.getBlockHash().isBlank())
@@ -373,6 +344,8 @@ public class DashboardService {
 
         // First pass: create intermediate rows with block number and initial finalized/safe status
         Map<Long, BlockTagInfo> blockTags = new HashMap<>();
+        Map<Long, java.util.Set<String>> finalizedHashesByNumber = new HashMap<>();
+        Map<String, Instant> sampleTimestampByHash = new HashMap<>();
         
         List<SampleRow> intermediateRows = samplesByHash.entrySet().stream()
                 .map(entry -> {
@@ -386,7 +359,7 @@ public class DashboardService {
                             .sorted()
                             .toList();
                     
-                    Long avgLatencyForRow = null;
+                        Long avgLatencyForRow = null;
                     List<Long> validLatencies = samples.stream()
                             .filter(s -> s.getLatencyMs() >= 0)
                             .map(MetricSample::getLatencyMs)
@@ -398,11 +371,27 @@ public class DashboardService {
                                 .orElse(-1));
                     }
                     
-                    // Determine if this block was explicitly queried as finalized or safe
+                        // Determine if this block was explicitly queried as finalized or safe
                     boolean hasFinalized = samples.stream().anyMatch(s -> s.getFinalizedDelayMs() != null);
                     boolean hasSafe = samples.stream().anyMatch(s -> s.getSafeDelayMs() != null);
                     
                     boolean allSuccess = samples.stream().allMatch(MetricSample::isSuccess);
+                        String blockHash = samples.stream()
+                            .map(MetricSample::getBlockHash)
+                            .filter(hash -> hash != null && !hash.isBlank())
+                            .findFirst()
+                            .orElse(null);
+                        String parentHash = samples.stream()
+                            .map(MetricSample::getParentHash)
+                            .filter(hash -> hash != null && !hash.isBlank())
+                            .findFirst()
+                            .orElse(null);
+                        Instant blockTimestamp = samples.stream()
+                            .map(MetricSample::getBlockTimestamp)
+                            .filter(ts -> ts != null)
+                            .findFirst()
+                            .orElse(null);
+                        String blockTime = blockTimestamp == null ? null : rowFormatter.format(blockTimestamp);
                     Integer transactionCount = samples.stream()
                             .map(MetricSample::getTransactionCount)
                             .filter(tc -> tc != null)
@@ -415,17 +404,32 @@ public class DashboardService {
                             .orElse(null);
                     
                     // Store tag info for propagation
+                    if (blockHash != null && !blockHash.isBlank()) {
+                        sampleTimestampByHash.putIfAbsent(blockHash, first.getTimestamp());
+                    }
+
                     if (first.getBlockNumber() != null) {
                         blockTags.put(first.getBlockNumber(), new BlockTagInfo(hasFinalized, hasSafe));
+                        if (hasFinalized && blockHash != null && !blockHash.isBlank()) {
+                            finalizedHashesByNumber
+                                    .computeIfAbsent(first.getBlockNumber(), key -> new java.util.HashSet<>())
+                                    .add(blockHash);
+                        }
                     }
                     
-                    return new SampleRow(
+                            return new SampleRow(
                             rowFormatter.format(first.getTimestamp()),
                             sources,
                             allSuccess ? "OK" : "ERROR",
                             avgLatencyForRow,
                             first.getBlockNumber(),
+                            blockHash,
+                            parentHash,
+                            blockTime,
+                            hasSafe,
                             hasFinalized,
+                                        false,
+                                        false,
                             transactionCount,
                             gasPriceWei);
                 })
@@ -477,20 +481,181 @@ public class DashboardService {
         }
         
         // Third pass: update rows with propagated tags
+        boolean referenceSelected = rpcMonitorService.getReferenceNodeKey() != null;
+        Map<Long, java.util.Set<String>> hashesByNumber = intermediateRows.stream()
+                .filter(row -> row.getBlockNumber() != null && row.getBlockHash() != null && !row.getBlockHash().isBlank())
+                .collect(Collectors.groupingBy(
+                        SampleRow::getBlockNumber,
+                        Collectors.mapping(SampleRow::getBlockHash, Collectors.toSet())));
+        Map<Long, java.util.Set<String>> conflictHashesByNumber = hashesByNumber.entrySet().stream()
+                .filter(entry -> entry.getValue().size() > 1)
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+        Map<String, Long> blockNumberByHash = new HashMap<>();
+        for (SampleRow row : intermediateRows) {
+            if (row.getBlockHash() != null && row.getBlockNumber() != null) {
+                blockNumberByHash.put(row.getBlockHash(), row.getBlockNumber());
+            }
+        }
+
+        Map<Long, String> resolvedFinalizedHashByNumber = new HashMap<>();
+        Map<Long, java.util.Set<String>> resolvedInvalidHashesByNumber = new HashMap<>();
+        Map<Long, Instant> resolvedAtByNumber = new HashMap<>();
+        for (MetricSample sample : rawSamples) {
+            if (sample.getHeadDelayMs() == null || sample.getParentHash() == null) {
+                continue;
+            }
+            Long parentNumber = blockNumberByHash.get(sample.getParentHash());
+            if (parentNumber == null) {
+                continue;
+            }
+            java.util.Set<String> conflicts = conflictHashesByNumber.get(parentNumber);
+            if (conflicts == null || conflicts.isEmpty()) {
+                continue;
+            }
+            Instant resolvedAt = resolvedAtByNumber.get(parentNumber);
+            if (resolvedAt != null && !sample.getTimestamp().isAfter(resolvedAt)) {
+                continue;
+            }
+            resolvedAtByNumber.put(parentNumber, sample.getTimestamp());
+            resolvedFinalizedHashByNumber.put(parentNumber, sample.getParentHash());
+            java.util.Set<String> invalidHashes = new java.util.HashSet<>(conflicts);
+            invalidHashes.remove(sample.getParentHash());
+            resolvedInvalidHashesByNumber.put(parentNumber, invalidHashes);
+        }
+
+            Long oldestBlockNumber = hashesByNumber.keySet().stream().min(Long::compareTo).orElse(null);
+            List<AnomalyEvent> conflictEvents = new ArrayList<>();
+            for (Map.Entry<Long, java.util.Set<String>> entry : conflictHashesByNumber.entrySet()) {
+                Long blockNumber = entry.getKey();
+                if (oldestBlockNumber != null && blockNumber <= oldestBlockNumber + 3) {
+                    // the earliest 3 blocks are unreliable if getBlock(latest) is used instead of ws
+                    continue;
+                }
+                java.util.Set<String> hashes = entry.getValue();
+                java.util.Set<String> finalizedHashes = finalizedHashesByNumber.get(blockNumber);
+                if (finalizedHashes == null || finalizedHashes.isEmpty()) {
+                continue;
+                }
+                boolean alreadyPresent = anomalies.stream()
+                    .anyMatch(event -> event.getType() == AnomalyType.CONFLICT
+                        && Objects.equals(event.getBlockNumber(), blockNumber));
+                if (alreadyPresent) {
+                continue;
+                }
+                Instant conflictTimestamp = hashes.stream()
+                    .map(sampleTimestampByHash::get)
+                    .filter(Objects::nonNull)
+                    .max(Comparator.naturalOrder())
+                    .orElse(now);
+                boolean hasWs = hashes.stream()
+                    .flatMap(hash -> samplesByHash.getOrDefault(hash, List.of()).stream())
+                    .anyMatch(sample -> sample.getSource() == MetricSource.WS);
+                MetricSource source = hasWs ? MetricSource.WS : MetricSource.HTTP;
+                String message = "Finalized block conflict at height " + blockNumber;
+                StringBuilder detailsBuilder = new StringBuilder();
+                detailsBuilder.append("Block number: ").append(blockNumber).append("\n");
+                detailsBuilder.append("Conflicting hashes: ").append(String.join(", ", hashes));
+                String resolvedHash = resolvedFinalizedHashByNumber.get(blockNumber);
+                java.util.Set<String> invalidated = resolvedInvalidHashesByNumber.get(blockNumber);
+                if (resolvedHash != null) {
+                    detailsBuilder.append("\nResolved by parent hash: ").append(resolvedHash);
+                }
+                if (invalidated != null && !invalidated.isEmpty()) {
+                    detailsBuilder.append("\nInvalidated hashes: ").append(String.join(", ", invalidated));
+                }
+                String details = detailsBuilder.toString();
+                conflictEvents.add(new AnomalyEvent(
+                    -blockNumber - 1,
+                    nodeKey,
+                    conflictTimestamp,
+                    source,
+                    AnomalyType.CONFLICT,
+                    message,
+                    blockNumber,
+                    finalizedHashes.iterator().next(),
+                    null,
+                        details));
+            }
+            if (!conflictEvents.isEmpty()) {
+                anomalies.addAll(conflictEvents);
+                anomalies.sort(Comparator.comparing(AnomalyEvent::getTimestamp).reversed());
+                anomalyCounts.put(AnomalyType.CONFLICT,
+                    anomalyCounts.getOrDefault(AnomalyType.CONFLICT, 0L) + conflictEvents.size());
+            }
+
+        ChainSelection latestChain = selectLatestChain(intermediateRows, finalizedHashesByNumber);
+        Long chainTipNumber = latestChain == null ? null : latestChain.tipNumber;
+        java.util.Set<String> chainHashes = latestChain == null ? java.util.Set.of() : latestChain.hashes;
+        java.util.Set<Long> chainNumbers = latestChain == null ? java.util.Set.of() : latestChain.numbers;
+        int chainDepth = latestChain == null ? 0 : latestChain.depth;
+        Long latestFinalizedNumber = finalizedHashesByNumber.keySet().stream()
+            .max(Long::compareTo)
+            .orElse(null);
+
         List<SampleRow> sampleRows = intermediateRows.stream()
                 .map(row -> {
                     if (row.getBlockNumber() == null) return row;
-                    
+
                     BlockTagInfo info = blockTags.get(row.getBlockNumber());
                     boolean isFinalized = info != null && info.finalized;
-                    
+                    boolean isSafe = info != null && info.safe && !isFinalized;
+                    boolean isInvalid = false;
+                    boolean isConflict = false;
+
+                    if (row.getBlockNumber() != null && row.getBlockHash() != null) {
+                        java.util.Set<String> finalizedHashes = finalizedHashesByNumber.get(row.getBlockNumber());
+                        if (finalizedHashes != null && !finalizedHashes.isEmpty()
+                                && finalizedHashes.contains(row.getBlockHash())) {
+                            isFinalized = true;
+                            isSafe = false;
+                        }
+
+                        java.util.Set<String> conflicts = conflictHashesByNumber.get(row.getBlockNumber());
+                        if (conflicts != null && !conflicts.isEmpty()) {
+                            String resolvedHash = resolvedFinalizedHashByNumber.get(row.getBlockNumber());
+                            if (resolvedHash != null) {
+                                if (resolvedHash.equals(row.getBlockHash())) {
+                                    isFinalized = true;
+                                    isSafe = false;
+                                    isConflict = false;
+                                } else if (resolvedInvalidHashesByNumber.getOrDefault(row.getBlockNumber(), java.util.Set.of())
+                                        .contains(row.getBlockHash())) {
+                                    isInvalid = true;
+                                    isFinalized = false;
+                                    isSafe = false;
+                                }
+                            } else {
+                                isConflict = true;
+                            }
+                        }
+
+                        if (!isConflict && !isInvalid
+                                && referenceSelected
+                                && chainTipNumber != null
+                                && chainDepth >= 7
+                                && latestFinalizedNumber != null
+                                && chainTipNumber >= latestFinalizedNumber + 3) {
+                            if (chainNumbers.contains(row.getBlockNumber()) && !chainHashes.contains(row.getBlockHash())) {
+                                isInvalid = true;
+                                isFinalized = false;
+                                isSafe = false;
+                            }
+                        }
+                    }
+
                     return new SampleRow(
                             row.getTime(),
                             row.getSources(),
                             row.getStatus(),
                             row.getLatencyMs(),
                             row.getBlockNumber(),
+                            row.getBlockHash(),
+                            row.getParentHash(),
+                            row.getBlockTime(),
+                            isSafe,
                             isFinalized,
+                            isInvalid,
+                            isConflict,
                             row.getTransactionCount(),
                             row.getGasPriceWei());
                 })
@@ -520,6 +685,15 @@ public class DashboardService {
         List<AnomalyEvent> pagedAnomalies = anomalies.stream()
                 .limit(MAX_ANOMALIES)
                 .toList();
+
+        boolean httpErrorOngoing = anomalies.stream()
+            .anyMatch(event -> !event.isClosed()
+                && event.getSource() == MetricSource.HTTP
+                && isErrorAnomaly(event.getType()));
+        boolean wsErrorOngoing = anomalies.stream()
+            .anyMatch(event -> !event.isClosed()
+                && event.getSource() == MetricSource.WS
+                && isErrorAnomaly(event.getType()));
 
         DateTimeFormatter anomalyFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.systemDefault());
         
@@ -585,6 +759,41 @@ public class DashboardService {
 
         ReferenceComparison referenceComparison = calculateReferenceComparison(nodeKey);
         int scaleChangeMs = properties.getScaleChangeMs();
+        Instant oldestAggregate = store.getOldestAggregateTimestamp(nodeKey);
+        boolean hasOlderAggregates = oldestAggregate != null && oldestAggregate.isBefore(since);
+
+        DashboardSummary summary = new DashboardSummary(
+            total,
+            httpCount,
+            wsCount,
+            success,
+            errors,
+            avgLatency,
+            maxLatency,
+            p95Latency,
+            p99Latency,
+            httpRps,
+            wsEventsPerMinute,
+            uptimePercent,
+            errorRatePercent,
+            avgNewBlockPropagation,
+            p95NewBlockPropagation,
+            p99NewBlockPropagation,
+            avgSafePropagation,
+            p95SafePropagation,
+            p99SafePropagation,
+            avgFinalizedPropagation,
+            p95FinalizedPropagation,
+            p99FinalizedPropagation,
+            staleBlockCount,
+            blockLagBlocks,
+            anomalyCounts.getOrDefault(AnomalyType.DELAY, 0L),
+            anomalyCounts.getOrDefault(AnomalyType.REORG, 0L),
+            anomalyCounts.getOrDefault(AnomalyType.BLOCK_GAP, 0L),
+            anomalyCounts.getOrDefault(AnomalyType.RATE_LIMIT, 0L),
+            anomalyCounts.getOrDefault(AnomalyType.TIMEOUT, 0L),
+            anomalyCounts.getOrDefault(AnomalyType.WRONG_HEAD, 0L),
+            anomalyCounts.getOrDefault(AnomalyType.CONFLICT, 0L));
 
         DashboardView view = new DashboardView(
                 range,
@@ -615,6 +824,8 @@ public class DashboardService {
                 chartReferenceFinalizedDelays,
                 hasAggregatedLatencies,
                 hasAggregatedDelays,
+                httpErrorOngoing,
+                wsErrorOngoing,
                 httpConfigured,
                 wsConfigured,
                 nodeDefinition != null && nodeDefinition.safeBlocksEnabled(),
@@ -630,10 +841,11 @@ public class DashboardService {
                 PAGE_SIZE,
                 totalAnomalies,
                 scaleChangeMs,
-                Instant.now(),
+                hasOlderAggregates,
+                now,
                 referenceComparison,
                 isReferenceNode);
-        cache.put(nodeKey, range, view);
+            cache.put(nodeKey, range, now, view);
         return view;
     }
 
@@ -1091,6 +1303,7 @@ public class DashboardService {
     }
 
     private AnomalyRow createAnomalyRow(AnomalyEvent firstEvent, AnomalyEvent lastEvent, int count, DateTimeFormatter formatter, boolean isFirstRowForSource) {
+        String details = resolveAnomalyDetails(lastEvent);
         if (count == 1) {
             // Single anomaly - use standard format
             return new AnomalyRow(
@@ -1098,7 +1311,11 @@ public class DashboardService {
                     formatter.format(firstEvent.getTimestamp()),
                     firstEvent.getType().name(),
                     firstEvent.getSource().name(),
-                    firstEvent.getMessage());
+                    firstEvent.getMessage(),
+                    firstEvent.getBlockNumber(),
+                    firstEvent.getBlockHash(),
+                    firstEvent.getParentHash(),
+                    details);
         } else {
             // Multiple anomalies - show time range and use newest ID
             // Only show "(ongoing)" for the first row per source if not closed
@@ -1113,9 +1330,46 @@ public class DashboardService {
                     firstEvent.getType().name(),
                     firstEvent.getSource().name(),
                     message,
+                    lastEvent.getBlockNumber(),
+                    lastEvent.getBlockHash(),
+                    lastEvent.getParentHash(),
+                    details,
                     count,
                     true);
         }
+    }
+
+    private String resolveAnomalyDetails(AnomalyEvent event) {
+        if (event == null) {
+            return null;
+        }
+        String details = event.getDetails();
+        if (details != null && !details.isBlank()) {
+            return details;
+        }
+        StringBuilder fallback = new StringBuilder();
+        if (event.getMessage() != null && !event.getMessage().isBlank()) {
+            fallback.append(event.getMessage());
+        }
+        if (event.getBlockNumber() != null) {
+            if (!fallback.isEmpty()) {
+                fallback.append("\n");
+            }
+            fallback.append("Block number: ").append(event.getBlockNumber());
+        }
+        if (event.getBlockHash() != null && !event.getBlockHash().isBlank()) {
+            if (!fallback.isEmpty()) {
+                fallback.append("\n");
+            }
+            fallback.append("Block hash: ").append(event.getBlockHash());
+        }
+        if (event.getParentHash() != null && !event.getParentHash().isBlank()) {
+            if (!fallback.isEmpty()) {
+                fallback.append("\n");
+            }
+            fallback.append("Parent hash: ").append(event.getParentHash());
+        }
+        return fallback.isEmpty() ? null : fallback.toString();
     }
 
     private record ChartData(List<Long> timestamps,
@@ -1141,6 +1395,15 @@ public class DashboardService {
                                   List<Long> finalizedDelayMaxs) {
     }
 
+    private boolean isErrorAnomaly(de.makibytes.chaincheck.model.AnomalyType type) {
+        if (type == null) {
+            return false;
+        }
+        return type == de.makibytes.chaincheck.model.AnomalyType.ERROR
+                || type == de.makibytes.chaincheck.model.AnomalyType.RATE_LIMIT
+                || type == de.makibytes.chaincheck.model.AnomalyType.TIMEOUT;
+    }
+
     private ReferenceComparison calculateReferenceComparison(String nodeKey) {
         // Reference comparison is optional feature - only show if multiple nodes are configured
         List<NodeRegistry.NodeDefinition> allNodes = nodeRegistry.getNodes();
@@ -1164,6 +1427,99 @@ public class DashboardService {
             this.explicitSafe = explicitSafe;
             this.finalized = false;
             this.safe = false;
+        }
+    }
+
+    private ChainSelection selectLatestChain(List<SampleRow> rows,
+                                             Map<Long, java.util.Set<String>> finalizedHashesByNumber) {
+        Map<String, ChainNode> nodes = new HashMap<>();
+        java.util.Set<String> finalizedHashes = finalizedHashesByNumber.values().stream()
+                .flatMap(java.util.Set::stream)
+                .collect(Collectors.toSet());
+        for (SampleRow row : rows) {
+            if (row.getBlockHash() == null || row.getParentHash() == null || row.getBlockNumber() == null) {
+                continue;
+            }
+            nodes.putIfAbsent(row.getBlockHash(), new ChainNode(row.getBlockHash(), row.getParentHash(), row.getBlockNumber()));
+        }
+        if (nodes.isEmpty()) {
+            return null;
+        }
+
+        ChainSelection best = null;
+        for (ChainNode node : nodes.values()) {
+            ChainSelection candidate = buildChain(node, nodes, finalizedHashes);
+            if (best == null || candidate.isBetterThan(best)) {
+                best = candidate;
+            }
+        }
+        return best;
+    }
+
+    private ChainSelection buildChain(ChainNode start,
+                                      Map<String, ChainNode> nodes,
+                                      java.util.Set<String> finalizedHashes) {
+        int maxDepth = 7;
+        java.util.Set<String> hashes = new java.util.LinkedHashSet<>();
+        java.util.Set<Long> numbers = new java.util.LinkedHashSet<>();
+        ChainNode current = start;
+        int depth = 0;
+        int finalizedMatches = 0;
+        while (current != null && depth < maxDepth) {
+            hashes.add(current.hash);
+            if (current.blockNumber != null) {
+                numbers.add(current.blockNumber);
+            }
+            if (finalizedHashes.contains(current.hash)) {
+                finalizedMatches++;
+            }
+            depth++;
+            current = current.parentHash == null ? null : nodes.get(current.parentHash);
+        }
+        return new ChainSelection(start.blockNumber, depth, finalizedMatches, hashes, numbers);
+    }
+
+    private static class ChainNode {
+        private final String hash;
+        private final String parentHash;
+        private final Long blockNumber;
+
+        private ChainNode(String hash, String parentHash, Long blockNumber) {
+            this.hash = hash;
+            this.parentHash = parentHash;
+            this.blockNumber = blockNumber;
+        }
+    }
+
+    private static class ChainSelection {
+        private final Long tipNumber;
+        private final int depth;
+        private final int finalizedMatches;
+        private final java.util.Set<String> hashes;
+        private final java.util.Set<Long> numbers;
+
+        private ChainSelection(Long tipNumber, int depth, int finalizedMatches, java.util.Set<String> hashes, java.util.Set<Long> numbers) {
+            this.tipNumber = tipNumber;
+            this.depth = depth;
+            this.finalizedMatches = finalizedMatches;
+            this.hashes = hashes;
+            this.numbers = numbers;
+        }
+
+        private boolean isBetterThan(ChainSelection other) {
+            if (other == null) {
+                return true;
+            }
+            if (this.depth != other.depth) {
+                return this.depth > other.depth;
+            }
+            if (this.finalizedMatches != other.finalizedMatches) {
+                return this.finalizedMatches > other.finalizedMatches;
+            }
+            if (this.tipNumber == null || other.tipNumber == null) {
+                return this.tipNumber != null;
+            }
+            return this.tipNumber > other.tipNumber;
         }
     }
 
