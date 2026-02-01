@@ -32,6 +32,7 @@ public class SampleRow {
     private final boolean safe;
     private final boolean finalized;
     private final boolean invalid;
+    private final boolean conflict;
     private final Integer transactionCount;
     private final Long gasPriceWei;
 
@@ -46,6 +47,7 @@ public class SampleRow {
                      boolean safe,
                      boolean finalized,
                      boolean invalid,
+                     boolean conflict,
                      Integer transactionCount,
                      Long gasPriceWei) {
         this.time = time;
@@ -59,6 +61,7 @@ public class SampleRow {
         this.safe = safe;
         this.finalized = finalized;
         this.invalid = invalid;
+        this.conflict = conflict;
         this.transactionCount = transactionCount;
         this.gasPriceWei = gasPriceWei;
     }
@@ -105,6 +108,10 @@ public class SampleRow {
 
     public boolean isInvalid() {
         return invalid;
+    }
+
+    public boolean isConflict() {
+        return conflict;
     }
 
     public Integer getTransactionCount() {

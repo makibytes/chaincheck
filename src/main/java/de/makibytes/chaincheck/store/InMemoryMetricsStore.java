@@ -40,6 +40,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import de.makibytes.chaincheck.config.ChainCheckProperties;
 import de.makibytes.chaincheck.model.AnomalyEvent;
+import de.makibytes.chaincheck.model.AnomalyType;
 import de.makibytes.chaincheck.model.MetricSample;
 import de.makibytes.chaincheck.model.MetricSource;
 import de.makibytes.chaincheck.model.TimeRange;
@@ -111,6 +112,23 @@ public class InMemoryMetricsStore {
         while (it.hasNext()) {
             AnomalyEvent event = it.next();
             if (event.getSource() == source) {
+                if (!event.isClosed()) {
+                    event.setClosed(true);
+                }
+                break;
+            }
+        }
+    }
+
+    public void closeLastAnomaly(String nodeKey, MetricSource source, AnomalyType type) {
+        java.util.Deque<AnomalyEvent> anomalies = rawAnomaliesByNode.get(nodeKey);
+        if (anomalies == null || anomalies.isEmpty()) {
+            return;
+        }
+        java.util.Iterator<AnomalyEvent> it = anomalies.descendingIterator();
+        while (it.hasNext()) {
+            AnomalyEvent event = it.next();
+            if (event.getSource() == source && event.getType() == type) {
                 if (!event.isClosed()) {
                     event.setClosed(true);
                 }

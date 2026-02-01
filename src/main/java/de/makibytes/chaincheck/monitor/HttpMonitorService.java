@@ -39,6 +39,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import de.makibytes.chaincheck.config.ChainCheckProperties;
 import de.makibytes.chaincheck.model.AnomalyEvent;
+import de.makibytes.chaincheck.model.AnomalyType;
 import de.makibytes.chaincheck.model.MetricSample;
 import de.makibytes.chaincheck.model.MetricSource;
 import de.makibytes.chaincheck.monitor.NodeRegistry.NodeDefinition;
@@ -160,6 +161,8 @@ public class HttpMonitorService {
                 state.lastFinalizedBlockNumber = finalizedBlock.blockNumber();
                 state.lastFinalizedBlockHash = finalizedBlock.blockHash();
                 state.lastFinalizedFetchAt = timestamp;
+                recordFinalizedChainReorg(node, state, finalizedBlock, timestamp);
+                trackFinalizedChainAndCloseReorg(node, state, finalizedBlock);
                 monitor.maybeCompareToReference(node, "finalized", finalizedBlock);
             } else {
                 String blockTag;
@@ -183,6 +186,8 @@ public class HttpMonitorService {
                     recordFinalizedReorgIfNeeded(node, state, checkpointBlock, timestamp);
                     state.lastFinalizedBlockNumber = checkpointBlock.blockNumber();
                     state.lastFinalizedBlockHash = checkpointBlock.blockHash();
+                    recordFinalizedChainReorg(node, state, checkpointBlock, timestamp);
+                    trackFinalizedChainAndCloseReorg(node, state, checkpointBlock);
                 }
 
                 monitor.maybeCompareToReference(node, blockTag, checkpointBlock);
@@ -494,6 +499,170 @@ public class HttpMonitorService {
         }
         long minDelayMs = Math.max(1, pollIntervalMs);
         return Duration.between(state.lastLatestFetchAt, now).toMillis() >= minDelayMs;
+    }
+
+    private void recordFinalizedChainReorg(NodeDefinition node,
+                                           RpcMonitorService.NodeState state,
+                                           RpcMonitorService.BlockInfo finalizedBlock,
+                                           Instant timestamp) {
+        if (finalizedBlock == null || finalizedBlock.blockNumber() == null || finalizedBlock.blockHash() == null) {
+            return;
+        }
+        if (finalizedBlock.blockNumber().equals(state.lastReorgBlockNumber)
+                && finalizedBlock.blockHash().equals(state.lastReorgBlockHash)) {
+            return;
+        }
+
+        ChainSelection selection = selectLatestChain(node, timestamp);
+        if (selection == null || selection.tipNumber == null || selection.hashes.isEmpty() || selection.depth < 7) {
+            return;
+        }
+        long windowStart = selection.tipNumber - selection.depth;
+        Long blockNumber = finalizedBlock.blockNumber();
+        if (blockNumber < windowStart || blockNumber > selection.tipNumber) {
+            return;
+        }
+        if (selection.hashes.contains(finalizedBlock.blockHash())) {
+            return;
+        }
+
+        String details = "Finalized block hash " + finalizedBlock.blockHash()
+                + " not in latest chain (tip " + selection.tipNumber + ")";
+        store.addAnomaly(node.key(), detector.reorgFinalized(
+                node.key(),
+                timestamp,
+                MetricSource.HTTP,
+                finalizedBlock.blockNumber(),
+                finalizedBlock.blockHash(),
+                details));
+        state.lastReorgBlockNumber = finalizedBlock.blockNumber();
+        state.lastReorgBlockHash = finalizedBlock.blockHash();
+    }
+
+    private void trackFinalizedChainAndCloseReorg(NodeDefinition node,
+                                                  RpcMonitorService.NodeState state,
+                                                  RpcMonitorService.BlockInfo finalizedBlock) {
+        if (finalizedBlock == null || finalizedBlock.blockNumber() == null || finalizedBlock.blockHash() == null) {
+            return;
+        }
+        if (!state.finalizedHistory.isEmpty()) {
+            RpcMonitorService.BlockInfo last = state.finalizedHistory.peekLast();
+            if (last != null
+                    && last.blockNumber() != null
+                    && last.blockHash() != null
+                    && last.blockNumber().equals(finalizedBlock.blockNumber())
+                    && last.blockHash().equals(finalizedBlock.blockHash())) {
+                return;
+            }
+        }
+
+        state.finalizedHistory.addLast(finalizedBlock);
+        while (state.finalizedHistory.size() > 3) {
+            state.finalizedHistory.removeFirst();
+        }
+
+        if (state.finalizedHistory.size() < 3) {
+            return;
+        }
+
+        RpcMonitorService.BlockInfo first = state.finalizedHistory.pollFirst();
+        RpcMonitorService.BlockInfo second = state.finalizedHistory.pollFirst();
+        RpcMonitorService.BlockInfo third = state.finalizedHistory.pollFirst();
+        state.finalizedHistory.addLast(first);
+        state.finalizedHistory.addLast(second);
+        state.finalizedHistory.addLast(third);
+
+        if (first == null || second == null || third == null) {
+            return;
+        }
+
+        boolean chainLink = second.parentHash() != null
+                && third.parentHash() != null
+                && second.parentHash().equals(first.blockHash())
+                && third.parentHash().equals(second.blockHash());
+        if (chainLink) {
+            store.closeLastAnomaly(node.key(), MetricSource.HTTP, AnomalyType.REORG);
+        }
+    }
+
+    private ChainSelection selectLatestChain(NodeDefinition node, Instant now) {
+        Instant since = now.minus(Duration.ofMinutes(30));
+        List<MetricSample> recent = store.getRawSamplesSince(node.key(), since).stream()
+                .filter(sample -> sample.getHeadDelayMs() != null)
+                .filter(sample -> sample.getBlockHash() != null && sample.getParentHash() != null)
+                .filter(sample -> sample.getBlockNumber() != null)
+                .toList();
+        if (recent.isEmpty()) {
+            return null;
+        }
+
+        Map<String, ChainNode> nodes = new java.util.HashMap<>();
+        for (MetricSample sample : recent) {
+            nodes.putIfAbsent(sample.getBlockHash(),
+                    new ChainNode(sample.getBlockHash(), sample.getParentHash(), sample.getBlockNumber()));
+        }
+        if (nodes.isEmpty()) {
+            return null;
+        }
+
+        ChainSelection best = null;
+        for (ChainNode nodeEntry : nodes.values()) {
+            ChainSelection candidate = buildChain(nodeEntry, nodes);
+            if (best == null || candidate.isBetterThan(best)) {
+                best = candidate;
+            }
+        }
+        return best;
+    }
+
+    private ChainSelection buildChain(ChainNode start, Map<String, ChainNode> nodes) {
+        int maxDepth = 7;
+        java.util.Set<String> hashes = new java.util.LinkedHashSet<>();
+        ChainNode current = start;
+        int depth = 0;
+        while (current != null && depth < maxDepth) {
+            hashes.add(current.hash);
+            depth++;
+            current = current.parentHash == null ? null : nodes.get(current.parentHash);
+        }
+        return new ChainSelection(start.blockNumber, depth, hashes);
+    }
+
+    private static class ChainNode {
+        private final String hash;
+        private final String parentHash;
+        private final Long blockNumber;
+
+        private ChainNode(String hash, String parentHash, Long blockNumber) {
+            this.hash = hash;
+            this.parentHash = parentHash;
+            this.blockNumber = blockNumber;
+        }
+    }
+
+    private static class ChainSelection {
+        private final Long tipNumber;
+        private final int depth;
+        private final java.util.Set<String> hashes;
+
+        private ChainSelection(Long tipNumber, int depth, java.util.Set<String> hashes) {
+            this.tipNumber = tipNumber;
+            this.depth = depth;
+            this.hashes = hashes;
+        }
+
+        private boolean isBetterThan(ChainSelection other) {
+            if (other == null) {
+                return true;
+            }
+            if (this.depth != other.depth) {
+                return this.depth > other.depth;
+            }
+            if (this.tipNumber == null || other.tipNumber == null) {
+                return this.tipNumber != null;
+            }
+            return this.tipNumber > other.tipNumber;
+        }
     }
 
     static class HttpStatusException extends IOException {

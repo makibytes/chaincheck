@@ -72,6 +72,25 @@ public class AnomalyDetector {
                 details);
     }
 
+    public AnomalyEvent reorgFinalized(String nodeKey,
+                                       Instant timestamp,
+                                       MetricSource source,
+                                       Long blockNumber,
+                                       String blockHash,
+                                       String details) {
+        return new AnomalyEvent(
+                idSequence.getAndIncrement(),
+                nodeKey,
+                timestamp,
+                source,
+                AnomalyType.REORG,
+                "Finalized block invalidated",
+                blockNumber,
+                blockHash,
+                null,
+                details);
+    }
+
     public List<AnomalyEvent> detect(String nodeKey,
                                      MetricSample sample,
                                      long anomalyDelayMs,
@@ -118,19 +137,22 @@ public class AnomalyDetector {
         String currentBlockHash = sample.getBlockHash();
         String currentParentHash = sample.getParentHash();
 
+        boolean allowReorgDetection = !(source == MetricSource.HTTP && sample.getHeadDelayMs() != null);
         if (currentBlockNumber != null && previousBlockNumber != null) {
             if (currentBlockNumber < previousBlockNumber) {
-                anomalies.add(new AnomalyEvent(
-                        idSequence.getAndIncrement(),
-                    nodeKey,
-                        now,
-                        source,
-                        AnomalyType.REORG,
-                        "Block height decreased",
-                        currentBlockNumber,
-                        currentBlockHash,
-                        currentParentHash,
-                        "Previous height " + previousBlockNumber + ", current " + currentBlockNumber));
+                if (allowReorgDetection) {
+                    anomalies.add(new AnomalyEvent(
+                            idSequence.getAndIncrement(),
+                            nodeKey,
+                            now,
+                            source,
+                            AnomalyType.REORG,
+                            "Block height decreased",
+                            currentBlockNumber,
+                            currentBlockHash,
+                            currentParentHash,
+                            "Previous height " + previousBlockNumber + ", current " + currentBlockNumber));
+                }
             } else if (source == MetricSource.WS && currentBlockNumber > previousBlockNumber + 1) {
                 anomalies.add(new AnomalyEvent(
                         idSequence.getAndIncrement(),
@@ -144,7 +166,10 @@ public class AnomalyDetector {
                         currentParentHash,
                         "Gap of " + (currentBlockNumber - previousBlockNumber) + " blocks"));
             } else if (currentBlockNumber.equals(previousBlockNumber)) {
-                if (previousBlockHash != null && currentBlockHash != null && !previousBlockHash.equals(currentBlockHash)) {
+                if (allowReorgDetection
+                        && previousBlockHash != null
+                        && currentBlockHash != null
+                        && !previousBlockHash.equals(currentBlockHash)) {
                     anomalies.add(new AnomalyEvent(
                             idSequence.getAndIncrement(),
                             nodeKey,
@@ -158,7 +183,10 @@ public class AnomalyDetector {
                             "Previous hash " + previousBlockHash + ", current " + currentBlockHash));
                 }
             } else if (currentBlockNumber.equals(previousBlockNumber + 1)) {
-                if (previousBlockHash != null && currentParentHash != null && !previousBlockHash.equals(currentParentHash)) {
+                if (allowReorgDetection
+                        && previousBlockHash != null
+                        && currentParentHash != null
+                        && !previousBlockHash.equals(currentParentHash)) {
                     anomalies.add(new AnomalyEvent(
                             idSequence.getAndIncrement(),
                             nodeKey,

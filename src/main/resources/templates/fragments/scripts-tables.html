@@ -18,6 +18,7 @@
         sample.finalized ? 'finalized' : '',
         sample.safe ? 'safe' : '',
         sample.invalid ? 'invalid' : '',
+        sample.conflict ? 'conflict' : '',
         sample.transactionCount,
         sample.gasPriceWei
     ].join(' ').toLowerCase();
@@ -38,7 +39,9 @@
 
             // Build block display with finalized tag if applicable
             let blockDisplay = s.blockNumber ? String(s.blockNumber) : '-';
-            if (s.blockNumber && s.invalid) {
+            if (s.blockNumber && s.conflict) {
+                blockDisplay += ' <span class="tag tag-conflict">conflict</span>';
+            } else if (s.blockNumber && s.invalid) {
                 blockDisplay += ' <span class="tag tag-invalid">invalid</span>';
             } else if (s.blockNumber && s.finalized) {
                 blockDisplay += ' <span class="tag tag-finalized">finalized</span>';
@@ -159,12 +162,18 @@
                 messageContent += ` <span class="count-badge">${a.count}</span>`;
             }
 
+            const idValue = Number(a.id ?? 0);
+            const canOpen = Number.isFinite(idValue) && idValue > 0;
+            const openButton = canOpen
+                ? `<button class="button ghost anomaly-link" data-id="${a.id}">Open</button>`
+                : `<button class="button ghost" disabled>Open</button>`;
+
             row.innerHTML = `
             <td>${a.time ?? '-'}</td>
             <td>${a.type ?? '-'}</td>
             <td>${a.source ?? '-'}</td>
             <td>${messageContent}</td>
-            <td><button class="button ghost anomaly-link" data-id="${a.id}">Open</button></td>
+            <td>${openButton}</td>
         `;
             anomaliesBody.appendChild(row);
         }

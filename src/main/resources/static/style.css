@@ -409,6 +409,12 @@ body {
     border: 1px solid rgba(var(--color-danger-rgb), 0.4);
 }
 
+.tag-conflict {
+    background: rgba(var(--color-purple-rgb), 0.16);
+    color: var(--color-purple);
+    border: 1px solid rgba(var(--color-purple-rgb), 0.4);
+}
+
 .tag-http {
     background: rgba(var(--color-primary-rgb), 0.15);
     color: var(--color-primary);

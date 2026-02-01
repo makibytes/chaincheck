@@ -98,13 +98,14 @@
     }
 
     const openAnomaly = async (id) => {
-        if (!id || !anomalyContent) {
+        const numericId = Number(id);
+        if (!Number.isFinite(numericId) || numericId <= 0 || !anomalyContent) {
             return;
         }
         anomalyContent.innerHTML = '<p class="muted">Loading...</p>';
         openModal();
         try {
-            const response = await fetch(`/api/anomalies/${id}`);
+            const response = await fetch(`/api/anomalies/${numericId}`);
             if (!response.ok) {
                 anomalyContent.innerHTML = '<p class="muted">Unable to load anomaly details.</p>';
                 return;
@@ -164,11 +165,13 @@
         if (!sample || !sampleContent) {
             return;
         }
-        const blockBadge = sample.invalid
-            ? '<span class="tag tag-invalid">invalid</span>'
-            : (sample.finalized
-                ? '<span class="tag tag-finalized">finalized</span>'
-                : (sample.safe ? '<span class="tag tag-safe">safe</span>' : ''));
+        const blockBadge = sample.conflict
+            ? '<span class="tag tag-conflict">conflict</span>'
+            : (sample.invalid
+                ? '<span class="tag tag-invalid">invalid</span>'
+                : (sample.finalized
+                    ? '<span class="tag tag-finalized">finalized</span>'
+                    : (sample.safe ? '<span class="tag tag-safe">safe</span>' : '')));
         const blockDisplay = `${sample.blockNumber ?? '-'}${blockBadge ? ' ' + blockBadge : ''}`;
         sampleContent.innerHTML = `
             <div class="detail-grid">
