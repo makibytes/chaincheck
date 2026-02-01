@@ -324,7 +324,7 @@
                     });
                 };
 
-                const drawBars = (series, color) => {
+                const drawBars = (series, pattern) => {
                     const errorMask = buildErrorMask(series);
                     let startIndex = null;
                     for (let i = 0; i <= errorMask.length; i += 1) {
@@ -337,7 +337,7 @@
                             const xStart = xScale.getPixelForValue(startIndex);
                             const xEnd = xScale.getPixelForValue(endIndex) + getStepWidth(endIndex);
                             const width = Math.max(minWidthPx, xEnd - xStart);
-                            ctx.fillStyle = color;
+                            ctx.fillStyle = pattern;
                             ctx.fillRect(xStart, chartArea.top, width, height);
                             startIndex = null;
                         }
@@ -345,9 +345,9 @@
                 };
 
                 ctx.save();
-                drawBars(errorRateData, `rgba(${theme.dangerRgb}, 0.25)`);
+                drawBars(errorRateData, httpPattern);
                 if (wsConfigured) {
-                    drawBars(wsErrorRateData, `rgba(${theme.purpleRgb}, 0.25)`);
+                    drawBars(wsErrorRateData, wsPattern);
                 }
                 ctx.restore();
             }
@@ -637,6 +637,17 @@
                                         const dataset = chart.data.datasets[legendItem.datasetIndex];
                                         return !dataset.referenceLine && !dataset.bandLine;
                                     });
+
+                                baseLabels.forEach((legendItem) => {
+                                    if (legendItem.text === 'HTTP Errors') {
+                                        legendItem.fillStyle = httpPattern;
+                                        legendItem.strokeStyle = 'rgba(0, 0, 0, 0)';
+                                    }
+                                    if (legendItem.text === 'WS Errors') {
+                                        legendItem.fillStyle = wsPattern;
+                                        legendItem.strokeStyle = 'rgba(0, 0, 0, 0)';
+                                    }
+                                });
 
                                 if (referenceAvailable && showReferences) {
                                     baseLabels.push({
