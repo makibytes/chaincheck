@@ -12,7 +12,11 @@
         sample.status,
         sample.latencyMs,
         sample.blockNumber,
+        sample.blockHash,
+        sample.parentHash,
+        sample.blockTime,
         sample.finalized ? 'finalized' : '',
+        sample.safe ? 'safe' : '',
         sample.transactionCount,
         sample.gasPriceWei
     ].join(' ').toLowerCase();
@@ -35,6 +39,8 @@
             let blockDisplay = s.blockNumber ? String(s.blockNumber) : '-';
             if (s.blockNumber && s.finalized) {
                 blockDisplay += ' <span class="tag tag-finalized">finalized</span>';
+            } else if (s.blockNumber && s.safe) {
+                blockDisplay += ' <span class="tag tag-safe">safe</span>';
             }
 
             // Build source display with multiple tags if applicable
@@ -59,6 +65,7 @@
             <td>${blockDisplay}</td>
             <td>${s.transactionCount ?? '-'}</td>
             <td>${s.gasPriceWei ? (s.gasPriceWei / 1_000_000_000).toFixed(4) : '-'}</td>
+            <td><button class="button ghost sample-link" data-hash="${s.blockHash ?? ''}">Open</button></td>
         `;
             samplesBody.appendChild(row);
         }

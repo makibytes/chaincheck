@@ -26,6 +26,10 @@ public class SampleRow {
     private final String status;
     private final Long latencyMs;
     private final Long blockNumber;
+    private final String blockHash;
+    private final String parentHash;
+    private final String blockTime;
+    private final boolean safe;
     private final boolean finalized;
     private final Integer transactionCount;
     private final Long gasPriceWei;
@@ -35,6 +39,10 @@ public class SampleRow {
                      String status,
                      Long latencyMs,
                      Long blockNumber,
+                     String blockHash,
+                     String parentHash,
+                     String blockTime,
+                     boolean safe,
                      boolean finalized,
                      Integer transactionCount,
                      Long gasPriceWei) {
@@ -43,6 +51,10 @@ public class SampleRow {
         this.status = status;
         this.latencyMs = latencyMs;
         this.blockNumber = blockNumber;
+        this.blockHash = blockHash;
+        this.parentHash = parentHash;
+        this.blockTime = blockTime;
+        this.safe = safe;
         this.finalized = finalized;
         this.transactionCount = transactionCount;
         this.gasPriceWei = gasPriceWei;
@@ -66,6 +78,22 @@ public class SampleRow {
 
     public Long getBlockNumber() {
         return blockNumber;
+    }
+
+    public String getBlockHash() {
+        return blockHash;
+    }
+
+    public String getParentHash() {
+        return parentHash;
+    }
+
+    public String getBlockTime() {
+        return blockTime;
+    }
+
+    public boolean isSafe() {
+        return safe;
     }
 
     public boolean isFinalized() {

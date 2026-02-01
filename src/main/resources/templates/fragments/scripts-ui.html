@@ -48,6 +48,9 @@
     const anomalyModal = document.getElementById('anomalyModal');
     const anomalyContent = document.getElementById('anomalyContent');
     const closeAnomaly = document.getElementById('closeAnomaly');
+    const sampleModal = document.getElementById('sampleModal');
+    const sampleContent = document.getElementById('sampleContent');
+    const closeSample = document.getElementById('closeSample');
     const openModal = () => {
         if (anomalyModal) {
             anomalyModal.classList.remove('hidden');
@@ -67,6 +70,30 @@
         const backdrop = anomalyModal.querySelector('.modal-backdrop');
         if (backdrop) {
             backdrop.addEventListener('click', closeModal);
+        }
+    }
+
+    const openSampleModal = () => {
+        if (sampleModal) {
+            sampleModal.classList.remove('hidden');
+            sampleModal.setAttribute('aria-hidden', 'false');
+        }
+    };
+
+    const closeSampleModal = () => {
+        if (sampleModal) {
+            sampleModal.classList.add('hidden');
+            sampleModal.setAttribute('aria-hidden', 'true');
+        }
+    };
+
+    if (closeSample) {
+        closeSample.addEventListener('click', closeSampleModal);
+    }
+    if (sampleModal) {
+        const backdrop = sampleModal.querySelector('.modal-backdrop');
+        if (backdrop) {
+            backdrop.addEventListener('click', closeSampleModal);
         }
     }
 
@@ -124,6 +151,36 @@
         });
     };
 
+    const formatHash = (hash) => {
+        if (!hash || hash.length < 15) return hash || '-';
+        return hash.substring(0, 6) + '...' + hash.substring(hash.length - 6);
+    };
+    const copyBtn = (text) => {
+        if (!text) return '';
+        return `<button class="copy-btn" onclick="copyToClipboard('${text}')" title="Copy full hash">📋</button>`;
+    };
+
+    const openSampleDetails = (sample) => {
+        if (!sample || !sampleContent) {
+            return;
+        }
+        const blockBadge = sample.finalized
+            ? '<span class="tag tag-finalized">finalized</span>'
+            : (sample.safe ? '<span class="tag tag-safe">safe</span>' : '');
+        sampleContent.innerHTML = `
+            <div class="detail-grid">
+                <div><span class="label">Block</span><span>${sample.blockNumber ?? '-'}</span></div>
+                <div><span class="label">Block Time</span><span>${sample.blockTime ?? '-'}</span></div>
+                <div><span class="label">Sources</span><span>${(sample.sources || []).join(', ') || '-'}</span></div>
+                <div><span class="label">Status</span><span>${sample.status ?? '-'}</span></div>
+                <div><span class="label">Block Hash</span><span class="hash-container">${formatHash(sample.blockHash)} ${copyBtn(sample.blockHash)}</span></div>
+                <div><span class="label">Parent Hash</span><span class="hash-container">${formatHash(sample.parentHash)} ${copyBtn(sample.parentHash)}</span></div>
+                <div><span class="label">Tag</span><span>${blockBadge || '-'}</span></div>
+            </div>
+        `;
+        openSampleModal();
+    };
+
     const anomaliesBodyEl = document.getElementById('anomaliesBody');
     if (anomaliesBodyEl) {
         anomaliesBodyEl.addEventListener('click', (event) => {
@@ -131,6 +188,19 @@
             if (target && target.classList && target.classList.contains('anomaly-link')) {
                 event.preventDefault();
                 openAnomaly(target.getAttribute('data-id'));
+            }
+        });
+    }
+
+    const samplesBodyEl = document.getElementById('samplesBody');
+    if (samplesBodyEl) {
+        samplesBodyEl.addEventListener('click', (event) => {
+            const target = event.target;
+            if (target && target.classList && target.classList.contains('sample-link')) {
+                event.preventDefault();
+                const blockHash = target.getAttribute('data-hash');
+                const sample = samples.find(entry => entry.blockHash === blockHash);
+                openSampleDetails(sample);
             }
         });
     }

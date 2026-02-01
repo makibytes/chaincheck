@@ -386,7 +386,7 @@ public class DashboardService {
                             .sorted()
                             .toList();
                     
-                    Long avgLatencyForRow = null;
+                        Long avgLatencyForRow = null;
                     List<Long> validLatencies = samples.stream()
                             .filter(s -> s.getLatencyMs() >= 0)
                             .map(MetricSample::getLatencyMs)
@@ -398,11 +398,27 @@ public class DashboardService {
                                 .orElse(-1));
                     }
                     
-                    // Determine if this block was explicitly queried as finalized or safe
+                        // Determine if this block was explicitly queried as finalized or safe
                     boolean hasFinalized = samples.stream().anyMatch(s -> s.getFinalizedDelayMs() != null);
                     boolean hasSafe = samples.stream().anyMatch(s -> s.getSafeDelayMs() != null);
                     
                     boolean allSuccess = samples.stream().allMatch(MetricSample::isSuccess);
+                        String blockHash = samples.stream()
+                            .map(MetricSample::getBlockHash)
+                            .filter(hash -> hash != null && !hash.isBlank())
+                            .findFirst()
+                            .orElse(null);
+                        String parentHash = samples.stream()
+                            .map(MetricSample::getParentHash)
+                            .filter(hash -> hash != null && !hash.isBlank())
+                            .findFirst()
+                            .orElse(null);
+                        Instant blockTimestamp = samples.stream()
+                            .map(MetricSample::getBlockTimestamp)
+                            .filter(ts -> ts != null)
+                            .findFirst()
+                            .orElse(null);
+                        String blockTime = blockTimestamp == null ? null : rowFormatter.format(blockTimestamp);
                     Integer transactionCount = samples.stream()
                             .map(MetricSample::getTransactionCount)
                             .filter(tc -> tc != null)
@@ -419,12 +435,16 @@ public class DashboardService {
                         blockTags.put(first.getBlockNumber(), new BlockTagInfo(hasFinalized, hasSafe));
                     }
                     
-                    return new SampleRow(
+                        return new SampleRow(
                             rowFormatter.format(first.getTimestamp()),
                             sources,
                             allSuccess ? "OK" : "ERROR",
                             avgLatencyForRow,
                             first.getBlockNumber(),
+                            blockHash,
+                            parentHash,
+                            blockTime,
+                            hasSafe,
                             hasFinalized,
                             transactionCount,
                             gasPriceWei);
@@ -482,7 +502,8 @@ public class DashboardService {
                     if (row.getBlockNumber() == null) return row;
                     
                     BlockTagInfo info = blockTags.get(row.getBlockNumber());
-                    boolean isFinalized = info != null && info.finalized;
+                        boolean isFinalized = info != null && info.finalized;
+                        boolean isSafe = info != null && info.safe && !isFinalized;
                     
                     return new SampleRow(
                             row.getTime(),
@@ -490,6 +511,10 @@ public class DashboardService {
                             row.getStatus(),
                             row.getLatencyMs(),
                             row.getBlockNumber(),
+                            row.getBlockHash(),
+                            row.getParentHash(),
+                            row.getBlockTime(),
+                            isSafe,
                             isFinalized,
                             row.getTransactionCount(),
                             row.getGasPriceWei());
