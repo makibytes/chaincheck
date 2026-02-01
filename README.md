@@ -43,6 +43,11 @@ mvn spring-boot:run
 
 The dashboard will be available at `http://localhost:8080`.
 
+## Documentation
+
+- [docs/QUICKSTART.md](docs/QUICKSTART.md)
+- [docs/ANOMALIES.md](docs/ANOMALIES.md)
+
 ## Configuration
 
 Configuration is managed via `application.yml`. Example configuration:
