@@ -38,7 +38,7 @@ This document describes how ChainCheck detects and closes each anomaly type. The
 Two independent delay signals use the same anomaly type:
 
 **1) High latency**
-- A successful RPC sample whose latency is greater than or equal to the configured `anomaly-delay-ms`.
+- A successful RPC sample whose latency is greater than or equal to the configured `rpc.anomaly-detection.high-latency-ms`.
 
 **2) Behind reference**
 - A node’s head is behind the reference head by at least the long-delay threshold.
@@ -68,9 +68,6 @@ Reorg detection is conservative and can be triggered in multiple ways:
 
 **4) Finalized block invalidated**
 - A finalized block is observed at the same height with a different hash than the previously observed finalized block.
-
-**5) Finalized block outside the latest 7-deep chain**
-- A finalized block hash is not present in the latest chain selection of depth at least 7 (built from recent `newHeads`).
 
 **Guardrails**
 - Reorg checks are suppressed for HTTP “latest” samples to avoid false positives when polling.

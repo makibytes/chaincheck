@@ -552,7 +552,18 @@ public class DashboardService {
                     .anyMatch(sample -> sample.getSource() == MetricSource.WS);
                 MetricSource source = hasWs ? MetricSource.WS : MetricSource.HTTP;
                 String message = "Finalized block conflict at height " + blockNumber;
-                String details = "Conflicting hashes: " + String.join(", ", hashes);
+                StringBuilder detailsBuilder = new StringBuilder();
+                detailsBuilder.append("Block number: ").append(blockNumber).append("\n");
+                detailsBuilder.append("Conflicting hashes: ").append(String.join(", ", hashes));
+                String resolvedHash = resolvedFinalizedHashByNumber.get(blockNumber);
+                java.util.Set<String> invalidated = resolvedInvalidHashesByNumber.get(blockNumber);
+                if (resolvedHash != null) {
+                    detailsBuilder.append("\nResolved by parent hash: ").append(resolvedHash);
+                }
+                if (invalidated != null && !invalidated.isEmpty()) {
+                    detailsBuilder.append("\nInvalidated hashes: ").append(String.join(", ", invalidated));
+                }
+                String details = detailsBuilder.toString();
                 conflictEvents.add(new AnomalyEvent(
                     -blockNumber - 1,
                     nodeKey,
@@ -563,7 +574,7 @@ public class DashboardService {
                     blockNumber,
                     finalizedHashes.iterator().next(),
                     null,
-                    details));
+                        details));
             }
             if (!conflictEvents.isEmpty()) {
                 anomalies.addAll(conflictEvents);
@@ -1292,6 +1303,7 @@ public class DashboardService {
     }
 
     private AnomalyRow createAnomalyRow(AnomalyEvent firstEvent, AnomalyEvent lastEvent, int count, DateTimeFormatter formatter, boolean isFirstRowForSource) {
+        String details = resolveAnomalyDetails(lastEvent);
         if (count == 1) {
             // Single anomaly - use standard format
             return new AnomalyRow(
@@ -1299,7 +1311,11 @@ public class DashboardService {
                     formatter.format(firstEvent.getTimestamp()),
                     firstEvent.getType().name(),
                     firstEvent.getSource().name(),
-                    firstEvent.getMessage());
+                    firstEvent.getMessage(),
+                    firstEvent.getBlockNumber(),
+                    firstEvent.getBlockHash(),
+                    firstEvent.getParentHash(),
+                    details);
         } else {
             // Multiple anomalies - show time range and use newest ID
             // Only show "(ongoing)" for the first row per source if not closed
@@ -1314,9 +1330,46 @@ public class DashboardService {
                     firstEvent.getType().name(),
                     firstEvent.getSource().name(),
                     message,
+                    lastEvent.getBlockNumber(),
+                    lastEvent.getBlockHash(),
+                    lastEvent.getParentHash(),
+                    details,
                     count,
                     true);
         }
+    }
+
+    private String resolveAnomalyDetails(AnomalyEvent event) {
+        if (event == null) {
+            return null;
+        }
+        String details = event.getDetails();
+        if (details != null && !details.isBlank()) {
+            return details;
+        }
+        StringBuilder fallback = new StringBuilder();
+        if (event.getMessage() != null && !event.getMessage().isBlank()) {
+            fallback.append(event.getMessage());
+        }
+        if (event.getBlockNumber() != null) {
+            if (!fallback.isEmpty()) {
+                fallback.append("\n");
+            }
+            fallback.append("Block number: ").append(event.getBlockNumber());
+        }
+        if (event.getBlockHash() != null && !event.getBlockHash().isBlank()) {
+            if (!fallback.isEmpty()) {
+                fallback.append("\n");
+            }
+            fallback.append("Block hash: ").append(event.getBlockHash());
+        }
+        if (event.getParentHash() != null && !event.getParentHash().isBlank()) {
+            if (!fallback.isEmpty()) {
+                fallback.append("\n");
+            }
+            fallback.append("Parent hash: ").append(event.getParentHash());
+        }
+        return fallback.isEmpty() ? null : fallback.toString();
     }
 
     private record ChartData(List<Long> timestamps,

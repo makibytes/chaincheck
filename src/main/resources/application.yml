@@ -8,29 +8,29 @@ server:
 rpc:
   title: "Polygon Mainnet"
   title-color: "#ff0000"
-  anomaly-delay-ms: 2000
   safe-blocks-enabled: false
   scale-change-ms: 500
   anomaly-detection:
+    high-latency-ms: 2000
     long-delay-block-count: 15
   nodes:
     - name: polygon-rpc.com
       http: https://polygon-rpc.com
       #ws: wss://polygon-rpc.com
-      poll-interval-ms: 1500
+      poll-interval-ms: 2000
     - name: publicnode.com
       http: https://polygon-bor-rpc.publicnode.com
       ws: wss://polygon-bor-rpc.publicnode.com
-      poll-interval-ms: 1500
+      poll-interval-ms: 5000
     - name: drpc.org
       http: https://polygon.drpc.org
       ws: wss://polygon.drpc.org
-      poll-interval-ms: 1500
+      poll-interval-ms: 5000
     - name: quiknode.pro
       http: https://rpc-mainnet.matic.quiknode.pro
       ws: wss://rpc-mainnet.matic.quiknode.pro/ws
-      poll-interval-ms: 1500
+      poll-interval-ms: 5000
     - name: tenderly.co
       http: https://polygon.gateway.tenderly.co
       ws: wss://polygon.gateway.tenderly.co
-      poll-interval-ms: 1500
+      poll-interval-ms: 5000

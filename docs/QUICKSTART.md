@@ -57,12 +57,13 @@ server:
 rpc:
   title: "Polygon Mainnet"
   title-color: "#8247e5"
+  anomaly-detection:
+    high-latency-ms: 2000
   nodes:
     - name: polygon-rpc.com
       http: https://polygon-rpc.com
       ws: wss://polygon-rpc.com
       poll-interval-ms: 1000
-      anomaly-delay-ms: 2000
       safe-blocks-enabled: false
 ```
 
@@ -173,13 +174,15 @@ rpc:
       http: https://rpc1.example.com
       ws: wss://rpc1.example.com
       poll-interval-ms: 1000
-      anomaly-delay-ms: 2000
+      anomaly-detection:
+        high-latency: 2000
       safe-blocks-enabled: false
       
     - name: Node 2
       http: https://rpc2.example.com
       poll-interval-ms: 1500
-      anomaly-delay-ms: 3000
+      anomaly-detection:
+        high-latency: 3000
       safe-blocks-enabled: false
 ```
 

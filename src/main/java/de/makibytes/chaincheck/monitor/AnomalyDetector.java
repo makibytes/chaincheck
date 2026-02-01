@@ -105,6 +105,10 @@ public class AnomalyDetector {
                     ? sample.getError().substring(0, 50) + "..."
                     : sample.getError();
             AnomalyType errorType = classifyErrorType(sample.getError());
+            String details = sample.getError();
+            if (details == null || details.isBlank()) {
+                details = shortError == null ? "RPC error" : shortError;
+            }
             anomalies.add(new AnomalyEvent(
                     idSequence.getAndIncrement(),
                     nodeKey,
@@ -115,7 +119,7 @@ public class AnomalyDetector {
                     sample.getBlockNumber(),
                     sample.getBlockHash(),
                     sample.getParentHash(),
-                    sample.getError()));
+                    details));
             return anomalies;
         }
 

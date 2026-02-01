@@ -162,11 +162,7 @@
                 messageContent += ` <span class="count-badge">${a.count}</span>`;
             }
 
-            const idValue = Number(a.id ?? 0);
-            const canOpen = Number.isFinite(idValue) && idValue > 0;
-            const openButton = canOpen
-                ? `<button class="button ghost anomaly-link" data-id="${a.id}">Open</button>`
-                : `<button class="button ghost" disabled>Open</button>`;
+            const openButton = `<button class="button ghost anomaly-link" data-id="${a.id ?? ''}">Open</button>`;
 
             row.innerHTML = `
             <td>${a.time ?? '-'}</td>

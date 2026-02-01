@@ -98,20 +98,20 @@
     }
 
     const openAnomaly = async (id) => {
-        const numericId = Number(id);
-        if (!Number.isFinite(numericId) || numericId <= 0 || !anomalyContent) {
+        if (!anomalyContent) {
             return;
         }
-        anomalyContent.innerHTML = '<p class="muted">Loading...</p>';
+        const numericId = Number(id);
         openModal();
-        try {
-            const response = await fetch(`/api/anomalies/${numericId}`);
-            if (!response.ok) {
+
+        const renderDetails = (payload) => {
+            if (!payload) {
                 anomalyContent.innerHTML = '<p class="muted">Unable to load anomaly details.</p>';
                 return;
             }
-            const data = await response.json();
-            const timeText = data.timestamp ? new Date(data.timestamp).toLocaleString() : '-';
+            const timeText = payload.timestamp
+                ? new Date(payload.timestamp).toLocaleString()
+                : (payload.time ?? '-');
             const formatHash = (hash) => {
                 if (!hash || hash.length < 15) return hash || '-';
                 return hash.substring(0, 6) + '...' + hash.substring(hash.length - 6);
@@ -120,26 +120,56 @@
                 if (!text) return '';
                 return `<button class="copy-btn" onclick="copyToClipboard('${text}')" title="Copy full hash">📋</button>`;
             };
+            const detailsText = payload.details && String(payload.details).trim().length > 0
+                ? payload.details
+                : (payload.message ?? '-');
 
             anomalyContent.innerHTML = `
             <div class="detail-grid">
-                <div><span class="label">ID</span><span>${data.id ?? '-'}</span></div>
-                <div><span class="label">Node</span><span>${data.nodeName ?? '-'}</span></div>
+                <div><span class="label">ID</span><span>${payload.id ?? '-'}</span></div>
+                <div><span class="label">Node</span><span>${payload.nodeName ?? payload.nodeKey ?? '-'}</span></div>
                 <div><span class="label">Time</span><span>${timeText}</span></div>
-                <div><span class="label">Type</span><span>${data.type ?? '-'}</span></div>
-                <div><span class="label">Source</span><span>${data.source ?? '-'}</span></div>
-                <div><span class="label">Block</span><span>${data.blockNumber ?? '-'}</span></div>
-                <div><span class="label">Block Hash</span><span class="hash-container">${formatHash(data.blockHash)} ${copyBtn(data.blockHash)}</span></div>
-                <div><span class="label">Parent Hash</span><span class="hash-container">${formatHash(data.parentHash)} ${copyBtn(data.parentHash)}</span></div>
-                <div><span class="label">Message</span><span>${data.message ?? '-'}</span></div>
+                <div><span class="label">Type</span><span>${payload.type ?? '-'}</span></div>
+                <div><span class="label">Source</span><span>${payload.source ?? '-'}</span></div>
+                <div><span class="label">Block</span><span>${payload.blockNumber ?? '-'}</span></div>
+                <div><span class="label">Block Hash</span><span class="hash-container">${formatHash(payload.blockHash)} ${copyBtn(payload.blockHash)}</span></div>
+                <div><span class="label">Parent Hash</span><span class="hash-container">${formatHash(payload.parentHash)} ${copyBtn(payload.parentHash)}</span></div>
+                <div><span class="label">Message</span><span>${payload.message ?? '-'}</span></div>
             </div>
             <div class="detail-block">
                 <span class="label">Details</span>
-                <pre>${data.details ?? '-'}</pre>
+                <pre>${detailsText}</pre>
             </div>
         `;
+        };
+
+        if (!Number.isFinite(numericId) || numericId <= 0) {
+            const row = anomalies.find(entry => String(entry.id) === String(id));
+            renderDetails(row);
+            return;
+        }
+
+        anomalyContent.innerHTML = '<p class="muted">Loading...</p>';
+        try {
+            const response = await fetch(`/api/anomalies/${numericId}`);
+            if (!response.ok) {
+                const row = anomalies.find(entry => String(entry.id) === String(id));
+                renderDetails(row);
+                return;
+            }
+            const data = await response.json();
+            if (!data.details || String(data.details).trim().length === 0) {
+                const row = anomalies.find(entry => String(entry.id) === String(id));
+                renderDetails({
+                    ...data,
+                    details: row?.details ?? data.details
+                });
+                return;
+            }
+            renderDetails(data);
         } catch (error) {
-            anomalyContent.innerHTML = '<p class="muted">Unable to load anomaly details.</p>';
+            const row = anomalies.find(entry => String(entry.id) === String(id));
+            renderDetails(row);
         }
     };
 
