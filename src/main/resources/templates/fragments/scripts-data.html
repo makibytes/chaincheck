@@ -1,0 +1,281 @@
+<th:block th:fragment="scripts-data">
+<script th:inline="javascript">
+    const timestamps = /*[[${view.chartTimestamps}]]*/[];
+    const labels = /*[[${view.chartLabels}]]*/[];
+    const latencyData = /*[[${view.chartLatencies}]]*/[];
+    const latencyMinData = /*[[${view.chartLatencyMins}]]*/[];
+    const latencyMaxData = /*[[${view.chartLatencyMaxs}]]*/[];
+    const errorRateData = /*[[${view.chartErrorRates}]]*/[];
+    const wsErrorRateData = /*[[${view.chartWsErrorRates}]]*/[];
+    const httpErrorBuckets = /*[[${view.chartHttpErrors}]]*/[];
+    const wsErrorBuckets = /*[[${view.chartWsErrors}]]*/[];
+    const httpErrorOngoing = /*[[${view.httpErrorOngoing}]]*/ false;
+    const wsErrorOngoing = /*[[${view.wsErrorOngoing}]]*/ false;
+    const headDelayData = /*[[${view.chartHeadDelays}]]*/[];
+    const headDelayMinData = /*[[${view.chartHeadDelayMins}]]*/[];
+    const headDelayMaxData = /*[[${view.chartHeadDelayMaxs}]]*/[];
+    const safeDelayData = /*[[${view.chartSafeDelays}]]*/[];
+    const safeDelayMinData = /*[[${view.chartSafeDelayMins}]]*/[];
+    const safeDelayMaxData = /*[[${view.chartSafeDelayMaxs}]]*/[];
+    const finalizedDelayData = /*[[${view.chartFinalizedDelays}]]*/[];
+    const finalizedDelayMinData = /*[[${view.chartFinalizedDelayMins}]]*/[];
+    const finalizedDelayMaxData = /*[[${view.chartFinalizedDelayMaxs}]]*/[];
+    const referenceHeadDelayData = /*[[${view.chartReferenceHeadDelays}]]*/[];
+    const referenceSafeDelayData = /*[[${view.chartReferenceSafeDelays}]]*/[];
+    const referenceFinalizedDelayData = /*[[${view.chartReferenceFinalizedDelays}]]*/[];
+    const hasAggregatedLatencies = /*[[${view.hasAggregatedLatencies}]]*/ false;
+    const hasAggregatedDelays = /*[[${view.hasAggregatedDelays}]]*/ false;
+    const wsConfigured = /*[[${view.wsConfigured}]]*/ false;
+    const safeBlocksEnabled = /*[[${view.safeBlocksEnabled}]]*/ false;
+    const isReferenceNode = /*[[${view.referenceNode}]]*/ false;
+    const samples = /*[[${view.sampleRows}]]*/[];
+    const anomalies = /*[[${view.anomalyRows}]]*/[];
+    const pageSize = /*[[${view.pageSize}]]*/ 50;
+    const totalPages = /*[[${view.totalPages}]]*/ 1;
+    const anomalyPageSize = /*[[${view.anomalyPageSize}]]*/ 50;
+    const anomalyTotalPages = /*[[${view.anomalyTotalPages}]]*/ 1;
+    const scaleChangeMs = /*[[${view.scaleChangeMs}]]*/ 500;
+
+    const cssVars = getComputedStyle(document.documentElement);
+    const getVar = (name, fallback) => {
+        const value = cssVars.getPropertyValue(name).trim();
+        return value || fallback;
+    };
+    const theme = {
+        primary: getVar('--color-primary', '#5b8dff'),
+        primaryRgb: getVar('--color-primary-rgb', '91, 141, 255'),
+        headDelay: getVar('--color-head-delay', getVar('--color-warning', '#f4b740')),
+        headDelayRgb: getVar('--color-head-delay-rgb', getVar('--color-warning-rgb', '244, 183, 64')),
+        safeDelay: getVar('--color-safe-delay', getVar('--color-warning', '#f4b740')),
+        safeDelayRgb: getVar('--color-safe-delay-rgb', getVar('--color-warning-rgb', '244, 183, 64')),
+        success: getVar('--color-success', '#2ec77e'),
+        successRgb: getVar('--color-success-rgb', '46, 199, 126'),
+        danger: getVar('--color-danger', '#ff6b6b'),
+        dangerRgb: getVar('--color-danger-rgb', '255, 107, 107'),
+        purple: getVar('--color-purple', '#b074ff'),
+        purpleRgb: getVar('--color-purple-rgb', '176, 116, 255'),
+        text: getVar('--color-text', '#e6e8ee'),
+        textSubtle: getVar('--color-text-subtle', '#8b93a7'),
+        grid: getVar('--color-border', '#20263a')
+    };
+
+    const referenceToggle = document.getElementById('toggleReferenceLines');
+    const boundsToggle = document.getElementById('toggleBounds');
+    let showReferences = referenceToggle ? referenceToggle.checked : false;
+    let showBounds = boundsToggle ? boundsToggle.checked : false;
+    const referenceAvailable = !isReferenceNode
+        && (referenceHeadDelayData.length > 0 || referenceSafeDelayData.length > 0 || referenceFinalizedDelayData.length > 0);
+    const referenceToggleLabel = document.getElementById('referenceToggleLabel');
+    if (referenceToggleLabel && !referenceAvailable) {
+        referenceToggleLabel.style.display = 'none';
+        showReferences = false;
+        if (referenceToggle) {
+            referenceToggle.checked = false;
+        }
+    }
+    const maxDelayValue = Math.max(
+        0,
+        ...latencyData.filter(value => value != null),
+        ...latencyMaxData.filter(value => value != null),
+        ...headDelayData.filter(value => value != null),
+        ...headDelayMaxData.filter(value => value != null),
+        ...safeDelayData.filter(value => value != null),
+        ...safeDelayMaxData.filter(value => value != null),
+        ...finalizedDelayData.filter(value => value != null),
+        ...finalizedDelayMaxData.filter(value => value != null),
+        ...(referenceAvailable && showReferences ? referenceHeadDelayData.filter(value => value != null) : []),
+        ...(referenceAvailable && showReferences ? referenceSafeDelayData.filter(value => value != null) : []),
+        ...(referenceAvailable && showReferences ? referenceFinalizedDelayData.filter(value => value != null) : [])
+    );
+    const scaledAxisMax = 1000;
+    const lowBandRatio = 0.2;
+    const lowBandMax = scaleChangeMs;
+    const lowBandSize = scaledAxisMax * lowBandRatio;
+
+    const scaleValue = (value) => {
+        if (value == null) {
+            return null;
+        }
+        if (maxDelayValue <= lowBandMax) {
+            return value;
+        }
+        if (value <= lowBandMax) {
+            return (value / lowBandMax) * lowBandSize;
+        }
+        return lowBandSize + ((value - lowBandMax) / (maxDelayValue - lowBandMax)) * (scaledAxisMax - lowBandSize);
+    };
+
+    const createDiagonalPattern = (color, direction) => {
+        const size = 8;
+        const lineWidth = 2;
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const patternCtx = canvas.getContext('2d');
+        if (!patternCtx) {
+            return color;
+        }
+        patternCtx.strokeStyle = color;
+        patternCtx.lineWidth = lineWidth;
+        patternCtx.beginPath();
+        if (direction === 'up') {
+            patternCtx.moveTo(0, size);
+            patternCtx.lineTo(size, 0);
+        } else {
+            patternCtx.moveTo(0, 0);
+            patternCtx.lineTo(size, size);
+        }
+        patternCtx.stroke();
+        return patternCtx.createPattern(canvas, 'repeat');
+    };
+
+    const httpPattern = createDiagonalPattern(`rgba(${theme.dangerRgb}, 0.35)`, 'down');
+    const wsPattern = createDiagonalPattern(`rgba(${theme.purpleRgb}, 0.35)`, 'up');
+
+    const confidenceBandPlugin = {
+        id: 'confidenceBands',
+        beforeDatasetsDraw(chart) {
+            const { ctx, chartArea, scales } = chart;
+            const xScale = scales.x;
+            const yScale = scales.y;
+            if (!chartArea || !xScale || !yScale) {
+                return;
+            }
+
+            const minWidthPx = 5;
+            const getStepWidth = (index) => {
+                if (index < labels.length - 1) {
+                    return xScale.getPixelForValue(index + 1) - xScale.getPixelForValue(index);
+                }
+                if (index > 0) {
+                    return xScale.getPixelForValue(index) - xScale.getPixelForValue(index - 1);
+                }
+                return minWidthPx;
+            };
+
+            const drawBand = (minSeries, maxSeries, baseColor) => {
+                if (!minSeries || !maxSeries) {
+                    return;
+                }
+                for (let i = 0; i < labels.length; i += 1) {
+                    const minValue = minSeries[i];
+                    const maxValue = maxSeries[i];
+                    if (minValue == null || maxValue == null) {
+                        continue;
+                    }
+                    const width = Math.max(minWidthPx, getStepWidth(i));
+                    const xStart = xScale.getPixelForValue(i) - width / 2;
+                    const yMin = yScale.getPixelForValue(minValue);
+                    const yMax = yScale.getPixelForValue(maxValue);
+                    const top = Math.min(yMin, yMax);
+                    const height = Math.abs(yMin - yMax);
+
+                    ctx.fillStyle = baseColor;
+                    ctx.fillRect(xStart, top, width, height);
+
+                    if (httpErrorBuckets[i]) {
+                        ctx.fillStyle = httpPattern;
+                        ctx.fillRect(xStart, top, width, height);
+                    }
+                    if (wsErrorBuckets[i]) {
+                        ctx.fillStyle = wsPattern;
+                        ctx.fillRect(xStart, top, width, height);
+                    }
+                }
+            };
+
+            if (!showBounds) {
+                return;
+            }
+            ctx.save();
+            if (hasAggregatedLatencies) {
+                drawBand(latencyMinScaled, latencyMaxScaled, `rgba(${theme.primaryRgb}, 0.12)`);
+            }
+            if (wsConfigured && hasAggregatedDelays) {
+                drawBand(headDelayMinScaled, headDelayMaxScaled, `rgba(${theme.headDelayRgb}, 0.12)`);
+                if (safeBlocksEnabled) {
+                    drawBand(safeDelayMinScaled, safeDelayMaxScaled, `rgba(${theme.safeDelayRgb}, 0.08)`);
+                }
+                drawBand(finalizedDelayMinScaled, finalizedDelayMaxScaled, `rgba(${theme.successRgb}, 0.12)`);
+            }
+            ctx.restore();
+        }
+    };
+
+    const inverseScale = (value) => {
+        if (maxDelayValue <= lowBandMax) {
+            return value;
+        }
+        if (value <= lowBandSize) {
+            return Math.round((value / lowBandSize) * lowBandMax);
+        }
+        return Math.round(lowBandMax + ((value - lowBandSize) / (scaledAxisMax - lowBandSize)) * (maxDelayValue - lowBandMax));
+    };
+
+    const latencyScaled = latencyData.map(scaleValue);
+    const latencyMinScaled = latencyMinData.map(scaleValue);
+    const latencyMaxScaled = latencyMaxData.map(scaleValue);
+    const headDelayScaled = headDelayData.map(scaleValue);
+    const headDelayMinScaled = headDelayMinData.map(scaleValue);
+    const headDelayMaxScaled = headDelayMaxData.map(scaleValue);
+    const safeDelayScaled = safeDelayData.map(scaleValue);
+    const safeDelayMinScaled = safeDelayMinData.map(scaleValue);
+    const safeDelayMaxScaled = safeDelayMaxData.map(scaleValue);
+    const finalizedDelayScaled = finalizedDelayData.map(scaleValue);
+    const finalizedDelayMinScaled = finalizedDelayMinData.map(scaleValue);
+    const finalizedDelayMaxScaled = finalizedDelayMaxData.map(scaleValue);
+    const referenceHeadDelayScaled = referenceHeadDelayData.map(scaleValue);
+    const referenceSafeDelayScaled = referenceSafeDelayData.map(scaleValue);
+    const referenceFinalizedDelayScaled = referenceFinalizedDelayData.map(scaleValue);
+
+    const createLineDataset = ({
+        label,
+        data,
+        originalData,
+        color,
+        rgb,
+        backgroundAlpha,
+        order
+    }) => ({
+        label,
+        data,
+        originalData,
+        borderColor: color,
+        backgroundColor: `rgba(${rgb}, ${backgroundAlpha})`,
+        spanGaps: true,
+        tension: 0.2,
+        yAxisID: 'y',
+        order
+    });
+
+    const createBandDataset = ({ label, data, originalData, rgb }) => ({
+        label,
+        data,
+        originalData,
+        borderColor: `rgba(${rgb}, 0.45)`,
+        backgroundColor: `rgba(${rgb}, 0.0)`,
+        spanGaps: true,
+        tension: 0.2,
+        yAxisID: 'y',
+        pointRadius: 0,
+        borderWidth: 1,
+        bandLine: true,
+        hidden: !showBounds,
+        order: 1
+    });
+
+    const createReferenceDataset = ({ label, data, originalData, color, rgb }) => ({
+        label,
+        data,
+        originalData,
+        borderColor: color,
+        backgroundColor: `rgba(${rgb}, 0.0)`,
+        borderDash: [6, 6],
+        hidden: !showReferences,
+        spanGaps: true,
+        tension: 0.2,
+        yAxisID: 'y',
+        referenceLine: true
+    });
+</script>
+</th:block>

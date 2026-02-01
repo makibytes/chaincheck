@@ -1,0 +1,138 @@
+<th:block th:fragment="scripts-ui">
+<script>
+    const toggleButton = document.getElementById('toggleSamples');
+    const samplesPanel = document.getElementById('samplesPanel');
+    const samplesSection = toggleButton ? toggleButton.closest('.panel') : null;
+    if (toggleButton && samplesPanel) {
+        toggleButton.addEventListener('click', () => {
+            const collapsed = samplesPanel.classList.toggle('collapsed');
+            toggleButton.textContent = collapsed ? 'Show samples' : 'Hide samples';
+            if (samplesSection) {
+                samplesSection.classList.toggle('expanded', !collapsed);
+            }
+        });
+        if (samplesSection && !samplesPanel.classList.contains('collapsed')) {
+            samplesSection.classList.add('expanded');
+        }
+    }
+
+    const toggleAnomalies = document.getElementById('toggleAnomalies');
+    const anomaliesPanel = document.getElementById('anomaliesPanel');
+    const anomaliesSection = toggleAnomalies ? toggleAnomalies.closest('.panel') : null;
+    if (toggleAnomalies && anomaliesPanel) {
+        toggleAnomalies.addEventListener('click', () => {
+            const collapsed = anomaliesPanel.classList.toggle('collapsed');
+            toggleAnomalies.textContent = collapsed ? 'Show anomalies' : 'Hide anomalies';
+            if (anomaliesSection) {
+                anomaliesSection.classList.toggle('expanded', !collapsed);
+            }
+        });
+        if (anomaliesSection && !anomaliesPanel.classList.contains('collapsed')) {
+            anomaliesSection.classList.add('expanded');
+        }
+    }
+
+    const nodeSelect = document.getElementById('nodeSelect');
+    if (nodeSelect) {
+        nodeSelect.addEventListener('change', () => {
+            const selected = nodeSelect.value;
+            const url = new URL(window.location.href);
+            url.searchParams.set('node', selected);
+            if (!url.searchParams.get('range')) {
+                url.searchParams.set('range', '2h');
+            }
+            window.location.href = url.toString();
+        });
+    }
+
+    const anomalyModal = document.getElementById('anomalyModal');
+    const anomalyContent = document.getElementById('anomalyContent');
+    const closeAnomaly = document.getElementById('closeAnomaly');
+    const openModal = () => {
+        if (anomalyModal) {
+            anomalyModal.classList.remove('hidden');
+            anomalyModal.setAttribute('aria-hidden', 'false');
+        }
+    };
+    const closeModal = () => {
+        if (anomalyModal) {
+            anomalyModal.classList.add('hidden');
+            anomalyModal.setAttribute('aria-hidden', 'true');
+        }
+    };
+    if (closeAnomaly) {
+        closeAnomaly.addEventListener('click', closeModal);
+    }
+    if (anomalyModal) {
+        const backdrop = anomalyModal.querySelector('.modal-backdrop');
+        if (backdrop) {
+            backdrop.addEventListener('click', closeModal);
+        }
+    }
+
+    const openAnomaly = async (id) => {
+        if (!id || !anomalyContent) {
+            return;
+        }
+        anomalyContent.innerHTML = '<p class="muted">Loading...</p>';
+        openModal();
+        try {
+            const response = await fetch(`/api/anomalies/${id}`);
+            if (!response.ok) {
+                anomalyContent.innerHTML = '<p class="muted">Unable to load anomaly details.</p>';
+                return;
+            }
+            const data = await response.json();
+            const timeText = data.timestamp ? new Date(data.timestamp).toLocaleString() : '-';
+            const formatHash = (hash) => {
+                if (!hash || hash.length < 15) return hash || '-';
+                return hash.substring(0, 6) + '...' + hash.substring(hash.length - 6);
+            };
+            const copyBtn = (text) => {
+                if (!text) return '';
+                return `<button class="copy-btn" onclick="copyToClipboard('${text}')" title="Copy full hash">📋</button>`;
+            };
+
+            anomalyContent.innerHTML = `
+            <div class="detail-grid">
+                <div><span class="label">ID</span><span>${data.id ?? '-'}</span></div>
+                <div><span class="label">Node</span><span>${data.nodeName ?? '-'}</span></div>
+                <div><span class="label">Time</span><span>${timeText}</span></div>
+                <div><span class="label">Type</span><span>${data.type ?? '-'}</span></div>
+                <div><span class="label">Source</span><span>${data.source ?? '-'}</span></div>
+                <div><span class="label">Block</span><span>${data.blockNumber ?? '-'}</span></div>
+                <div><span class="label">Block Hash</span><span class="hash-container">${formatHash(data.blockHash)} ${copyBtn(data.blockHash)}</span></div>
+                <div><span class="label">Parent Hash</span><span class="hash-container">${formatHash(data.parentHash)} ${copyBtn(data.parentHash)}</span></div>
+                <div><span class="label">Message</span><span>${data.message ?? '-'}</span></div>
+            </div>
+            <div class="detail-block">
+                <span class="label">Details</span>
+                <pre>${data.details ?? '-'}</pre>
+            </div>
+        `;
+        } catch (error) {
+            anomalyContent.innerHTML = '<p class="muted">Unable to load anomaly details.</p>';
+        }
+    };
+
+    window.copyToClipboard = (text) => {
+        if (!text) return;
+        navigator.clipboard.writeText(text).then(() => {
+            // Optional: Show visual feedback
+        }).catch(err => {
+            console.error('Failed to copy text: ', err);
+        });
+    };
+
+    const anomaliesBodyEl = document.getElementById('anomaliesBody');
+    if (anomaliesBodyEl) {
+        anomaliesBodyEl.addEventListener('click', (event) => {
+            const target = event.target;
+            if (target && target.classList && target.classList.contains('anomaly-link')) {
+                event.preventDefault();
+                openAnomaly(target.getAttribute('data-id'));
+            }
+        });
+    }
+</script>
+</th:block>
