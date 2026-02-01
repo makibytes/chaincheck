@@ -53,10 +53,10 @@ public class DashboardService {
     private final NodeRegistry nodeRegistry;
     private final RpcMonitorService rpcMonitorService;
     private final ChainCheckProperties properties;
-    private static final int MAX_SAMPLES = 1000;
+    private static final int MAX_SAMPLES = 10000;
     private static final int PAGE_SIZE = 50;
     private static final int MAX_PAGES = 20;
-    private static final int MAX_ANOMALIES = 1000;
+    private static final int MAX_ANOMALIES = 10000;
 
     public DashboardService(InMemoryMetricsStore store,
                             MetricsCache cache,

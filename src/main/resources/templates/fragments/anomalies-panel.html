@@ -1,13 +1,12 @@
 <section class="panel" th:fragment="anomaliesPanel">
     <div class="panel-header">
         <h2>Anomalies <span class="count-badge" th:text="${view.totalAnomalies}">0</span></h2>
+        <div class="panel-search">
+            <input id="anomaliesSearch" type="search" placeholder="Search anomalies" autocomplete="off" />
+        </div>
         <button id="toggleAnomalies" class="button ghost" type="button">Show anomalies</button>
     </div>
     <div id="anomaliesPanel" class="collapsed">
-        <p class="muted">
-            <span id="anomalyPageInfo">Showing page 1 of 1</span>
-            · Total anomalies (max 1000): <span th:text="${view.totalAnomalies}">0</span>
-        </p>
         <div id="anomalyEmpty" class="empty" th:if="${#lists.isEmpty(view.anomalies)}">No anomalies in this range.
         </div>
         <table>
