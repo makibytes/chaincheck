@@ -9,6 +9,8 @@
     const wsErrorRateData = /*[[${view.chartWsErrorRates}]]*/[];
     const httpErrorBuckets = /*[[${view.chartHttpErrors}]]*/[];
     const wsErrorBuckets = /*[[${view.chartWsErrors}]]*/[];
+    const httpErrorOngoing = /*[[${view.httpErrorOngoing}]]*/ false;
+    const wsErrorOngoing = /*[[${view.wsErrorOngoing}]]*/ false;
     const headDelayData = /*[[${view.chartHeadDelays}]]*/[];
     const headDelayMinData = /*[[${view.chartHeadDelayMins}]]*/[];
     const headDelayMaxData = /*[[${view.chartHeadDelayMaxs}]]*/[];
@@ -103,102 +105,102 @@
         return lowBandSize + ((value - lowBandMax) / (maxDelayValue - lowBandMax)) * (scaledAxisMax - lowBandSize);
     };
 
-        const createDiagonalPattern = (color, direction) => {
-            const size = 8;
-            const lineWidth = 2;
-            const canvas = document.createElement('canvas');
-            canvas.width = size;
-            canvas.height = size;
-            const patternCtx = canvas.getContext('2d');
-            if (!patternCtx) {
-                return color;
-            }
-            patternCtx.strokeStyle = color;
-            patternCtx.lineWidth = lineWidth;
-            patternCtx.beginPath();
-            if (direction === 'up') {
-                patternCtx.moveTo(0, size);
-                patternCtx.lineTo(size, 0);
-            } else {
-                patternCtx.moveTo(0, 0);
-                patternCtx.lineTo(size, size);
-            }
-            patternCtx.stroke();
-            return patternCtx.createPattern(canvas, 'repeat');
-        };
+    const createDiagonalPattern = (color, direction) => {
+        const size = 8;
+        const lineWidth = 2;
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const patternCtx = canvas.getContext('2d');
+        if (!patternCtx) {
+            return color;
+        }
+        patternCtx.strokeStyle = color;
+        patternCtx.lineWidth = lineWidth;
+        patternCtx.beginPath();
+        if (direction === 'up') {
+            patternCtx.moveTo(0, size);
+            patternCtx.lineTo(size, 0);
+        } else {
+            patternCtx.moveTo(0, 0);
+            patternCtx.lineTo(size, size);
+        }
+        patternCtx.stroke();
+        return patternCtx.createPattern(canvas, 'repeat');
+    };
 
-        const httpPattern = createDiagonalPattern(`rgba(${theme.dangerRgb}, 0.35)`, 'down');
-        const wsPattern = createDiagonalPattern(`rgba(${theme.purpleRgb}, 0.35)`, 'up');
+    const httpPattern = createDiagonalPattern(`rgba(${theme.dangerRgb}, 0.35)`, 'down');
+    const wsPattern = createDiagonalPattern(`rgba(${theme.purpleRgb}, 0.35)`, 'up');
 
-        const confidenceBandPlugin = {
-            id: 'confidenceBands',
-            beforeDatasetsDraw(chart) {
-                const { ctx, chartArea, scales } = chart;
-                const xScale = scales.x;
-                const yScale = scales.y;
-                if (!chartArea || !xScale || !yScale) {
+    const confidenceBandPlugin = {
+        id: 'confidenceBands',
+        beforeDatasetsDraw(chart) {
+            const { ctx, chartArea, scales } = chart;
+            const xScale = scales.x;
+            const yScale = scales.y;
+            if (!chartArea || !xScale || !yScale) {
+                return;
+            }
+
+            const minWidthPx = 5;
+            const getStepWidth = (index) => {
+                if (index < labels.length - 1) {
+                    return xScale.getPixelForValue(index + 1) - xScale.getPixelForValue(index);
+                }
+                if (index > 0) {
+                    return xScale.getPixelForValue(index) - xScale.getPixelForValue(index - 1);
+                }
+                return minWidthPx;
+            };
+
+            const drawBand = (minSeries, maxSeries, baseColor) => {
+                if (!minSeries || !maxSeries) {
                     return;
                 }
-
-                const minWidthPx = 5;
-                const getStepWidth = (index) => {
-                    if (index < labels.length - 1) {
-                        return xScale.getPixelForValue(index + 1) - xScale.getPixelForValue(index);
+                for (let i = 0; i < labels.length; i += 1) {
+                    const minValue = minSeries[i];
+                    const maxValue = maxSeries[i];
+                    if (minValue == null || maxValue == null) {
+                        continue;
                     }
-                    if (index > 0) {
-                        return xScale.getPixelForValue(index) - xScale.getPixelForValue(index - 1);
-                    }
-                    return minWidthPx;
-                };
+                    const width = Math.max(minWidthPx, getStepWidth(i));
+                    const xStart = xScale.getPixelForValue(i) - width / 2;
+                    const yMin = yScale.getPixelForValue(minValue);
+                    const yMax = yScale.getPixelForValue(maxValue);
+                    const top = Math.min(yMin, yMax);
+                    const height = Math.abs(yMin - yMax);
 
-                const drawBand = (minSeries, maxSeries, baseColor) => {
-                    if (!minSeries || !maxSeries) {
-                        return;
-                    }
-                    for (let i = 0; i < labels.length; i += 1) {
-                        const minValue = minSeries[i];
-                        const maxValue = maxSeries[i];
-                        if (minValue == null || maxValue == null) {
-                            continue;
-                        }
-                        const width = Math.max(minWidthPx, getStepWidth(i));
-                        const xStart = xScale.getPixelForValue(i) - width / 2;
-                        const yMin = yScale.getPixelForValue(minValue);
-                        const yMax = yScale.getPixelForValue(maxValue);
-                        const top = Math.min(yMin, yMax);
-                        const height = Math.abs(yMin - yMax);
+                    ctx.fillStyle = baseColor;
+                    ctx.fillRect(xStart, top, width, height);
 
-                        ctx.fillStyle = baseColor;
+                    if (httpErrorBuckets[i]) {
+                        ctx.fillStyle = httpPattern;
                         ctx.fillRect(xStart, top, width, height);
-
-                        if (httpErrorBuckets[i]) {
-                            ctx.fillStyle = httpPattern;
-                            ctx.fillRect(xStart, top, width, height);
-                        }
-                        if (wsErrorBuckets[i]) {
-                            ctx.fillStyle = wsPattern;
-                            ctx.fillRect(xStart, top, width, height);
-                        }
                     }
-                };
-
-                if (!showBounds) {
-                    return;
-                }
-                ctx.save();
-                if (hasAggregatedLatencies) {
-                    drawBand(latencyMinScaled, latencyMaxScaled, `rgba(${theme.primaryRgb}, 0.12)`);
-                }
-                if (wsConfigured && hasAggregatedDelays) {
-                    drawBand(headDelayMinScaled, headDelayMaxScaled, `rgba(${theme.headDelayRgb}, 0.12)`);
-                    if (safeBlocksEnabled) {
-                        drawBand(safeDelayMinScaled, safeDelayMaxScaled, `rgba(${theme.safeDelayRgb}, 0.08)`);
+                    if (wsErrorBuckets[i]) {
+                        ctx.fillStyle = wsPattern;
+                        ctx.fillRect(xStart, top, width, height);
                     }
-                    drawBand(finalizedDelayMinScaled, finalizedDelayMaxScaled, `rgba(${theme.successRgb}, 0.12)`);
                 }
-                ctx.restore();
+            };
+
+            if (!showBounds) {
+                return;
             }
-        };
+            ctx.save();
+            if (hasAggregatedLatencies) {
+                drawBand(latencyMinScaled, latencyMaxScaled, `rgba(${theme.primaryRgb}, 0.12)`);
+            }
+            if (wsConfigured && hasAggregatedDelays) {
+                drawBand(headDelayMinScaled, headDelayMaxScaled, `rgba(${theme.headDelayRgb}, 0.12)`);
+                if (safeBlocksEnabled) {
+                    drawBand(safeDelayMinScaled, safeDelayMaxScaled, `rgba(${theme.safeDelayRgb}, 0.08)`);
+                }
+                drawBand(finalizedDelayMinScaled, finalizedDelayMaxScaled, `rgba(${theme.successRgb}, 0.12)`);
+            }
+            ctx.restore();
+        }
+    };
 
     const inverseScale = (value) => {
         if (maxDelayValue <= lowBandMax) {
@@ -357,8 +359,22 @@
                     });
                 };
 
-                const drawBars = (series, pattern) => {
+                const drawBars = (series, pattern, ongoing) => {
                     const errorMask = buildErrorMask(series);
+                    if (ongoing) {
+                        let lastErrorIndex = -1;
+                        for (let i = errorMask.length - 1; i >= 0; i -= 1) {
+                            if (errorMask[i]) {
+                                lastErrorIndex = i;
+                                break;
+                            }
+                        }
+                        if (lastErrorIndex >= 0) {
+                            for (let i = lastErrorIndex; i < errorMask.length; i += 1) {
+                                errorMask[i] = true;
+                            }
+                        }
+                    }
                     let startIndex = null;
                     for (let i = 0; i <= errorMask.length; i += 1) {
                         const hasError = i < errorMask.length && errorMask[i];
@@ -378,9 +394,9 @@
                 };
 
                 ctx.save();
-                drawBars(errorRateData, httpPattern);
+                drawBars(errorRateData, httpPattern, httpErrorOngoing);
                 if (wsConfigured) {
-                    drawBars(wsErrorRateData, wsPattern);
+                    drawBars(wsErrorRateData, wsPattern, wsErrorOngoing);
                 }
                 ctx.restore();
             }
@@ -465,7 +481,7 @@
                 }));
             }
 
-                if (referenceAvailable) {
+            if (referenceAvailable) {
                 datasets.push(createReferenceDataset({
                     label: 'Head Delay (Reference)',
                     data: referenceHeadDelayScaled,
@@ -473,7 +489,7 @@
                     color: theme.headDelay,
                     rgb: theme.headDelayRgb
                 }));
-                }
+            }
 
             if (safeBlocksEnabled) {
                 datasets.push(createLineDataset({
@@ -502,7 +518,7 @@
                     }));
                 }
 
-                    if (referenceAvailable) {
+                if (referenceAvailable) {
                     datasets.push(createReferenceDataset({
                         label: 'Safe Delay (Reference)',
                         data: referenceSafeDelayScaled,
@@ -510,7 +526,7 @@
                         color: theme.safeDelay,
                         rgb: theme.safeDelayRgb
                     }));
-                    }
+                }
             }
 
             datasets.push(createLineDataset({
@@ -539,7 +555,7 @@
                 }));
             }
 
-                if (referenceAvailable) {
+            if (referenceAvailable) {
                 datasets.push(createReferenceDataset({
                     label: 'Finalized Delay (Reference)',
                     data: referenceFinalizedDelayScaled,
@@ -547,7 +563,7 @@
                     color: theme.success,
                     rgb: theme.successRgb
                 }));
-                }
+            }
         }
 
         datasets.push({

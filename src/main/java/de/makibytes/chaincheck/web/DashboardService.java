@@ -521,6 +521,15 @@ public class DashboardService {
                 .limit(MAX_ANOMALIES)
                 .toList();
 
+        boolean httpErrorOngoing = anomalies.stream()
+            .anyMatch(event -> !event.isClosed()
+                && event.getSource() == MetricSource.HTTP
+                && isErrorAnomaly(event.getType()));
+        boolean wsErrorOngoing = anomalies.stream()
+            .anyMatch(event -> !event.isClosed()
+                && event.getSource() == MetricSource.WS
+                && isErrorAnomaly(event.getType()));
+
         DateTimeFormatter anomalyFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.systemDefault());
         
         // Group consecutive anomalies of the same type
@@ -615,6 +624,8 @@ public class DashboardService {
                 chartReferenceFinalizedDelays,
                 hasAggregatedLatencies,
                 hasAggregatedDelays,
+                httpErrorOngoing,
+                wsErrorOngoing,
                 httpConfigured,
                 wsConfigured,
                 nodeDefinition != null && nodeDefinition.safeBlocksEnabled(),
@@ -1139,6 +1150,15 @@ public class DashboardService {
                                   List<Long> finalizedDelays,
                                   List<Long> finalizedDelayMins,
                                   List<Long> finalizedDelayMaxs) {
+    }
+
+    private boolean isErrorAnomaly(de.makibytes.chaincheck.model.AnomalyType type) {
+        if (type == null) {
+            return false;
+        }
+        return type == de.makibytes.chaincheck.model.AnomalyType.ERROR
+                || type == de.makibytes.chaincheck.model.AnomalyType.RATE_LIMIT
+                || type == de.makibytes.chaincheck.model.AnomalyType.TIMEOUT;
     }
 
     private ReferenceComparison calculateReferenceComparison(String nodeKey) {
