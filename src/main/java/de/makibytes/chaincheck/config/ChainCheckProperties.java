@@ -241,8 +241,17 @@ public class ChainCheckProperties {
     }
 
     public static class ReferenceNode {
+        private String nodeKey;
         private String http;
         private long timeoutMs = 2000;
+
+        public String getNodeKey() {
+            return nodeKey;
+        }
+
+        public void setNodeKey(String nodeKey) {
+            this.nodeKey = nodeKey;
+        }
 
         public String getHttp() {
             return http;

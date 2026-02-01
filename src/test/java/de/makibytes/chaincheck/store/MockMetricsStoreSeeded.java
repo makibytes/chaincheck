@@ -38,10 +38,15 @@ import de.makibytes.chaincheck.model.MetricSource;
 public class MockMetricsStoreSeeded extends InMemoryMetricsStore {
 
     public static final String NODE_KEY = "mock-node";
+    public static final String NODE_KEY_SECONDARY = "mock-node-two";
     private static final int WS_OUTAGE_COUNT = 5;
     private static final int WS_OUTAGE_MINUTES = 180;
     private static final int HTTP_OUTAGE_MINUTES = 25;
     private static final int HTTP_OUTAGE_LOOKBACK_MINUTES = 120;
+    private static final int SECONDARY_HTTP_OUTAGE_MINUTES = 18;
+    private static final int SECONDARY_HTTP_OUTAGE_LOOKBACK_MINUTES = 180;
+    private static final int WS_FIXED_OUTAGE_LOOKBACK_HOURS = 13;
+    private static final int WS_FIXED_OUTAGE_MINUTES = 75;
     private static final Duration DATA_RANGE = Duration.ofDays(21);
 
     public MockMetricsStoreSeeded(de.makibytes.chaincheck.config.ChainCheckProperties properties) {
@@ -65,7 +70,20 @@ public class MockMetricsStoreSeeded extends InMemoryMetricsStore {
                 + random.nextInt(Math.max(1, HTTP_OUTAGE_LOOKBACK_MINUTES - HTTP_OUTAGE_MINUTES + 1));
         int httpOutageEnd = Math.min(totalMinutes, httpOutageStart + HTTP_OUTAGE_MINUTES);
 
-        List<int[]> wsOutages = buildWsOutageWindows(random, totalMinutes);
+        List<int[]> wsOutages = buildWsOutageWindows(random, totalMinutes, true);
+        List<int[]> wsOutagesSecondary = buildWsOutageWindows(new Random(20260123L), totalMinutes, false);
+        List<int[]> httpErrorWindows = buildHttpErrorWindows(totalMinutes, new int[] { 6, 18, 30 }, new int[] { 6, 5, 7 });
+        List<int[]> httpErrorWindowsSecondary = buildHttpErrorWindows(totalMinutes, new int[] { 8, 20, 34 }, new int[] { 4, 6, 5 });
+        String[] httpErrorMessages = {
+            "HTTP 429 rate limit",
+            "timeout",
+            "HTTP 502 Bad Gateway",
+            "HTTP 503 Service Unavailable"
+        };
+
+        int httpOutageStartSecondary = totalMinutes - SECONDARY_HTTP_OUTAGE_LOOKBACK_MINUTES
+                + random.nextInt(Math.max(1, SECONDARY_HTTP_OUTAGE_LOOKBACK_MINUTES - SECONDARY_HTTP_OUTAGE_MINUTES + 1));
+        int httpOutageEndSecondary = Math.min(totalMinutes, httpOutageStartSecondary + SECONDARY_HTTP_OUTAGE_MINUTES);
 
         long blockBase = 12_000_000L;
         for (int minute = 0; minute < totalMinutes; minute++) {
@@ -73,27 +91,56 @@ public class MockMetricsStoreSeeded extends InMemoryMetricsStore {
 
             if (!isInRange(minute, httpOutageStart, httpOutageEnd)) {
                 boolean staleBlock = minute % 720 == 0;
-                addHttpSample(timestamp, blockBase + minute, true, staleBlock);
-                addHttpSample(timestamp.plusSeconds(10), blockBase + minute, false, staleBlock);
+                addHttpSample(NODE_KEY, timestamp, blockBase + minute, true, staleBlock, 30, 2000L, 2500L);
+                addHttpSample(NODE_KEY, timestamp.plusSeconds(10), blockBase + minute, false, staleBlock, 30, 2000L, 2500L);
+                if (isInAnyRange(minute, httpErrorWindows)) {
+                    String errorMessage = httpErrorMessages[minute % httpErrorMessages.length];
+                    addHttpErrorSample(NODE_KEY, timestamp.plusSeconds(25), blockBase + minute, errorMessage);
+                }
+            }
+
+            if (!isInRange(minute, httpOutageStartSecondary, httpOutageEndSecondary)) {
+                boolean staleBlockSecondary = minute % 540 == 0;
+                long secondaryBlock = blockBase + 80_000 + minute;
+                addHttpSample(NODE_KEY_SECONDARY, timestamp.plusSeconds(5), secondaryBlock, true, staleBlockSecondary, 45, 2600L, 3200L);
+                addHttpSample(NODE_KEY_SECONDARY, timestamp.plusSeconds(15), secondaryBlock, false, staleBlockSecondary, 45, 2600L, 3200L);
+                if (isInAnyRange(minute, httpErrorWindowsSecondary)) {
+                    String errorMessage = httpErrorMessages[(minute + 1) % httpErrorMessages.length];
+                    addHttpErrorSample(NODE_KEY_SECONDARY, timestamp.plusSeconds(35), secondaryBlock, errorMessage);
+                }
             }
 
             if (!isInAnyRange(minute, wsOutages)) {
-                addWsSample(timestamp.plusSeconds(20));
+                addWsSample(NODE_KEY, timestamp.plusSeconds(20), 1000L);
+            }
+            if (!isInAnyRange(minute, wsOutagesSecondary)) {
+                addWsSample(NODE_KEY_SECONDARY, timestamp.plusSeconds(30), 1600L);
             }
         }
 
-        seedAnomalies(now);
+        seedAnomalies(now, NODE_KEY, 1L);
+        seedAnomalies(now.minus(Duration.ofHours(6)), NODE_KEY_SECONDARY, 1000L);
     }
 
-    private List<int[]> buildWsOutageWindows(Random random, int totalMinutes) {
+    private List<int[]> buildWsOutageWindows(Random random, int totalMinutes, boolean includeFixedOutage) {
         List<int[]> outages = new ArrayList<>();
         int lastThreeDaysMinutes = 3 * 24 * 60;
+
+        if (includeFixedOutage) {
+            int fixedStart = totalMinutes - (WS_FIXED_OUTAGE_LOOKBACK_HOURS * 60);
+            int fixedEnd = Math.min(totalMinutes, fixedStart + WS_FIXED_OUTAGE_MINUTES);
+            if (fixedStart >= 0 && fixedEnd > fixedStart) {
+                outages.add(new int[] { fixedStart, fixedEnd });
+            }
+        }
 
         if (totalMinutes > lastThreeDaysMinutes + WS_OUTAGE_MINUTES) {
             int recentStart = totalMinutes - (2 * 24 * 60);
             recentStart = Math.max(0, (recentStart / 60) * 60);
             int recentEnd = Math.min(totalMinutes, recentStart + WS_OUTAGE_MINUTES);
-            outages.add(new int[] { recentStart, recentEnd });
+            if (!overlaps(outages, recentStart, recentEnd)) {
+                outages.add(new int[] { recentStart, recentEnd });
+            }
         }
 
         while (outages.size() < WS_OUTAGE_COUNT) {
@@ -106,6 +153,19 @@ public class MockMetricsStoreSeeded extends InMemoryMetricsStore {
             outages.add(new int[] { startMinute, endMinute });
         }
         return outages;
+    }
+
+    private List<int[]> buildHttpErrorWindows(int totalMinutes, int[] lookbackHours, int[] lengthsMinutes) {
+        List<int[]> windows = new ArrayList<>();
+        int count = Math.min(lookbackHours.length, lengthsMinutes.length);
+        for (int i = 0; i < count; i++) {
+            int startMinute = Math.max(0, totalMinutes - (lookbackHours[i] * 60));
+            int endMinute = Math.min(totalMinutes, startMinute + lengthsMinutes[i]);
+            if (endMinute > startMinute) {
+                windows.add(new int[] { startMinute, endMinute });
+            }
+        }
+        return windows;
     }
 
     private boolean overlaps(List<int[]> outages, int startMinute, int endMinute) {
@@ -130,18 +190,25 @@ public class MockMetricsStoreSeeded extends InMemoryMetricsStore {
         return false;
     }
 
-    private void addHttpSample(Instant timestamp, long blockNumber, boolean safeSample, boolean staleBlock) {
+    private void addHttpSample(String nodeKey,
+                               Instant timestamp,
+                               long blockNumber,
+                               boolean safeSample,
+                               boolean staleBlock,
+                               long latencyOffsetMs,
+                               long safeDelayBaseMs,
+                               long finalizedDelayBaseMs) {
         boolean success = true;
-        long latencyMs = 30 + (blockNumber % 120);
+        long latencyMs = latencyOffsetMs + (blockNumber % 120);
         Instant blockTimestamp = staleBlock ? timestamp.minusSeconds(90) : timestamp.minusSeconds(12);
         String blockHash = "0x" + Long.toHexString(blockNumber);
         String parentHash = "0x" + Long.toHexString(blockNumber - 1);
         Integer transactionCount = (int) (blockNumber % 350);
         Long gasPriceWei = 1_000_000_000L + (blockNumber % 500_000);
-        Long safeDelayMs = safeSample ? 2000L + (blockNumber % 4000) : null;
-        Long finalizedDelayMs = safeSample ? null : 2500L + (blockNumber % 4500);
+        Long safeDelayMs = safeSample ? safeDelayBaseMs + (blockNumber % 4000) : null;
+        Long finalizedDelayMs = safeSample ? null : finalizedDelayBaseMs + (blockNumber % 4500);
 
-        addSample(NODE_KEY, new MetricSample(
+        addSample(nodeKey, new MetricSample(
                 timestamp,
                 MetricSource.HTTP,
                 success,
@@ -158,10 +225,28 @@ public class MockMetricsStoreSeeded extends InMemoryMetricsStore {
                 finalizedDelayMs));
     }
 
-    private void addWsSample(Instant timestamp) {
+    private void addHttpErrorSample(String nodeKey, Instant timestamp, long blockNumber, String errorMessage) {
+        addSample(nodeKey, new MetricSample(
+                timestamp,
+                MetricSource.HTTP,
+                false,
+                -1,
+                blockNumber,
+                null,
+                null,
+                null,
+                null,
+                null,
+                errorMessage,
+                null,
+                null,
+                null));
+    }
+
+    private void addWsSample(String nodeKey, Instant timestamp, long baseDelayMs) {
         long latencyMs = 0;
-        Long headDelayMs = 1000L + (timestamp.getEpochSecond() % 4000);
-        addSample(NODE_KEY, new MetricSample(
+        Long headDelayMs = baseDelayMs + (timestamp.getEpochSecond() % 4000);
+        addSample(nodeKey, new MetricSample(
                 timestamp,
                 MetricSource.WS,
                 true,
@@ -178,8 +263,8 @@ public class MockMetricsStoreSeeded extends InMemoryMetricsStore {
                 null));
     }
 
-    private void seedAnomalies(Instant now) {
-        long id = 1L;
+    private void seedAnomalies(Instant now, String nodeKey, long startingId) {
+        long id = startingId;
         AnomalyType[] types = AnomalyType.values();
         for (int i = 0; i < 3; i++) {
             for (AnomalyType type : types) {
@@ -189,9 +274,9 @@ public class MockMetricsStoreSeeded extends InMemoryMetricsStore {
                 MetricSource source = type == AnomalyType.ERROR || type == AnomalyType.DELAY
                         ? MetricSource.HTTP
                         : MetricSource.WS;
-                addAnomaly(NODE_KEY, new AnomalyEvent(
+                addAnomaly(nodeKey, new AnomalyEvent(
                         id++,
-                        NODE_KEY,
+                        nodeKey,
                         timestamp,
                         source,
                         type,
