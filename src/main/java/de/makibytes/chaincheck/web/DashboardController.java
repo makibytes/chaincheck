@@ -39,12 +39,18 @@ public class DashboardController {
     private final NodeRegistry nodeRegistry;
     private final ChainCheckProperties properties;
     private final RpcMonitorService rpcMonitorService;
+    private final AppVersionProvider appVersionProvider;
 
-    public DashboardController(DashboardService dashboardService, NodeRegistry nodeRegistry, ChainCheckProperties properties, RpcMonitorService rpcMonitorService) {
+    public DashboardController(DashboardService dashboardService,
+                               NodeRegistry nodeRegistry,
+                               ChainCheckProperties properties,
+                               RpcMonitorService rpcMonitorService,
+                               AppVersionProvider appVersionProvider) {
         this.dashboardService = dashboardService;
         this.nodeRegistry = nodeRegistry;
         this.properties = properties;
         this.rpcMonitorService = rpcMonitorService;
+        this.appVersionProvider = appVersionProvider;
     }
 
     @GetMapping({"/", "/dashboard"})
@@ -73,6 +79,7 @@ public class DashboardController {
         model.addAttribute("range", range);
         model.addAttribute("ranges", TimeRange.values());
         model.addAttribute("view", view);
+        model.addAttribute("appVersion", appVersionProvider.getVersion());
         return "dashboard";
     }
 

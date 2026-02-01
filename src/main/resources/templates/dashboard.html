@@ -19,6 +19,7 @@
     <div th:replace="~{fragments/chart-panel :: chartPanel}"></div>
     <div th:replace="~{fragments/anomalies-panel :: anomaliesPanel}"></div>
     <div th:replace="~{fragments/samples-panel :: samplesPanel}"></div>
+    <div class="app-version" th:text="|v${appVersion}|"></div>
     <div th:replace="~{fragments/scripts :: scripts}"></div>
 </body>
 

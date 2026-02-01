@@ -155,6 +155,15 @@ body {
     border-color: var(--color-primary);
 }
 
+.app-version {
+    margin-top: 32px;
+    text-align: right;
+    font-size: 0.8rem;
+    color: var(--color-text-subtle);
+    opacity: 0.85;
+    pointer-events: none;
+}
+
 .summary-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
