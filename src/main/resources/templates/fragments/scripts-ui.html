@@ -134,5 +134,92 @@
             }
         });
     }
+
+    const chartWrapper = document.getElementById('latencyChartWrapper');
+    const navLeft = document.getElementById('chartNavLeft');
+    const navRight = document.getElementById('chartNavRight');
+    if (chartWrapper && navLeft && navRight) {
+        const rangeSteps = {
+            '2h': 90 * 60 * 1000,
+            '3d': (2 * 24 + 8) * 60 * 60 * 1000
+        };
+        const rangeFromData = chartWrapper.dataset.range;
+        const rangeFromScript = typeof rangeKey !== 'undefined' ? rangeKey : null;
+        const activeRange = rangeFromScript || rangeFromData || '2h';
+        const stepMs = rangeSteps[activeRange];
+        if (!stepMs) {
+            navLeft.classList.add('disabled');
+            navRight.classList.add('disabled');
+        } else {
+            const nowEpochMs = Date.now();
+            const oldestEndEpochMs = nowEpochMs - (30 * 24 * 60 * 60 * 1000);
+            const newestThresholdMs = 60 * 1000;
+            let currentEndEpochMs = typeof viewEndEpochMs !== 'undefined' ? viewEndEpochMs : nowEpochMs;
+            if (chartWrapper.dataset.end) {
+                const parsed = Number(chartWrapper.dataset.end);
+                if (!Number.isNaN(parsed)) {
+                    currentEndEpochMs = parsed;
+                }
+            }
+
+            const currentUrl = new URL(window.location.href);
+            const endParam = currentUrl.searchParams.get('end');
+            if (endParam) {
+                const parsed = Number(endParam);
+                if (!Number.isNaN(parsed)) {
+                    currentEndEpochMs = parsed;
+                }
+            }
+
+            currentEndEpochMs = Math.min(currentEndEpochMs, nowEpochMs);
+            currentEndEpochMs = Math.max(currentEndEpochMs, oldestEndEpochMs);
+
+            const isNewest = !endParam || currentEndEpochMs >= nowEpochMs - newestThresholdMs;
+            const isOldest = currentEndEpochMs <= oldestEndEpochMs + newestThresholdMs;
+            navRight.classList.toggle('disabled', isNewest);
+            const allowLeft = !!hasOlderAggregates;
+            navLeft.classList.toggle('disabled', isOldest || !allowLeft);
+
+            const navigate = (direction) => {
+                let target = currentEndEpochMs + direction * stepMs;
+                target = Math.min(target, nowEpochMs);
+                target = Math.max(target, oldestEndEpochMs);
+
+                const nextUrl = new URL(window.location.href);
+                if (Math.abs(target - nowEpochMs) <= newestThresholdMs) {
+                    nextUrl.searchParams.delete('end');
+                } else {
+                    nextUrl.searchParams.set('end', String(Math.round(target)));
+                }
+                if (!nextUrl.searchParams.get('range')) {
+                    nextUrl.searchParams.set('range', activeRange);
+                }
+                window.location.href = nextUrl.toString();
+            };
+
+            const updateHoverZone = (event) => {
+                if (navLeft.classList.contains('disabled') && navRight.classList.contains('disabled')) {
+                    chartWrapper.classList.remove('show-left', 'show-right');
+                    return;
+                }
+                const rect = chartWrapper.getBoundingClientRect();
+                const x = event.clientX - rect.left;
+                const leftZone = rect.width / 3;
+                const rightZone = rect.width * 2 / 3;
+                const showLeft = x >= 0 && x <= leftZone && !navLeft.classList.contains('disabled');
+                const showRight = x >= rightZone && x <= rect.width && !navRight.classList.contains('disabled');
+                chartWrapper.classList.toggle('show-left', showLeft);
+                chartWrapper.classList.toggle('show-right', showRight);
+            };
+
+            chartWrapper.addEventListener('mousemove', updateHoverZone);
+            chartWrapper.addEventListener('mouseleave', () => {
+                chartWrapper.classList.remove('show-left', 'show-right');
+            });
+
+            navLeft.addEventListener('click', () => navigate(-1));
+            navRight.addEventListener('click', () => navigate(1));
+        }
+    }
 </script>
 </th:block>

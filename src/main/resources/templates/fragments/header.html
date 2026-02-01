@@ -14,7 +14,7 @@
         </label>
         <div class="range-selector">
             <span>Range:</span>
-            <a th:each="r : ${ranges}" th:href="@{/dashboard(range=${r.key}, node=${nodeKey})}" th:text="${r.key}"
+            <a th:each="r : ${ranges}" th:href="@{/dashboard(range=${r.key}, node=${nodeKey}, end=${endParam})}" th:text="${r.key}"
                 th:classappend="${r} == ${range} ? 'active' : ''">
             </a>
         </div>

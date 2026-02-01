@@ -71,6 +71,7 @@ public class DashboardView {
     private final int anomalyPageSize;
     private final int totalAnomalies;
     private final int scaleChangeMs;
+    private final boolean hasOlderAggregates;
     private final Instant generatedAt;
     private final ReferenceComparison referenceComparison;
     private final boolean isReferenceNode;
@@ -120,6 +121,7 @@ public class DashboardView {
                          int anomalyPageSize,
                          int totalAnomalies,
                          int scaleChangeMs,
+                         boolean hasOlderAggregates,
                          Instant generatedAt,
                          ReferenceComparison referenceComparison,
                          boolean isReferenceNode) {
@@ -168,6 +170,7 @@ public class DashboardView {
         this.anomalyPageSize = anomalyPageSize;
         this.totalAnomalies = totalAnomalies;
         this.scaleChangeMs = scaleChangeMs;
+        this.hasOlderAggregates = hasOlderAggregates;
         this.generatedAt = generatedAt;
         this.referenceComparison = referenceComparison;
         this.isReferenceNode = isReferenceNode;
@@ -351,6 +354,10 @@ public class DashboardView {
 
     public int getScaleChangeMs() {
         return scaleChangeMs;
+    }
+
+    public boolean hasOlderAggregates() {
+        return hasOlderAggregates;
     }
 
     public Instant getGeneratedAt() {

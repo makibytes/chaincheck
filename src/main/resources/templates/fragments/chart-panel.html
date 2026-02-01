@@ -12,5 +12,13 @@
             </label>
         </div>
     </div>
-    <canvas id="latencyChart" height="120"></canvas>
+    <div class="chart-wrapper" id="latencyChartWrapper" th:attr="data-range=${range.key},data-end=${endEpochMs}">
+        <canvas id="latencyChart" height="120"></canvas>
+        <button type="button" class="chart-nav chart-nav-left" id="chartNavLeft" aria-label="Previous range">
+            <span aria-hidden="true">←</span>
+        </button>
+        <button type="button" class="chart-nav chart-nav-right" id="chartNavRight" aria-label="Next range">
+            <span aria-hidden="true">→</span>
+        </button>
+    </div>
 </section>

@@ -35,6 +35,9 @@
     const anomalyPageSize = /*[[${view.anomalyPageSize}]]*/ 50;
     const anomalyTotalPages = /*[[${view.anomalyTotalPages}]]*/ 1;
     const scaleChangeMs = /*[[${view.scaleChangeMs}]]*/ 500;
+    const hasOlderAggregates = /*[[${view.hasOlderAggregates}]]*/ false;
+    const rangeKey = /*[[${range.key}]]*/ null;
+    const viewEndEpochMs = /*[[${endEpochMs}]]*/ null;
 
     const cssVars = getComputedStyle(document.documentElement);
     const getVar = (name, fallback) => {

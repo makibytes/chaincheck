@@ -33,8 +33,8 @@ public class MetricsCache {
 
     private final Map<String, CacheEntry> cache = new ConcurrentHashMap<>();
 
-    public DashboardView get(String nodeKey, TimeRange range) {
-        CacheEntry entry = cache.get(key(nodeKey, range));
+    public DashboardView get(String nodeKey, TimeRange range, Instant end) {
+        CacheEntry entry = cache.get(key(nodeKey, range, end));
         if (entry == null) {
             return null;
         }
@@ -44,12 +44,13 @@ public class MetricsCache {
         return entry.view;
     }
 
-    public void put(String nodeKey, TimeRange range, DashboardView view) {
-        cache.put(key(nodeKey, range), new CacheEntry(view, view.getGeneratedAt()));
+    public void put(String nodeKey, TimeRange range, Instant end, DashboardView view) {
+        cache.put(key(nodeKey, range, end), new CacheEntry(view, view.getGeneratedAt()));
     }
 
-    private String key(String nodeKey, TimeRange range) {
-        return nodeKey + ":" + range.getKey();
+    private String key(String nodeKey, TimeRange range, Instant end) {
+        long endEpochMs = end == null ? 0 : end.toEpochMilli();
+        return nodeKey + ":" + range.getKey() + ":" + endEpochMs;
     }
 
     private record CacheEntry(DashboardView view, Instant generatedAt) {

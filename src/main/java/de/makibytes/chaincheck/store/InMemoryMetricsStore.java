@@ -183,6 +183,22 @@ public class InMemoryMetricsStore {
         return result;
     }
 
+    public Instant getOldestAggregateTimestamp(String nodeKey) {
+        NavigableMap<Instant, SampleAggregate> hourlyAggregates = sampleAggregatesByNode.get(nodeKey);
+        NavigableMap<Instant, SampleAggregate> dailyAggregates = sampleDailyAggregatesByNode.get(nodeKey);
+        Instant oldest = null;
+        if (hourlyAggregates != null && !hourlyAggregates.isEmpty()) {
+            oldest = hourlyAggregates.firstKey();
+        }
+        if (dailyAggregates != null && !dailyAggregates.isEmpty()) {
+            Instant dailyOldest = dailyAggregates.firstKey();
+            if (oldest == null || dailyOldest.isBefore(oldest)) {
+                oldest = dailyOldest;
+            }
+        }
+        return oldest;
+    }
+
     public AnomalyEvent getAnomaly(long id) {
         return anomalyById.get(id);
     }

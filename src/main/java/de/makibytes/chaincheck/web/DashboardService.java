@@ -70,8 +70,8 @@ public class DashboardService {
         this.properties = properties;
     }
 
-    public DashboardView getDashboard(String nodeKey, TimeRange range) {
-        DashboardView cached = cache.get(nodeKey, range);
+    public DashboardView getDashboard(String nodeKey, TimeRange range, Instant end) {
+        DashboardView cached = cache.get(nodeKey, range, end);
         if (cached != null) {
             return cached;
         }
@@ -84,7 +84,7 @@ public class DashboardService {
             && nodeDefinition.ws() != null
             && !nodeDefinition.ws().isBlank();
 
-        Instant now = Instant.now();
+        Instant now = end == null ? Instant.now() : end;
         Instant since = now.minus(range.getDuration());
 
         List<MetricSample> rawSamples = store.getRawSamplesSince(nodeKey, since);
@@ -594,6 +594,8 @@ public class DashboardService {
 
         ReferenceComparison referenceComparison = calculateReferenceComparison(nodeKey);
         int scaleChangeMs = properties.getScaleChangeMs();
+        Instant oldestAggregate = store.getOldestAggregateTimestamp(nodeKey);
+        boolean hasOlderAggregates = oldestAggregate != null && oldestAggregate.isBefore(since);
 
         DashboardView view = new DashboardView(
                 range,
@@ -641,10 +643,11 @@ public class DashboardService {
                 PAGE_SIZE,
                 totalAnomalies,
                 scaleChangeMs,
-                Instant.now(),
+                hasOlderAggregates,
+                now,
                 referenceComparison,
                 isReferenceNode);
-        cache.put(nodeKey, range, view);
+            cache.put(nodeKey, range, now, view);
         return view;
     }
 
