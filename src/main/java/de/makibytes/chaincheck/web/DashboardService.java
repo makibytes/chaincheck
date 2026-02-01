@@ -373,6 +373,7 @@ public class DashboardService {
 
         // First pass: create intermediate rows with block number and initial finalized/safe status
         Map<Long, BlockTagInfo> blockTags = new HashMap<>();
+        Map<Long, java.util.Set<String>> finalizedHashesByNumber = new HashMap<>();
         
         List<SampleRow> intermediateRows = samplesByHash.entrySet().stream()
                 .map(entry -> {
@@ -433,9 +434,14 @@ public class DashboardService {
                     // Store tag info for propagation
                     if (first.getBlockNumber() != null) {
                         blockTags.put(first.getBlockNumber(), new BlockTagInfo(hasFinalized, hasSafe));
+                        if (hasFinalized && blockHash != null && !blockHash.isBlank()) {
+                            finalizedHashesByNumber
+                                    .computeIfAbsent(first.getBlockNumber(), key -> new java.util.HashSet<>())
+                                    .add(blockHash);
+                        }
                     }
                     
-                        return new SampleRow(
+                            return new SampleRow(
                             rowFormatter.format(first.getTimestamp()),
                             sources,
                             allSuccess ? "OK" : "ERROR",
@@ -446,6 +452,7 @@ public class DashboardService {
                             blockTime,
                             hasSafe,
                             hasFinalized,
+                                false,
                             transactionCount,
                             gasPriceWei);
                 })
@@ -504,6 +511,20 @@ public class DashboardService {
                     BlockTagInfo info = blockTags.get(row.getBlockNumber());
                         boolean isFinalized = info != null && info.finalized;
                         boolean isSafe = info != null && info.safe && !isFinalized;
+                        boolean isInvalid = false;
+                        if (row.getBlockNumber() != null && row.getBlockHash() != null) {
+                            java.util.Set<String> finalizedHashes = finalizedHashesByNumber.get(row.getBlockNumber());
+                            if (finalizedHashes != null && !finalizedHashes.isEmpty()) {
+                                if (finalizedHashes.contains(row.getBlockHash())) {
+                                    isFinalized = true;
+                                    isSafe = false;
+                                } else {
+                                    isInvalid = true;
+                                    isFinalized = false;
+                                    isSafe = false;
+                                }
+                            }
+                        }
                     
                     return new SampleRow(
                             row.getTime(),
@@ -516,6 +537,7 @@ public class DashboardService {
                             row.getBlockTime(),
                             isSafe,
                             isFinalized,
+                                isInvalid,
                             row.getTransactionCount(),
                             row.getGasPriceWei());
                 })

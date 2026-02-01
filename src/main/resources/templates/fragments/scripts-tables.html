@@ -17,6 +17,7 @@
         sample.blockTime,
         sample.finalized ? 'finalized' : '',
         sample.safe ? 'safe' : '',
+        sample.invalid ? 'invalid' : '',
         sample.transactionCount,
         sample.gasPriceWei
     ].join(' ').toLowerCase();
@@ -37,7 +38,9 @@
 
             // Build block display with finalized tag if applicable
             let blockDisplay = s.blockNumber ? String(s.blockNumber) : '-';
-            if (s.blockNumber && s.finalized) {
+            if (s.blockNumber && s.invalid) {
+                blockDisplay += ' <span class="tag tag-invalid">invalid</span>';
+            } else if (s.blockNumber && s.finalized) {
                 blockDisplay += ' <span class="tag tag-finalized">finalized</span>';
             } else if (s.blockNumber && s.safe) {
                 blockDisplay += ' <span class="tag tag-safe">safe</span>';

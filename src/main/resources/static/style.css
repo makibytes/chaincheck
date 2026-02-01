@@ -403,6 +403,12 @@ body {
     border: 1px solid rgba(var(--color-success-rgb), 0.35);
 }
 
+.tag-invalid {
+    background: rgba(var(--color-danger-rgb), 0.16);
+    color: var(--color-danger);
+    border: 1px solid rgba(var(--color-danger-rgb), 0.4);
+}
+
 .tag-http {
     background: rgba(var(--color-primary-rgb), 0.15);
     color: var(--color-primary);

@@ -164,18 +164,20 @@
         if (!sample || !sampleContent) {
             return;
         }
-        const blockBadge = sample.finalized
-            ? '<span class="tag tag-finalized">finalized</span>'
-            : (sample.safe ? '<span class="tag tag-safe">safe</span>' : '');
+        const blockBadge = sample.invalid
+            ? '<span class="tag tag-invalid">invalid</span>'
+            : (sample.finalized
+                ? '<span class="tag tag-finalized">finalized</span>'
+                : (sample.safe ? '<span class="tag tag-safe">safe</span>' : ''));
+        const blockDisplay = `${sample.blockNumber ?? '-'}${blockBadge ? ' ' + blockBadge : ''}`;
         sampleContent.innerHTML = `
             <div class="detail-grid">
-                <div><span class="label">Block</span><span>${sample.blockNumber ?? '-'}</span></div>
+                <div><span class="label">Block</span><span>${blockDisplay}</span></div>
                 <div><span class="label">Block Time</span><span>${sample.blockTime ?? '-'}</span></div>
                 <div><span class="label">Sources</span><span>${(sample.sources || []).join(', ') || '-'}</span></div>
                 <div><span class="label">Status</span><span>${sample.status ?? '-'}</span></div>
                 <div><span class="label">Block Hash</span><span class="hash-container">${formatHash(sample.blockHash)} ${copyBtn(sample.blockHash)}</span></div>
                 <div><span class="label">Parent Hash</span><span class="hash-container">${formatHash(sample.parentHash)} ${copyBtn(sample.parentHash)}</span></div>
-                <div><span class="label">Tag</span><span>${blockBadge || '-'}</span></div>
             </div>
         `;
         openSampleModal();

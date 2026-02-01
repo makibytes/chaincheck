@@ -31,6 +31,7 @@ public class SampleRow {
     private final String blockTime;
     private final boolean safe;
     private final boolean finalized;
+    private final boolean invalid;
     private final Integer transactionCount;
     private final Long gasPriceWei;
 
@@ -44,6 +45,7 @@ public class SampleRow {
                      String blockTime,
                      boolean safe,
                      boolean finalized,
+                     boolean invalid,
                      Integer transactionCount,
                      Long gasPriceWei) {
         this.time = time;
@@ -56,6 +58,7 @@ public class SampleRow {
         this.blockTime = blockTime;
         this.safe = safe;
         this.finalized = finalized;
+        this.invalid = invalid;
         this.transactionCount = transactionCount;
         this.gasPriceWei = gasPriceWei;
     }
@@ -98,6 +101,10 @@ public class SampleRow {
 
     public boolean isFinalized() {
         return finalized;
+    }
+
+    public boolean isInvalid() {
+        return invalid;
     }
 
     public Integer getTransactionCount() {
