@@ -132,8 +132,8 @@ class DashboardServiceInvalidBlockTest {
 
         assertTrue(rowMatching.getSources().contains("HTTP"));
         assertTrue(rowMatching.getSources().contains("WS"));
-        assertTrue(rowMatching.isFinalized());
-        assertFalse(rowMatching.isInvalid());
+        assertFalse(rowMatching.isFinalized());
+        assertTrue(rowMatching.isInvalid());
 
         assertEquals(1, rowOther.getSources().size());
         assertTrue(rowOther.getSources().contains("WS"));

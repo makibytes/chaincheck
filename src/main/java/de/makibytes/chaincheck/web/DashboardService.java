@@ -511,20 +511,16 @@ public class DashboardService {
                     BlockTagInfo info = blockTags.get(row.getBlockNumber());
                         boolean isFinalized = info != null && info.finalized;
                         boolean isSafe = info != null && info.safe && !isFinalized;
-                        boolean isInvalid = false;
-                        if (row.getBlockNumber() != null && row.getBlockHash() != null) {
-                            java.util.Set<String> finalizedHashes = finalizedHashesByNumber.get(row.getBlockNumber());
-                            if (finalizedHashes != null && !finalizedHashes.isEmpty()) {
-                                if (finalizedHashes.contains(row.getBlockHash())) {
-                                    isFinalized = true;
-                                    isSafe = false;
-                                } else {
-                                    isInvalid = true;
-                                    isFinalized = false;
-                                    isSafe = false;
-                                }
+                    boolean isInvalid = false;
+                    if (row.getBlockNumber() != null && row.getBlockHash() != null) {
+                        java.util.Set<String> finalizedHashes = finalizedHashesByNumber.get(row.getBlockNumber());
+                        if (finalizedHashes != null && !finalizedHashes.isEmpty()) {
+                            if (finalizedHashes.contains(row.getBlockHash())) {
+                                isFinalized = true;
+                                isSafe = false;
                             }
                         }
+                    }
                     
                     return new SampleRow(
                             row.getTime(),
@@ -546,7 +542,47 @@ public class DashboardService {
                 .limit(MAX_SAMPLES)
                 .toList();
 
-        int totalSamples = sampleRows.size();
+                    Map<Long, java.util.Set<String>> hashesByNumber = sampleRows.stream()
+                        .filter(row -> row.getBlockNumber() != null && row.getBlockHash() != null && !row.getBlockHash().isBlank())
+                        .collect(Collectors.groupingBy(
+                            SampleRow::getBlockNumber,
+                            Collectors.mapping(SampleRow::getBlockHash, Collectors.toSet())));
+
+                    java.util.Set<Long> finalizedNumbers = sampleRows.stream()
+                        .filter(row -> row.getBlockNumber() != null && row.isFinalized())
+                        .map(SampleRow::getBlockNumber)
+                        .collect(Collectors.toSet());
+
+                    List<SampleRow> finalizedSampleRows = sampleRows.stream()
+                        .map(row -> {
+                            if (row.getBlockNumber() == null || row.getBlockHash() == null) {
+                            return row;
+                            }
+                            if (!finalizedNumbers.contains(row.getBlockNumber())) {
+                            return row;
+                            }
+                            java.util.Set<String> hashes = hashesByNumber.get(row.getBlockNumber());
+                            if (hashes == null || hashes.size() <= 1) {
+                            return row;
+                            }
+                            return new SampleRow(
+                                row.getTime(),
+                                row.getSources(),
+                                row.getStatus(),
+                                row.getLatencyMs(),
+                                row.getBlockNumber(),
+                                row.getBlockHash(),
+                                row.getParentHash(),
+                                row.getBlockTime(),
+                                false,
+                                false,
+                                true,
+                                row.getTransactionCount(),
+                                row.getGasPriceWei());
+                        })
+                        .toList();
+
+        int totalSamples = finalizedSampleRows.size();
         int totalPages = Math.max(1, Math.min(MAX_PAGES, (int) Math.ceil(totalSamples / (double) PAGE_SIZE)));
 
         String referenceNodeKey = rpcMonitorService.getReferenceNodeKey();
@@ -649,7 +685,7 @@ public class DashboardService {
                 summary,
                 anomalies,
                 anomalyRows,
-                sampleRows,
+                finalizedSampleRows,
                 chartData.timestamps(),
                 chartLabels,
                 chartLatencies,

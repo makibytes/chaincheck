@@ -38,6 +38,10 @@
     const hasOlderAggregates = /*[[${view.hasOlderAggregates}]]*/ false;
     const rangeKey = /*[[${range.key}]]*/ null;
     const viewEndEpochMs = /*[[${endEpochMs}]]*/ null;
+    const delayChartsAvailable = wsConfigured
+        || headDelayData.some(value => value != null)
+        || safeDelayData.some(value => value != null)
+        || finalizedDelayData.some(value => value != null);
 
     const cssVars = getComputedStyle(document.documentElement);
     const getVar = (name, fallback) => {
@@ -194,7 +198,7 @@
             if (hasAggregatedLatencies) {
                 drawBand(latencyMinScaled, latencyMaxScaled, `rgba(${theme.primaryRgb}, 0.12)`);
             }
-            if (wsConfigured && hasAggregatedDelays) {
+            if (delayChartsAvailable && hasAggregatedDelays) {
                 drawBand(headDelayMinScaled, headDelayMaxScaled, `rgba(${theme.headDelayRgb}, 0.12)`);
                 if (safeBlocksEnabled) {
                     drawBand(safeDelayMinScaled, safeDelayMaxScaled, `rgba(${theme.safeDelayRgb}, 0.08)`);

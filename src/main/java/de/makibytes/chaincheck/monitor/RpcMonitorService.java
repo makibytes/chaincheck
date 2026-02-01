@@ -429,12 +429,11 @@ public class RpcMonitorService {
                 .filter(c -> c.blockNumber != null && freshestHeight - c.blockNumber <= 2)
                 .toList();
 
-        boolean manyStalled = nearTip.size() * 2 < candidates.size();
         List<ReferenceCandidate> healthyWs = nearTip.stream()
                 .filter(ReferenceCandidate::wsFresh)
                 .toList();
 
-        List<ReferenceCandidate> selectionPool = (!healthyWs.isEmpty() && manyStalled) ? healthyWs : candidates;
+        List<ReferenceCandidate> selectionPool = !healthyWs.isEmpty() ? healthyWs : candidates;
         ReferenceCandidate majority = selectMajority(selectionPool);
 
         if (majority != null) {
@@ -490,7 +489,8 @@ public class RpcMonitorService {
     }
 
     boolean isWsFresh(NodeState state, Instant now) {
-        return state.lastWsEventReceivedAt != null
+        return state.webSocketRef.get() != null
+                && state.lastWsEventReceivedAt != null
                 && Duration.between(state.lastWsEventReceivedAt, now).toSeconds() < WS_FRESH_SECONDS;
     }
 

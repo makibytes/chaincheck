@@ -156,6 +156,7 @@ public class HttpMonitorService {
                     monitor.recordFailure(node, MetricSource.HTTP, "finalized block not found");
                     return;
                 }
+                recordFinalizedReorgIfNeeded(node, state, finalizedBlock, timestamp);
                 state.lastFinalizedBlockNumber = finalizedBlock.blockNumber();
                 state.lastFinalizedBlockHash = finalizedBlock.blockHash();
                 state.lastFinalizedFetchAt = timestamp;
@@ -179,6 +180,7 @@ public class HttpMonitorService {
                     state.lastSafeBlockNumber = checkpointBlock.blockNumber();
                     state.lastSafeBlockHash = checkpointBlock.blockHash();
                 } else {
+                    recordFinalizedReorgIfNeeded(node, state, checkpointBlock, timestamp);
                     state.lastFinalizedBlockNumber = checkpointBlock.blockNumber();
                     state.lastFinalizedBlockHash = checkpointBlock.blockHash();
                 }
@@ -439,6 +441,50 @@ public class HttpMonitorService {
         state.lastWsBlockNumber = latestBlock.blockNumber();
         if (latestBlock.blockHash() != null) {
             state.lastWsBlockHash = latestBlock.blockHash();
+        }
+    }
+
+    private void recordFinalizedReorgIfNeeded(NodeDefinition node,
+                                              RpcMonitorService.NodeState state,
+                                              RpcMonitorService.BlockInfo finalizedBlock,
+                                              Instant timestamp) {
+        if (finalizedBlock == null) {
+            return;
+        }
+        Long previousNumber = state.lastFinalizedBlockNumber;
+        String previousHash = state.lastFinalizedBlockHash;
+        Long currentNumber = finalizedBlock.blockNumber();
+        String currentHash = finalizedBlock.blockHash();
+        if (previousNumber == null || currentNumber == null || !previousNumber.equals(currentNumber)) {
+            return;
+        }
+        if (previousHash == null || currentHash == null || previousHash.equals(currentHash)) {
+            return;
+        }
+
+        MetricSample sample = new MetricSample(
+                timestamp,
+                MetricSource.HTTP,
+                true,
+                0,
+                currentNumber,
+                finalizedBlock.blockTimestamp(),
+                currentHash,
+                finalizedBlock.parentHash(),
+                finalizedBlock.transactionCount(),
+                finalizedBlock.gasPriceWei(),
+                null,
+                null,
+                null,
+                null);
+        List<AnomalyEvent> anomalies = detector.detect(
+                node.key(),
+                sample,
+                node.anomalyDelayMs(),
+                previousNumber,
+                previousHash);
+        for (AnomalyEvent anomaly : anomalies) {
+            store.addAnomaly(node.key(), anomaly);
         }
     }
 
