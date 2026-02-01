@@ -25,6 +25,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -37,6 +38,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import de.makibytes.chaincheck.config.ChainCheckProperties;
+import de.makibytes.chaincheck.model.AnomalyEvent;
 import de.makibytes.chaincheck.model.MetricSample;
 import de.makibytes.chaincheck.model.MetricSource;
 import de.makibytes.chaincheck.monitor.NodeRegistry.NodeDefinition;
@@ -50,6 +52,7 @@ public class HttpMonitorService {
     private final RpcMonitorService monitor;
     private final NodeRegistry nodeRegistry;
     private final InMemoryMetricsStore store;
+    private final AnomalyDetector detector;
     private final ChainCheckProperties properties;
     private final ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
     private final Map<Long, HttpClient> httpClients = new ConcurrentHashMap<>();
@@ -59,11 +62,13 @@ public class HttpMonitorService {
     public HttpMonitorService(RpcMonitorService monitor,
                               NodeRegistry nodeRegistry,
                               InMemoryMetricsStore store,
+                              AnomalyDetector detector,
                               ChainCheckProperties properties,
                               Map<String, RpcMonitorService.NodeState> nodeStates) {
         this.monitor = monitor;
         this.nodeRegistry = nodeRegistry;
         this.store = store;
+        this.detector = detector;
         this.properties = properties;
         this.nodeStates = nodeStates;
     }
@@ -124,29 +129,63 @@ public class HttpMonitorService {
                 }
             }
 
-            String blockTag;
-            if (node.safeBlocksEnabled()) {
-                state.pollCounter++;
-                blockTag = (state.pollCounter % 2 == 1) ? "safe" : "finalized";
+            RpcMonitorService.BlockInfo safeBlock = null;
+            RpcMonitorService.BlockInfo finalizedBlock = null;
+            if (node.ws() == null || node.ws().isBlank()) {
+                if (node.safeBlocksEnabled()) {
+                    safeBlock = fetchBlockByTag(node, "safe");
+                    if (safeBlock == null) {
+                        monitor.recordFailure(node, MetricSource.HTTP, "safe block not found");
+                        return;
+                    }
+                    state.lastSafeBlockNumber = safeBlock.blockNumber();
+                    state.lastSafeBlockHash = safeBlock.blockHash();
+                    monitor.maybeCompareToReference(node, "safe", safeBlock);
+                }
+
+                if (shouldFetchLatest(state, timestamp, node.pollIntervalMs())) {
+                    state.lastLatestFetchAt = timestamp;
+                    RpcMonitorService.BlockInfo latestBlock = fetchBlockByTag(node, "latest");
+                    if (latestBlock != null) {
+                        handleLatestBlock(node, state, latestBlock);
+                    }
+                }
+
+                finalizedBlock = fetchBlockByTag(node, "finalized");
+                if (finalizedBlock == null) {
+                    monitor.recordFailure(node, MetricSource.HTTP, "finalized block not found");
+                    return;
+                }
+                state.lastFinalizedBlockNumber = finalizedBlock.blockNumber();
+                state.lastFinalizedBlockHash = finalizedBlock.blockHash();
+                state.lastFinalizedFetchAt = timestamp;
+                monitor.maybeCompareToReference(node, "finalized", finalizedBlock);
             } else {
-                blockTag = "finalized";
-            }
+                String blockTag;
+                if (node.safeBlocksEnabled()) {
+                    state.pollCounter++;
+                    blockTag = (state.pollCounter % 2 == 1) ? "safe" : "finalized";
+                } else {
+                    blockTag = "finalized";
+                }
 
-            RpcMonitorService.BlockInfo checkpointBlock = fetchBlockByTag(node, blockTag);
-            if (checkpointBlock == null) {
-                monitor.recordFailure(node, MetricSource.HTTP, blockTag + " block not found");
-                return;
-            }
+                RpcMonitorService.BlockInfo checkpointBlock = fetchBlockByTag(node, blockTag);
+                if (checkpointBlock == null) {
+                    monitor.recordFailure(node, MetricSource.HTTP, blockTag + " block not found");
+                    return;
+                }
 
-            if ("safe".equals(blockTag)) {
-                state.lastSafeBlockNumber = checkpointBlock.blockNumber();
-                state.lastSafeBlockHash = checkpointBlock.blockHash();
-            } else {
-                state.lastFinalizedBlockNumber = checkpointBlock.blockNumber();
-                state.lastFinalizedBlockHash = checkpointBlock.blockHash();
-            }
+                if ("safe".equals(blockTag)) {
+                    state.lastSafeBlockNumber = checkpointBlock.blockNumber();
+                    state.lastSafeBlockHash = checkpointBlock.blockHash();
+                } else {
+                    state.lastFinalizedBlockNumber = checkpointBlock.blockNumber();
+                    state.lastFinalizedBlockHash = checkpointBlock.blockHash();
+                }
 
-            monitor.maybeCompareToReference(node, blockTag, checkpointBlock);
+                monitor.maybeCompareToReference(node, blockTag, checkpointBlock);
+                finalizedBlock = checkpointBlock;
+            }
 
             // Successfully fetched all data - this counts as a success sample for HTTP
             monitor.checkAndCloseAnomaly(node, null, MetricSource.HTTP);
@@ -169,14 +208,10 @@ public class HttpMonitorService {
                 headDelayMs = Duration.between(state.lastWsBlockTimestamp, timestamp).toMillis();
             }
 
-            if (checkpointBlock.blockTimestamp() != null) {
-                long checkpointDelay = Duration.between(checkpointBlock.blockTimestamp(), timestamp).toMillis();
+            if (finalizedBlock != null && finalizedBlock.blockTimestamp() != null) {
+                long checkpointDelay = Duration.between(finalizedBlock.blockTimestamp(), timestamp).toMillis();
                 if (checkpointDelay >= 0) {
-                    if ("safe".equals(blockTag)) {
-                        safeDelayMs = checkpointDelay;
-                    } else {
-                        finalizedDelayMs = checkpointDelay;
-                    }
+                    finalizedDelayMs = checkpointDelay;
                 }
             }
 
@@ -186,18 +221,18 @@ public class HttpMonitorService {
                     true,
                     latencyMs,
                     blockNumber,
-                    checkpointBlock.blockTimestamp(),
-                    checkpointBlock.blockHash(),
-                    checkpointBlock.parentHash(),
-                    checkpointBlock.transactionCount(),
-                    checkpointBlock.gasPriceWei(),
+                        finalizedBlock == null ? null : finalizedBlock.blockTimestamp(),
+                        finalizedBlock == null ? null : finalizedBlock.blockHash(),
+                        finalizedBlock == null ? null : finalizedBlock.parentHash(),
+                        finalizedBlock == null ? null : finalizedBlock.transactionCount(),
+                        finalizedBlock == null ? null : finalizedBlock.gasPriceWei(),
                     null,
                     headDelayMs,
                     safeDelayMs,
                     finalizedDelayMs);
             store.addSample(node.key(), sample);
             state.lastHttpBlockNumber = blockNumber;
-            state.lastHttpBlockHash = checkpointBlock.blockHash();
+                    state.lastHttpBlockHash = finalizedBlock == null ? null : finalizedBlock.blockHash();
         } catch (HttpStatusException ex) {
             logger.error("HTTP RPC failure ({} / http): status {} ({})", node.name(), ex.getStatusCode(), ex.getMessage());
             monitor.recordFailure(node, MetricSource.HTTP, monitor.classifyError(ex));
@@ -361,6 +396,58 @@ public class HttpMonitorService {
             return null;
         }
         return new BigInteger(normalized, 16).longValue();
+    }
+
+    private void handleLatestBlock(NodeDefinition node, RpcMonitorService.NodeState state, RpcMonitorService.BlockInfo latestBlock) {
+        Instant now = Instant.now();
+        state.lastWsEventReceivedAt = now;
+        state.wsNewHeadCount++;
+
+        Long headDelayMs = null;
+        if (latestBlock.blockTimestamp() != null) {
+            headDelayMs = Duration.between(latestBlock.blockTimestamp(), now).toMillis();
+            state.lastWsBlockTimestamp = latestBlock.blockTimestamp();
+        }
+
+        MetricSample sample = new MetricSample(
+            now,
+            MetricSource.HTTP,
+                true,
+                -1,
+                latestBlock.blockNumber(),
+                latestBlock.blockTimestamp(),
+                latestBlock.blockHash(),
+                latestBlock.parentHash(),
+                latestBlock.transactionCount(),
+                latestBlock.gasPriceWei(),
+                null,
+                headDelayMs,
+                null,
+                null);
+        store.addSample(node.key(), sample);
+
+        List<AnomalyEvent> anomalies = detector.detect(
+                node.key(),
+                sample,
+                node.anomalyDelayMs(),
+                state.lastWsBlockNumber,
+                state.lastWsBlockHash);
+        for (AnomalyEvent anomaly : anomalies) {
+            store.addAnomaly(node.key(), anomaly);
+        }
+
+        state.lastWsBlockNumber = latestBlock.blockNumber();
+        if (latestBlock.blockHash() != null) {
+            state.lastWsBlockHash = latestBlock.blockHash();
+        }
+    }
+
+    private boolean shouldFetchLatest(RpcMonitorService.NodeState state, Instant now, long pollIntervalMs) {
+        if (state.lastLatestFetchAt == null) {
+            return true;
+        }
+        long minDelayMs = Math.max(1, pollIntervalMs);
+        return Duration.between(state.lastLatestFetchAt, now).toMillis() >= minDelayMs;
     }
 
     static class HttpStatusException extends IOException {

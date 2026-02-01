@@ -78,7 +78,7 @@ public class RpcMonitorService {
         this.store = store;
         this.detector = detector;
         this.properties = properties;
-        this.httpMonitorService = new HttpMonitorService(this, nodeRegistry, store, properties, nodeStates);
+        this.httpMonitorService = new HttpMonitorService(this, nodeRegistry, store, detector, properties, nodeStates);
         this.wsMonitorService = new WsMonitorService(this, nodeRegistry, store, detector, properties, nodeStates, httpMonitorService);
     }
 
@@ -646,6 +646,8 @@ public class RpcMonitorService {
         Instant lastWsMessageReceivedAt;
         Instant lastWsPingSentAt;
         Instant lastWsPongReceivedAt;
+        Instant lastFinalizedFetchAt;
+        Instant lastLatestFetchAt;
         long wsFailureBackoffSeconds = 0;
         Instant wsNextFailureSampleAt;
         Instant wsNextConnectAttemptAt;
