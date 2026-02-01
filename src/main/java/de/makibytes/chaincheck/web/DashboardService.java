@@ -23,6 +23,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -517,6 +518,7 @@ public class DashboardService {
         
         // Group consecutive anomalies of the same type
         List<AnomalyRow> anomalyRows = new ArrayList<>();
+        EnumSet<MetricSource> ongoingSources = EnumSet.noneOf(MetricSource.class);
         if (!pagedAnomalies.isEmpty()) {
             AnomalyEvent firstInGroup = pagedAnomalies.get(0);
             AnomalyEvent lastInGroup = firstInGroup;
@@ -534,16 +536,16 @@ public class DashboardService {
                     groupCount++;
                 } else {
                     // Different type or source or previous closed - finish current group and start new one
-                    boolean isFirstRow = anomalyRows.isEmpty();
-                    anomalyRows.add(createAnomalyRow(firstInGroup, lastInGroup, groupCount, anomalyFormatter, isFirstRow));
+                    boolean isFirstRowForSource = ongoingSources.add(firstInGroup.getSource());
+                    anomalyRows.add(createAnomalyRow(firstInGroup, lastInGroup, groupCount, anomalyFormatter, isFirstRowForSource));
                     firstInGroup = current;
                     lastInGroup = current;
                     groupCount = 1;
                 }
             }
             // Add the last group
-            boolean isFirstRow = anomalyRows.isEmpty();
-            anomalyRows.add(createAnomalyRow(firstInGroup, lastInGroup, groupCount, anomalyFormatter, isFirstRow));
+            boolean isFirstRowForSource = ongoingSources.add(firstInGroup.getSource());
+            anomalyRows.add(createAnomalyRow(firstInGroup, lastInGroup, groupCount, anomalyFormatter, isFirstRowForSource));
         }
 
         int totalAnomalies = anomalyRows.size();
@@ -1079,7 +1081,7 @@ public class DashboardService {
         return new DelayChartData(baseTimestamps, headDelays, headDelayMins, headDelayMaxs, safeDelays, safeDelayMins, safeDelayMaxs, finalizedDelays, finalizedDelayMins, finalizedDelayMaxs);
     }
 
-    private AnomalyRow createAnomalyRow(AnomalyEvent firstEvent, AnomalyEvent lastEvent, int count, DateTimeFormatter formatter, boolean isFirstRow) {
+    private AnomalyRow createAnomalyRow(AnomalyEvent firstEvent, AnomalyEvent lastEvent, int count, DateTimeFormatter formatter, boolean isFirstRowForSource) {
         if (count == 1) {
             // Single anomaly - use standard format
             return new AnomalyRow(
@@ -1090,8 +1092,8 @@ public class DashboardService {
                     firstEvent.getMessage());
         } else {
             // Multiple anomalies - show time range and use newest ID
-            // Only show "(ongoing)" for the first row (latest anomaly) if not closed
-                String endLabel = (isFirstRow && !lastEvent.isClosed())
+            // Only show "(ongoing)" for the first row per source if not closed
+                String endLabel = (isFirstRowForSource && !lastEvent.isClosed())
                     ? "(ongoing)"
                     : formatter.format(firstEvent.getTimestamp());
                 String timeRange = formatter.format(lastEvent.getTimestamp()) + " ↔ " + endLabel;
