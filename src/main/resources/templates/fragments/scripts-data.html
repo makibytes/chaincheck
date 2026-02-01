@@ -219,21 +219,22 @@
         return Math.round(lowBandMax + ((value - lowBandSize) / (scaledAxisMax - lowBandSize)) * (maxDelayValue - lowBandMax));
     };
 
-    const latencyScaled = latencyData.map(scaleValue);
-    const latencyMinScaled = latencyMinData.map(scaleValue);
-    const latencyMaxScaled = latencyMaxData.map(scaleValue);
-    const headDelayScaled = headDelayData.map(scaleValue);
-    const headDelayMinScaled = headDelayMinData.map(scaleValue);
-    const headDelayMaxScaled = headDelayMaxData.map(scaleValue);
-    const safeDelayScaled = safeDelayData.map(scaleValue);
-    const safeDelayMinScaled = safeDelayMinData.map(scaleValue);
-    const safeDelayMaxScaled = safeDelayMaxData.map(scaleValue);
-    const finalizedDelayScaled = finalizedDelayData.map(scaleValue);
-    const finalizedDelayMinScaled = finalizedDelayMinData.map(scaleValue);
-    const finalizedDelayMaxScaled = finalizedDelayMaxData.map(scaleValue);
-    const referenceHeadDelayScaled = referenceHeadDelayData.map(scaleValue);
-    const referenceSafeDelayScaled = referenceSafeDelayData.map(scaleValue);
-    const referenceFinalizedDelayScaled = referenceFinalizedDelayData.map(scaleValue);
+    // Helper function to scale multiple data arrays
+    const scaleMultiple = (arrays) => arrays.map(arr => arr.map(scaleValue));
+
+    const [
+        latencyScaled, latencyMinScaled, latencyMaxScaled,
+        headDelayScaled, headDelayMinScaled, headDelayMaxScaled,
+        safeDelayScaled, safeDelayMinScaled, safeDelayMaxScaled,
+        finalizedDelayScaled, finalizedDelayMinScaled, finalizedDelayMaxScaled,
+        referenceHeadDelayScaled, referenceSafeDelayScaled, referenceFinalizedDelayScaled
+    ] = scaleMultiple([
+        latencyData, latencyMinData, latencyMaxData,
+        headDelayData, headDelayMinData, headDelayMaxData,
+        safeDelayData, safeDelayMinData, safeDelayMaxData,
+        finalizedDelayData, finalizedDelayMinData, finalizedDelayMaxData,
+        referenceHeadDelayData, referenceSafeDelayData, referenceFinalizedDelayData
+    ]);
 
     const createLineDataset = ({
         label,
