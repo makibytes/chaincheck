@@ -330,7 +330,15 @@ public class RpcMonitorService {
                 return;
             }
 
-            maybeCompareToReference(node);
+            if ("safe".equals(blockTag)) {
+                state.lastSafeBlockNumber = checkpointBlock.blockNumber();
+                state.lastSafeBlockHash = checkpointBlock.blockHash();
+            } else {
+                state.lastFinalizedBlockNumber = checkpointBlock.blockNumber();
+                state.lastFinalizedBlockHash = checkpointBlock.blockHash();
+            }
+
+            maybeCompareToReference(node, blockTag, checkpointBlock);
             
             // Successfully fetched all data - this counts as a success sample for HTTP
             checkAndCloseAnomaly(node, null, MetricSource.HTTP);
@@ -402,9 +410,14 @@ public class RpcMonitorService {
         }
     }
 
-    private void maybeCompareToReference(NodeDefinition node) {
+    private void maybeCompareToReference(NodeDefinition node, String blockTag, BlockInfo checkpointBlock) {
         ReferenceState ref = referenceState.get();
         if (ref == null || ref.headNumber == null) {
+            return;
+        }
+
+        String referenceNodeKey = getReferenceNodeKey();
+        if (referenceNodeKey == null || referenceNodeKey.equals(node.key())) {
             return;
         }
 
@@ -434,41 +447,61 @@ public class RpcMonitorService {
             return;
         }
 
-        // Skip WRONG_HEAD until a reference node exists and at least 10 newHead events were observed
+        // Skip comparisons until a reference node exists and at least 10 newHead events were observed
         if (referenceFirstSetAtBlock == null || ref.headNumber - referenceFirstSetAtBlock < 10) {
             return;
         }
 
         long lag = ref.headNumber - blockNumber;
 
-        // Only flag as anomaly if lag exceeds configurable threshold
+        // Only flag as delay anomaly if lag exceeds configurable threshold
         // Small differences are normal and expected
-        Integer configuredLag = properties.getAnomalyDetection() != null
-            ? properties.getAnomalyDetection().getMaxBlockLag()
-            : null;
-        int lagThreshold = configuredLag != null ? configuredLag : 5;
-        
-        if (lag > lagThreshold) {
-            AnomalyEvent anomaly = detector.wrongHead(
-                    node.key(),
-                    Instant.now(),
-                source,
-                    blockNumber,
-                    blockHash,
-                    "Node significantly behind reference: reference head " + ref.headNumber + " vs node " + blockNumber);
-            store.addAnomaly(node.key(), anomaly);
-            return;
+        ChainCheckProperties.AnomalyDetection detection = properties.getAnomalyDetection();
+        Integer configuredLag = detection != null ? detection.getLongDelayBlockCount() : null;
+        if (configuredLag == null && detection != null) {
+            configuredLag = detection.getMaxBlockLag();
         }
+        int lagThreshold = configuredLag != null ? configuredLag : 15;
 
-        // Only flag hash mismatch at same height (lag = 0) as anomaly, not at different heights
-        if (lag == 0 && ref.headHash != null && !ref.headHash.equals(blockHash)) {
-            AnomalyEvent anomaly = detector.wrongHead(
+        if (lag >= lagThreshold) {
+            AnomalyEvent anomaly = detector.referenceDelay(
                     node.key(),
                     Instant.now(),
                     source,
                     blockNumber,
                     blockHash,
-                    "Hash mismatch at height " + blockNumber + " (reference " + ref.headHash + ")");
+                    "Node behind reference: reference head " + ref.headNumber + " vs node " + blockNumber);
+            store.addAnomaly(node.key(), anomaly);
+        }
+
+        NodeState referenceStateForNode = nodeStates.get(referenceNodeKey);
+        if (referenceStateForNode == null || checkpointBlock == null) {
+            return;
+        }
+
+        Long referenceCheckpointNumber;
+        String referenceCheckpointHash;
+        if ("safe".equals(blockTag)) {
+            referenceCheckpointNumber = referenceStateForNode.lastSafeBlockNumber;
+            referenceCheckpointHash = referenceStateForNode.lastSafeBlockHash;
+        } else {
+            referenceCheckpointNumber = referenceStateForNode.lastFinalizedBlockNumber;
+            referenceCheckpointHash = referenceStateForNode.lastFinalizedBlockHash;
+        }
+
+        Long checkpointNumber = checkpointBlock.blockNumber();
+        if (referenceCheckpointNumber == null || referenceCheckpointHash == null || checkpointNumber == null || checkpointBlock.blockHash() == null) {
+            return;
+        }
+
+        if (referenceCheckpointNumber.equals(checkpointNumber) && !referenceCheckpointHash.equals(checkpointBlock.blockHash())) {
+                AnomalyEvent anomaly = detector.wrongHead(
+                    node.key(),
+                    Instant.now(),
+                    MetricSource.HTTP,
+                    checkpointNumber,
+                    checkpointBlock.blockHash(),
+                    "Hash mismatch at " + blockTag + " height " + checkpointNumber + " (reference " + referenceCheckpointHash + ")");
             store.addAnomaly(node.key(), anomaly);
         }
     }
@@ -681,6 +714,7 @@ public class RpcMonitorService {
         if (result == null || result.isNull()) {
             return null;
         }
+        Long blockNumber = parseHexLong(result.path("number").asText(null));
         String blockHash = result.path("hash").asText(null);
         String parentHash = result.path("parentHash").asText(null);
         Instant blockTimestamp = null;
@@ -701,7 +735,7 @@ public class RpcMonitorService {
         if (transactions.isArray()) {
             txCount = transactions.size();
         }
-        return new BlockInfo(blockHash, parentHash, txCount, gasPriceWei, blockTimestamp);
+        return new BlockInfo(blockNumber, blockHash, parentHash, txCount, gasPriceWei, blockTimestamp);
     }
 
     private JsonNode sendRpcWithRetry(String httpUrl,
@@ -920,7 +954,7 @@ public class RpcMonitorService {
         }
     }
 
-    private record BlockInfo(String blockHash, String parentHash, Integer transactionCount, Long gasPriceWei, Instant blockTimestamp) {
+    private record BlockInfo(Long blockNumber, String blockHash, String parentHash, Integer transactionCount, Long gasPriceWei, Instant blockTimestamp) {
     }
 
     private static class HttpStatusException extends IOException {
@@ -944,6 +978,10 @@ public class RpcMonitorService {
         String lastHttpBlockHash;
         Long lastWsBlockNumber;
         String lastWsBlockHash;
+        Long lastSafeBlockNumber;
+        String lastSafeBlockHash;
+        Long lastFinalizedBlockNumber;
+        String lastFinalizedBlockHash;
         Instant lastWsBlockTimestamp;
         Instant lastWsEventReceivedAt;  // Timestamp when last WS newHeads event was received
         int wsNewHeadCount = 0;

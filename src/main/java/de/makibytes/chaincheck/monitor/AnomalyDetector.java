@@ -53,6 +53,25 @@ public class AnomalyDetector {
                 details);
     }
 
+    public AnomalyEvent referenceDelay(String nodeKey,
+                                       Instant timestamp,
+                                       MetricSource source,
+                                       Long blockNumber,
+                                       String blockHash,
+                                       String details) {
+        return new AnomalyEvent(
+                idSequence.getAndIncrement(),
+                nodeKey,
+                timestamp,
+                source,
+                AnomalyType.DELAY,
+                "Node behind reference",
+                blockNumber,
+                blockHash,
+                null,
+                details);
+    }
+
     public List<AnomalyEvent> detect(String nodeKey,
                                      MetricSample sample,
                                      long anomalyDelayMs,

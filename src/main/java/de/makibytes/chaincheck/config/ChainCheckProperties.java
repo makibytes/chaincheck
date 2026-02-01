@@ -293,6 +293,7 @@ public class ChainCheckProperties {
 
     public static class AnomalyDetection {
         private Integer maxBlockLag = 5;
+        private Integer longDelayBlockCount = 15;
 
         public Integer getMaxBlockLag() {
             return maxBlockLag;
@@ -300,6 +301,14 @@ public class ChainCheckProperties {
 
         public void setMaxBlockLag(Integer maxBlockLag) {
             this.maxBlockLag = maxBlockLag;
+        }
+
+        public Integer getLongDelayBlockCount() {
+            return longDelayBlockCount;
+        }
+
+        public void setLongDelayBlockCount(Integer longDelayBlockCount) {
+            this.longDelayBlockCount = longDelayBlockCount;
         }
     }
 }
