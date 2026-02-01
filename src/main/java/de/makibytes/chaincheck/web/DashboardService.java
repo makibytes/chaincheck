@@ -31,6 +31,7 @@ import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 
+import de.makibytes.chaincheck.config.ChainCheckProperties;
 import de.makibytes.chaincheck.model.AnomalyEvent;
 import de.makibytes.chaincheck.model.AnomalyType;
 import de.makibytes.chaincheck.model.DashboardSummary;
@@ -51,16 +52,22 @@ public class DashboardService {
     private final MetricsCache cache;
     private final NodeRegistry nodeRegistry;
     private final RpcMonitorService rpcMonitorService;
+    private final ChainCheckProperties properties;
     private static final int MAX_SAMPLES = 1000;
     private static final int PAGE_SIZE = 50;
     private static final int MAX_PAGES = 20;
     private static final int MAX_ANOMALIES = 1000;
 
-    public DashboardService(InMemoryMetricsStore store, MetricsCache cache, NodeRegistry nodeRegistry, RpcMonitorService rpcMonitorService) {
+    public DashboardService(InMemoryMetricsStore store,
+                            MetricsCache cache,
+                            NodeRegistry nodeRegistry,
+                            RpcMonitorService rpcMonitorService,
+                            ChainCheckProperties properties) {
         this.store = store;
         this.cache = cache;
         this.nodeRegistry = nodeRegistry;
         this.rpcMonitorService = rpcMonitorService;
+        this.properties = properties;
     }
 
     public DashboardView getDashboard(String nodeKey, TimeRange range) {
@@ -577,6 +584,7 @@ public class DashboardService {
             : new HttpStatus(httpTracker.getConnectedSince(), httpTracker.getErrorCount(), httpTracker.getLastError());
 
         ReferenceComparison referenceComparison = calculateReferenceComparison(nodeKey);
+        int scaleChangeMs = properties.getScaleChangeMs();
 
         DashboardView view = new DashboardView(
                 range,
@@ -621,6 +629,7 @@ public class DashboardService {
                 anomalyTotalPages,
                 PAGE_SIZE,
                 totalAnomalies,
+                scaleChangeMs,
                 Instant.now(),
                 referenceComparison,
                 isReferenceNode);

@@ -32,6 +32,7 @@
     const totalPages = /*[[${view.totalPages}]]*/ 1;
     const anomalyPageSize = /*[[${view.anomalyPageSize}]]*/ 50;
     const anomalyTotalPages = /*[[${view.anomalyTotalPages}]]*/ 1;
+    const scaleChangeMs = /*[[${view.scaleChangeMs}]]*/ 500;
 
     const cssVars = getComputedStyle(document.documentElement);
     const getVar = (name, fallback) => {
@@ -88,7 +89,7 @@
     );
     const scaledAxisMax = 1000;
     const lowBandRatio = 0.2;
-    const lowBandMax = 500;
+    const lowBandMax = scaleChangeMs;
     const lowBandSize = scaledAxisMax * lowBandRatio;
 
     const scaleValue = (value) => {

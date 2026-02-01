@@ -457,11 +457,9 @@ public class RpcMonitorService {
         // Only flag as delay anomaly if lag exceeds configurable threshold
         // Small differences are normal and expected
         ChainCheckProperties.AnomalyDetection detection = properties.getAnomalyDetection();
-        Integer configuredLag = detection != null ? detection.getLongDelayBlockCount() : null;
-        if (configuredLag == null && detection != null) {
-            configuredLag = detection.getMaxBlockLag();
-        }
-        int lagThreshold = configuredLag != null ? configuredLag : 15;
+        int lagThreshold = detection != null && detection.getLongDelayBlockCount() != null
+            ? detection.getLongDelayBlockCount()
+            : 15;
 
         if (lag >= lagThreshold) {
             AnomalyEvent anomaly = detector.referenceDelay(
