@@ -62,7 +62,10 @@ public class RpcMonitorService {
     private static final String JSONRPC_VERSION = "2.0";
     private static final Logger logger = LoggerFactory.getLogger(RpcMonitorService.class);
     private static final long WS_FRESH_SECONDS = 30;
-    private static final long WS_DEAD_SECONDS = 10;
+    private static final long WS_DEAD_SECONDS = 120;
+    private static final long WS_PING_AFTER_SECONDS = 45;
+    private static final long WS_PING_INTERVAL_SECONDS = 30;
+    private static final long WS_PING_TIMEOUT_SECONDS = 30;
     private static final String WS_NO_NEW_HEADS_PREFIX = "WebSocket not receiving newHeads events";
 
     private final NodeRegistry nodeRegistry;
@@ -312,6 +315,7 @@ public class RpcMonitorService {
                             long secondsSinceLastEvent = Duration.between(lastWsEvent, Instant.now()).toSeconds();
                             if (secondsSinceLastEvent > WS_DEAD_SECONDS) {
                                 recordFailure(node, MetricSource.WS, wsNoNewHeadsForSecondsMessage(secondsSinceLastEvent));
+                                closeWebSocket(node, state, "stale subscription");
                             } else {
                                 // WS is healthy (receiving events recently), treat as update to close potential previous errors
                                 checkAndCloseAnomaly(node, null, MetricSource.WS);
@@ -509,7 +513,7 @@ public class RpcMonitorService {
         }
     }
 
-    @Scheduled(fixedDelay = 250, initialDelay = 500)
+    @Scheduled(fixedDelay = 2000, initialDelay = 1000)
     public void ensureWebSocket() {
         long now = System.currentTimeMillis();
         for (NodeDefinition node : nodeRegistry.getNodes()) {
@@ -519,13 +523,14 @@ public class RpcMonitorService {
             NodeState state = nodeStates.computeIfAbsent(node.key(), key -> new NodeState());
             WebSocket existing = state.webSocketRef.get();
             if (existing != null) {
+                checkWsHealth(node, state, existing);
                 continue;
             }
             if (now - state.lastWsAttemptEpochMs < node.pollIntervalMs()) {
                 continue;
             }
             state.lastWsAttemptEpochMs = now;
-                getHttpClient(properties.getDefaults().getConnectTimeoutMs()).newWebSocketBuilder()
+            getHttpClient(properties.getDefaults().getConnectTimeoutMs()).newWebSocketBuilder()
                     .buildAsync(URI.create(node.ws()), new WsListener(node, state))
                     .thenAccept(state.webSocketRef::set)
                     .exceptionally(ex -> {
@@ -676,6 +681,54 @@ public class RpcMonitorService {
 
     private boolean isWsNoNewHeadsError(String error) {
         return error != null && error.startsWith(WS_NO_NEW_HEADS_PREFIX);
+    }
+
+    private void checkWsHealth(NodeDefinition node, NodeState state, WebSocket webSocket) {
+        Instant now = Instant.now();
+        Instant lastActivity = state.lastWsMessageReceivedAt != null
+                ? state.lastWsMessageReceivedAt
+                : state.lastWsConnectedAt;
+        if (lastActivity == null) {
+            return;
+        }
+
+        long idleSeconds = Duration.between(lastActivity, now).toSeconds();
+        if (state.lastWsPingSentAt != null
+                && (state.lastWsPongReceivedAt == null || state.lastWsPongReceivedAt.isBefore(state.lastWsPingSentAt))) {
+            long pingAge = Duration.between(state.lastWsPingSentAt, now).toSeconds();
+            if (pingAge > WS_PING_TIMEOUT_SECONDS) {
+                recordFailure(node, MetricSource.WS, "WebSocket ping timeout after " + pingAge + "s");
+                closeWebSocket(node, state, "ping timeout");
+                return;
+            }
+        }
+
+        if (idleSeconds >= WS_PING_AFTER_SECONDS) {
+            boolean shouldPing = state.lastWsPingSentAt == null
+                    || Duration.between(state.lastWsPingSentAt, now).toSeconds() >= WS_PING_INTERVAL_SECONDS;
+            if (shouldPing) {
+                try {
+                    state.lastWsPingSentAt = now;
+                    webSocket.sendPing(ByteBuffer.wrap(new byte[] { 1 }));
+                } catch (RuntimeException ex) {
+                    recordFailure(node, MetricSource.WS, "WebSocket ping failed: " + ex.getMessage());
+                    closeWebSocket(node, state, "ping failure");
+                }
+            }
+        }
+    }
+
+    private void closeWebSocket(NodeDefinition node, NodeState state, String reason) {
+        WebSocket webSocket = state.webSocketRef.getAndSet(null);
+        if (webSocket == null) {
+            return;
+        }
+        try {
+            webSocket.sendClose(WebSocket.NORMAL_CLOSURE, reason == null ? "reconnect" : reason);
+        } catch (RuntimeException ex) {
+            logger.debug("WebSocket close failed ({} / ws): {}", node.name(), ex.getMessage());
+            webSocket.abort();
+        }
     }
 
     private String wsNoNewHeadsSinceConnectionMessage() {
@@ -922,6 +975,11 @@ public class RpcMonitorService {
         @Override
         public void onOpen(WebSocket webSocket) {
             WebSocket.Listener.super.onOpen(webSocket);
+            Instant now = Instant.now();
+            state.lastWsConnectedAt = now;
+            state.lastWsMessageReceivedAt = now;
+            state.lastWsPingSentAt = null;
+            state.lastWsPongReceivedAt = null;
             WsConnectionTracker tracker = nodeRegistry.getWsTracker(node.key());
             if (tracker != null) {
                 tracker.onConnect();
@@ -936,6 +994,7 @@ public class RpcMonitorService {
             if (last) {
                 String payload = buffer.toString();
                 buffer.setLength(0);
+                state.lastWsMessageReceivedAt = Instant.now();
                 handleWsMessage(payload);
             }
             return WebSocket.Listener.super.onText(webSocket, data, last);
@@ -947,6 +1006,12 @@ public class RpcMonitorService {
         }
 
         @Override
+        public CompletionStage<?> onPong(WebSocket webSocket, ByteBuffer message) {
+            state.lastWsPongReceivedAt = Instant.now();
+            return WebSocket.Listener.super.onPong(webSocket, message);
+        }
+
+        @Override
         public void onError(WebSocket webSocket, Throwable error) {
             logger.error("WebSocket error ({} / ws): {}", node.name(), error.getMessage());
             WsConnectionTracker tracker = nodeRegistry.getWsTracker(node.key());
@@ -954,6 +1019,10 @@ public class RpcMonitorService {
                 tracker.onError(error);
             }
             recordFailure(node, MetricSource.WS, error.getMessage());
+            state.lastWsConnectedAt = null;
+            state.lastWsMessageReceivedAt = null;
+            state.lastWsPingSentAt = null;
+            state.lastWsPongReceivedAt = null;
             state.webSocketRef.set(null);
             WebSocket.Listener.super.onError(webSocket, error);
         }
@@ -964,6 +1033,10 @@ public class RpcMonitorService {
             if (tracker != null) {
                 tracker.onDisconnect();
             }
+            state.lastWsConnectedAt = null;
+            state.lastWsMessageReceivedAt = null;
+            state.lastWsPingSentAt = null;
+            state.lastWsPongReceivedAt = null;
             state.webSocketRef.set(null);
             return WebSocket.Listener.super.onClose(webSocket, statusCode, reason);
         }
@@ -1073,6 +1146,10 @@ public class RpcMonitorService {
         String lastFinalizedBlockHash;
         Instant lastWsBlockTimestamp;
         Instant lastWsEventReceivedAt;  // Timestamp when last WS newHeads event was received
+        Instant lastWsConnectedAt;
+        Instant lastWsMessageReceivedAt;
+        Instant lastWsPingSentAt;
+        Instant lastWsPongReceivedAt;
         int wsNewHeadCount = 0;
         int pollCounter = 0;
         String lastHttpError;
