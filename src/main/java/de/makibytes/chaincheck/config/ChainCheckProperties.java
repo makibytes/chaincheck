@@ -27,6 +27,9 @@ public class ChainCheckProperties {
 
     private String title = "";
     private String titleColor = "white";
+    private long anomalyDelayMs = 2000;
+    private boolean safeBlocksEnabled = false;
+    private int scaleChangeMs = 500;
     private ReferenceNode reference = new ReferenceNode();
     private Defaults defaults = new Defaults();
     private Persistence persistence = new Persistence();
@@ -47,6 +50,30 @@ public class ChainCheckProperties {
 
     public void setTitleColor(String titleColor) {
         this.titleColor = titleColor;
+    }
+
+    public long getAnomalyDelayMs() {
+        return anomalyDelayMs;
+    }
+
+    public void setAnomalyDelayMs(long anomalyDelayMs) {
+        this.anomalyDelayMs = anomalyDelayMs;
+    }
+
+    public boolean isSafeBlocksEnabled() {
+        return safeBlocksEnabled;
+    }
+
+    public void setSafeBlocksEnabled(boolean safeBlocksEnabled) {
+        this.safeBlocksEnabled = safeBlocksEnabled;
+    }
+
+    public int getScaleChangeMs() {
+        return scaleChangeMs;
+    }
+
+    public void setScaleChangeMs(int scaleChangeMs) {
+        this.scaleChangeMs = scaleChangeMs;
     }
 
     public ReferenceNode getReference() {
@@ -95,8 +122,8 @@ public class ChainCheckProperties {
         private String http;
         private String ws;
         private long pollIntervalMs = 3000;
-        private long anomalyDelayMs = 2000;
-        private boolean safeBlocksEnabled = false;
+        private long anomalyDelayMs = -1;
+        private Boolean safeBlocksEnabled;
         private long connectTimeoutMs = -1;
         private long readTimeoutMs = -1;
         private int maxRetries = -1;
@@ -143,11 +170,11 @@ public class ChainCheckProperties {
             this.anomalyDelayMs = anomalyDelayMs;
         }
 
-        public boolean isSafeBlocksEnabled() {
+        public Boolean getSafeBlocksEnabled() {
             return safeBlocksEnabled;
         }
 
-        public void setSafeBlocksEnabled(boolean safeBlocksEnabled) {
+        public void setSafeBlocksEnabled(Boolean safeBlocksEnabled) {
             this.safeBlocksEnabled = safeBlocksEnabled;
         }
 
@@ -241,8 +268,17 @@ public class ChainCheckProperties {
     }
 
     public static class ReferenceNode {
+        private String nodeKey;
         private String http;
         private long timeoutMs = 2000;
+
+        public String getNodeKey() {
+            return nodeKey;
+        }
+
+        public void setNodeKey(String nodeKey) {
+            this.nodeKey = nodeKey;
+        }
 
         public String getHttp() {
             return http;
@@ -292,14 +328,14 @@ public class ChainCheckProperties {
     }
 
     public static class AnomalyDetection {
-        private Integer maxBlockLag = 5;
+        private Integer longDelayBlockCount = 15;
 
-        public Integer getMaxBlockLag() {
-            return maxBlockLag;
+        public Integer getLongDelayBlockCount() {
+            return longDelayBlockCount;
         }
 
-        public void setMaxBlockLag(Integer maxBlockLag) {
-            this.maxBlockLag = maxBlockLag;
+        public void setLongDelayBlockCount(Integer longDelayBlockCount) {
+            this.longDelayBlockCount = longDelayBlockCount;
         }
     }
 }

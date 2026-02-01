@@ -17,6 +17,7 @@
  */
 package de.makibytes.chaincheck.monitor;
 
+import java.lang.reflect.Constructor;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -31,7 +32,11 @@ import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import de.makibytes.chaincheck.config.ChainCheckProperties;
+import de.makibytes.chaincheck.model.AnomalyEvent;
+import de.makibytes.chaincheck.model.AnomalyType;
+import de.makibytes.chaincheck.model.MetricSource;
 import de.makibytes.chaincheck.monitor.NodeRegistry.NodeDefinition;
+import de.makibytes.chaincheck.store.InMemoryMetricsStore;
 
 @DisplayName("RpcMonitorService Tests")
 class RpcMonitorServiceTest {
@@ -159,6 +164,80 @@ class RpcMonitorServiceTest {
         assertEquals("0xhead", reference.headHash());
     }
 
+    @Test
+    @DisplayName("reference lag triggers delay anomaly, not wrong head")
+    void referenceLagCreatesDelayAnomaly() {
+        ChainCheckProperties properties = new ChainCheckProperties();
+        properties.getAnomalyDetection().setLongDelayBlockCount(15);
+        NodeRegistry registry = registryWithNodes("mock-node", "mock-node-two");
+        InMemoryMetricsStore store = new InMemoryMetricsStore(properties);
+        RpcMonitorService svc = new RpcMonitorService(registry, store, new AnomalyDetector(), properties);
+
+        Map<String, RpcMonitorService.NodeState> states = nodeStates(svc);
+        RpcMonitorService.NodeState referenceState = new RpcMonitorService.NodeState();
+        referenceState.lastWsBlockNumber = 100L;
+        referenceState.lastWsBlockHash = "0xref";
+        referenceState.lastWsEventReceivedAt = Instant.now();
+        referenceState.wsNewHeadCount = 20;
+        states.put("mock-node-two", referenceState);
+
+        RpcMonitorService.NodeState targetState = new RpcMonitorService.NodeState();
+        targetState.lastWsBlockNumber = 80L;
+        targetState.lastWsBlockHash = "0xtarget";
+        targetState.lastWsEventReceivedAt = Instant.now();
+        targetState.wsNewHeadCount = 20;
+        states.put("mock-node", targetState);
+
+        setReferenceState(svc, 100L, "0xref");
+        ReflectionTestUtils.setField(svc, "referenceFirstSetAtBlock", 70L);
+
+        Object checkpoint = createBlockInfo(70L, "0xsafe", "0xparent", 10, 1_000L, Instant.now());
+        ReflectionTestUtils.invokeMethod(svc, "maybeCompareToReference", registry.getNode("mock-node"), "finalized", checkpoint);
+
+        List<AnomalyEvent> anomalies = store.getRawAnomaliesSince("mock-node", Instant.EPOCH);
+        assertEquals(1, anomalies.size());
+        assertEquals(AnomalyType.DELAY, anomalies.get(0).getType());
+        assertEquals(MetricSource.WS, anomalies.get(0).getSource());
+    }
+
+    @Test
+    @DisplayName("wrong head only triggers on safe/finalized hash mismatch")
+    void wrongHeadOnlyOnCheckpointHashMismatch() {
+        ChainCheckProperties properties = new ChainCheckProperties();
+        properties.getAnomalyDetection().setLongDelayBlockCount(15);
+        NodeRegistry registry = registryWithNodes("mock-node", "mock-node-two");
+        InMemoryMetricsStore store = new InMemoryMetricsStore(properties);
+        RpcMonitorService svc = new RpcMonitorService(registry, store, new AnomalyDetector(), properties);
+
+        Map<String, RpcMonitorService.NodeState> states = nodeStates(svc);
+        RpcMonitorService.NodeState referenceState = new RpcMonitorService.NodeState();
+        referenceState.lastWsBlockNumber = 210L;
+        referenceState.lastWsBlockHash = "0xhead";
+        referenceState.lastWsEventReceivedAt = Instant.now();
+        referenceState.wsNewHeadCount = 20;
+        referenceState.lastSafeBlockNumber = 200L;
+        referenceState.lastSafeBlockHash = "0xbbb";
+        states.put("mock-node-two", referenceState);
+
+        RpcMonitorService.NodeState targetState = new RpcMonitorService.NodeState();
+        targetState.lastWsBlockNumber = 210L;
+        targetState.lastWsBlockHash = "0xhead-target";
+        targetState.lastWsEventReceivedAt = Instant.now();
+        targetState.wsNewHeadCount = 20;
+        states.put("mock-node", targetState);
+
+        setReferenceState(svc, 210L, "0xhead");
+        ReflectionTestUtils.setField(svc, "referenceFirstSetAtBlock", 180L);
+
+        Object checkpoint = createBlockInfo(200L, "0xaaa", "0xparent", 12, 1_000L, Instant.now());
+        ReflectionTestUtils.invokeMethod(svc, "maybeCompareToReference", registry.getNode("mock-node"), "safe", checkpoint);
+
+        List<AnomalyEvent> anomalies = store.getRawAnomaliesSince("mock-node", Instant.EPOCH);
+        assertEquals(1, anomalies.size());
+        assertEquals(AnomalyType.WRONG_HEAD, anomalies.get(0).getType());
+        assertEquals(200L, anomalies.get(0).getBlockNumber());
+    }
+
     private NodeRegistry registryWithNodes(String... names) {
         ChainCheckProperties properties = new ChainCheckProperties();
         List<ChainCheckProperties.RpcNodeProperties> nodeProps = new ArrayList<>();
@@ -190,4 +269,40 @@ class RpcMonitorServiceTest {
 
     private record ReferenceSnapshot(Long headNumber, String headHash) {
     }
+
+    private void setReferenceState(RpcMonitorService svc, Long headNumber, String headHash) {
+        AtomicReference<?> ref = (AtomicReference<?>) ReflectionTestUtils.getField(svc, "referenceState");
+        Object state = createReferenceState(headNumber, headHash, Instant.now());
+        @SuppressWarnings("rawtypes")
+        AtomicReference rawRef = (AtomicReference) ref;
+        rawRef.set(state);
+    }
+
+    private Object createReferenceState(Long headNumber, String headHash, Instant fetchedAt) {
+        try {
+            Class<?> refClass = Class.forName("de.makibytes.chaincheck.monitor.RpcMonitorService$ReferenceState");
+            Constructor<?> ctor = refClass.getDeclaredConstructor(Long.class, String.class, Instant.class);
+            ctor.setAccessible(true);
+            return ctor.newInstance(headNumber, headHash, fetchedAt);
+        } catch (Exception ex) {
+            throw new IllegalStateException("Unable to construct reference state", ex);
+        }
+    }
+
+    private Object createBlockInfo(Long blockNumber,
+                                   String blockHash,
+                                   String parentHash,
+                                   Integer transactionCount,
+                                   Long gasPriceWei,
+                                   Instant blockTimestamp) {
+        try {
+            Class<?> infoClass = Class.forName("de.makibytes.chaincheck.monitor.RpcMonitorService$BlockInfo");
+            Constructor<?> ctor = infoClass.getDeclaredConstructor(Long.class, String.class, String.class, Integer.class, Long.class, Instant.class);
+            ctor.setAccessible(true);
+            return ctor.newInstance(blockNumber, blockHash, parentHash, transactionCount, gasPriceWei, blockTimestamp);
+        } catch (Exception ex) {
+            throw new IllegalStateException("Unable to construct block info", ex);
+        }
+    }
+
 }

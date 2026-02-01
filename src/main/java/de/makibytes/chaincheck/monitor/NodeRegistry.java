@@ -54,20 +54,29 @@ public class NodeRegistry {
                 key = baseKey + "-" + suffix++;
             }
             usedKeys.add(key);
-                long connectTimeoutMs = node.getConnectTimeoutMs() > 0 ? node.getConnectTimeoutMs() : defaults.getConnectTimeoutMs();
-                long readTimeoutMs = node.getReadTimeoutMs() > 0 ? node.getReadTimeoutMs() : defaults.getReadTimeoutMs();
-                int maxRetries = node.getMaxRetries() >= 0 ? node.getMaxRetries() : defaults.getMaxRetries();
-                long retryBackoffMs = node.getRetryBackoffMs() > 0 ? node.getRetryBackoffMs() : defaults.getRetryBackoffMs();
-                Map<String, String> headers = new HashMap<>(defaults.getHeaders());
-                headers.putAll(node.getHeaders());
+            long connectTimeoutMs = node.getConnectTimeoutMs() > 0 ? node.getConnectTimeoutMs() : defaults.getConnectTimeoutMs();
+            long readTimeoutMs = node.getReadTimeoutMs() > 0 ? node.getReadTimeoutMs() : defaults.getReadTimeoutMs();
+            int maxRetries = node.getMaxRetries() >= 0 ? node.getMaxRetries() : defaults.getMaxRetries();
+            long retryBackoffMs = node.getRetryBackoffMs() > 0 ? node.getRetryBackoffMs() : defaults.getRetryBackoffMs();
+            Map<String, String> headers = new HashMap<>(defaults.getHeaders());
+            headers.putAll(node.getHeaders());
+            long anomalyDelayMs = node.getAnomalyDelayMs() > 0
+                    ? node.getAnomalyDelayMs()
+                    : properties.getAnomalyDelayMs();
+            boolean safeBlocksEnabled = node.getSafeBlocksEnabled() != null
+                    ? node.getSafeBlocksEnabled()
+                    : properties.isSafeBlocksEnabled();
+            String nodeName = node.getName() == null || node.getName().isBlank()
+                    ? "Node " + index
+                    : node.getName();
             NodeDefinition definition = new NodeDefinition(
                     key,
-                    node.getName() == null || node.getName().isBlank() ? "Node " + index : node.getName(),
+                    nodeName,
                     node.getHttp(),
                     node.getWs(),
                     node.getPollIntervalMs(),
-                    node.getAnomalyDelayMs(),
-                    node.isSafeBlocksEnabled(),
+                    anomalyDelayMs,
+                    safeBlocksEnabled,
                     connectTimeoutMs,
                     readTimeoutMs,
                     maxRetries,
