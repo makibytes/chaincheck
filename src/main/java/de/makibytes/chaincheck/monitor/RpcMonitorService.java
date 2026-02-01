@@ -28,7 +28,9 @@ import java.net.http.WebSocket;
 import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -71,7 +73,11 @@ public class RpcMonitorService {
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
     private final Map<String, NodeState> nodeStates = new ConcurrentHashMap<>();
     private final AtomicReference<ReferenceState> referenceState = new AtomicReference<>();
+    private final Deque<String> referenceSelections = new ArrayDeque<>();
+    private static final int REFERENCE_SELECTION_WINDOW = 20;
+    private static final int REFERENCE_SWITCH_THRESHOLD = 15;
     private Long referenceFirstSetAtBlock = null;
+    private String currentReferenceNodeKey;
 
     @Autowired
     public RpcMonitorService(NodeRegistry nodeRegistry,
@@ -102,6 +108,9 @@ public class RpcMonitorService {
      * Returns the node key of the current reference node, or null if no reference is set.
      */
     public String getReferenceNodeKey() {
+        if (currentReferenceNodeKey != null && nodeStates.containsKey(currentReferenceNodeKey)) {
+            return currentReferenceNodeKey;
+        }
         ReferenceState ref = referenceState.get();
         if (ref == null || ref.headNumber == null || ref.headHash == null) {
             return null;
@@ -614,17 +623,78 @@ public class RpcMonitorService {
         ReferenceCandidate majority = selectMajority(selectionPool);
 
         if (majority != null) {
-            ReferenceState oldRef = referenceState.get();
-            referenceState.set(new ReferenceState(majority.blockNumber(), majority.blockHash(), Instant.now()));
-            
-            // Track when reference was first established for grace period calculation
-            if (oldRef == null && referenceFirstSetAtBlock == null) {
-                referenceFirstSetAtBlock = majority.blockNumber();
-                logger.info("Reference head established at block {}", majority.blockNumber());
+            String selectedKey = majority.nodeKey();
+            registerReferenceSelection(selectedKey);
+
+            if (currentReferenceNodeKey == null) {
+                currentReferenceNodeKey = selectedKey;
+                updateReferenceState(majority, true);
+                return;
             }
+
+            if (!currentReferenceNodeKey.equals(selectedKey)
+                    && shouldSwitchReference(selectedKey)) {
+                currentReferenceNodeKey = selectedKey;
+                updateReferenceState(majority, true);
+                return;
+            }
+
+            ReferenceCandidate currentCandidate = candidates.stream()
+                    .filter(candidate -> currentReferenceNodeKey.equals(candidate.nodeKey()))
+                    .findFirst()
+                    .orElse(null);
+            if (currentCandidate != null) {
+                updateReferenceState(currentCandidate, false);
+                return;
+            }
+
+            currentReferenceNodeKey = selectedKey;
+            updateReferenceState(majority, true);
         } else {
             referenceState.set(null);
         }
+    }
+
+    private void updateReferenceState(ReferenceCandidate candidate, boolean resetReferenceWindow) {
+        if (candidate == null) {
+            return;
+        }
+        ReferenceState oldRef = referenceState.get();
+        referenceState.set(new ReferenceState(candidate.blockNumber(), candidate.blockHash(), Instant.now()));
+
+        if (resetReferenceWindow) {
+            referenceFirstSetAtBlock = candidate.blockNumber();
+            logger.info("Reference head established at block {}", candidate.blockNumber());
+            return;
+        }
+
+        if (oldRef == null && referenceFirstSetAtBlock == null) {
+            referenceFirstSetAtBlock = candidate.blockNumber();
+            logger.info("Reference head established at block {}", candidate.blockNumber());
+        }
+    }
+
+    private void registerReferenceSelection(String selectedKey) {
+        if (selectedKey == null) {
+            return;
+        }
+        referenceSelections.addLast(selectedKey);
+        while (referenceSelections.size() > REFERENCE_SELECTION_WINDOW) {
+            referenceSelections.removeFirst();
+        }
+    }
+
+    private boolean shouldSwitchReference(String selectedKey) {
+        if (selectedKey == null) {
+            return false;
+        }
+        int count = 0;
+        for (String key : referenceSelections) {
+            if (selectedKey.equals(key)) {
+                count++;
+            }
+        }
+        return count >= REFERENCE_SWITCH_THRESHOLD;
     }
 
     private ReferenceCandidate selectMajority(List<ReferenceCandidate> candidates) {
