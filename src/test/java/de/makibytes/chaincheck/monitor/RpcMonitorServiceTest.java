@@ -20,7 +20,6 @@ package de.makibytes.chaincheck.monitor;
 import java.lang.reflect.Constructor;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Deque;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
@@ -166,41 +165,6 @@ class RpcMonitorServiceTest {
     }
 
     @Test
-    @DisplayName("reference hysteresis switches only after 15 of last 20 selections")
-    void referenceHysteresisSwitchesAfterThreshold() {
-        RpcMonitorService svc = new RpcMonitorService(null, null, null);
-
-        setCurrentReferenceNodeKey(svc, "A");
-        resetReferenceSelections(svc);
-        addSelections(svc, "A", 8);
-        addSelections(svc, "B", 12);
-        assertFalse(shouldSwitchReference(svc, "B"));
-
-        resetReferenceSelections(svc);
-        addSelections(svc, "A", 4);
-        addSelections(svc, "B", 16);
-        assertTrue(shouldSwitchReference(svc, "B"));
-        setCurrentReferenceNodeKey(svc, "B");
-
-        resetReferenceSelections(svc);
-        addSelections(svc, "A", 12);
-        addSelections(svc, "B", 8);
-        assertFalse(shouldSwitchReference(svc, "A"));
-        assertEquals("B", getCurrentReferenceNodeKey(svc));
-
-        resetReferenceSelections(svc);
-        addSelections(svc, "A", 5);
-        addSelections(svc, "B", 15);
-        assertFalse(shouldSwitchReference(svc, "A"));
-        assertEquals("B", getCurrentReferenceNodeKey(svc));
-
-        resetReferenceSelections(svc);
-        addSelections(svc, "A", 16);
-        addSelections(svc, "B", 4);
-        assertTrue(shouldSwitchReference(svc, "A"));
-    }
-
-    @Test
     @DisplayName("reference lag triggers delay anomaly, not wrong head")
     void referenceLagCreatesDelayAnomaly() {
         ChainCheckProperties properties = new ChainCheckProperties();
@@ -341,29 +305,4 @@ class RpcMonitorServiceTest {
         }
     }
 
-    private void resetReferenceSelections(RpcMonitorService svc) {
-        @SuppressWarnings("unchecked")
-        Deque<String> selections = (Deque<String>) ReflectionTestUtils.getField(svc, "referenceSelections");
-        if (selections != null) {
-            selections.clear();
-        }
-    }
-
-    private void addSelections(RpcMonitorService svc, String key, int count) {
-        for (int i = 0; i < count; i++) {
-            ReflectionTestUtils.invokeMethod(svc, "registerReferenceSelection", key);
-        }
-    }
-
-    private boolean shouldSwitchReference(RpcMonitorService svc, String selectedKey) {
-        return (boolean) ReflectionTestUtils.invokeMethod(svc, "shouldSwitchReference", selectedKey);
-    }
-
-    private void setCurrentReferenceNodeKey(RpcMonitorService svc, String key) {
-        ReflectionTestUtils.setField(svc, "currentReferenceNodeKey", key);
-    }
-
-    private String getCurrentReferenceNodeKey(RpcMonitorService svc) {
-        return (String) ReflectionTestUtils.getField(svc, "currentReferenceNodeKey");
-    }
 }

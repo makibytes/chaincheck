@@ -42,8 +42,6 @@
     const theme = {
         primary: getVar('--color-primary', '#5b8dff'),
         primaryRgb: getVar('--color-primary-rgb', '91, 141, 255'),
-        warning: getVar('--color-warning', '#f4b740'),
-        warningRgb: getVar('--color-warning-rgb', '244, 183, 64'),
         headDelay: getVar('--color-head-delay', getVar('--color-warning', '#f4b740')),
         headDelayRgb: getVar('--color-head-delay-rgb', getVar('--color-warning-rgb', '244, 183, 64')),
         safeDelay: getVar('--color-safe-delay', getVar('--color-warning', '#f4b740')),
@@ -228,52 +226,82 @@
     const referenceSafeDelayScaled = referenceSafeDelayData.map(scaleValue);
     const referenceFinalizedDelayScaled = referenceFinalizedDelayData.map(scaleValue);
 
+    const createLineDataset = ({
+        label,
+        data,
+        originalData,
+        color,
+        rgb,
+        backgroundAlpha,
+        order
+    }) => ({
+        label,
+        data,
+        originalData,
+        borderColor: color,
+        backgroundColor: `rgba(${rgb}, ${backgroundAlpha})`,
+        spanGaps: true,
+        tension: 0.2,
+        yAxisID: 'y',
+        order
+    });
+
+    const createBandDataset = ({ label, data, originalData, rgb }) => ({
+        label,
+        data,
+        originalData,
+        borderColor: `rgba(${rgb}, 0.45)`,
+        backgroundColor: `rgba(${rgb}, 0.0)`,
+        spanGaps: true,
+        tension: 0.2,
+        yAxisID: 'y',
+        pointRadius: 0,
+        borderWidth: 1,
+        bandLine: true,
+        hidden: !showBounds,
+        order: 1
+    });
+
+    const createReferenceDataset = ({ label, data, originalData, color, rgb }) => ({
+        label,
+        data,
+        originalData,
+        borderColor: color,
+        backgroundColor: `rgba(${rgb}, 0.0)`,
+        borderDash: [6, 6],
+        hidden: !showReferences,
+        spanGaps: true,
+        tension: 0.2,
+        yAxisID: 'y',
+        referenceLine: true
+    });
+
     const ctx = document.getElementById('latencyChart');
     if (ctx) {
-        const datasets = [{
+        const datasets = [createLineDataset({
             label: 'Network Latency',
             data: latencyScaled,
             originalData: latencyData,
-            borderColor: theme.primary,
-            backgroundColor: `rgba(${theme.primaryRgb}, 0.2)`,
-            spanGaps: true,
-            tension: 0.2,
-            yAxisID: 'y',
+            color: theme.primary,
+            rgb: theme.primaryRgb,
+            backgroundAlpha: 0.2,
             order: 2
-        }];
+        })];
 
         if (hasAggregatedLatencies) {
-            datasets.push({
+            datasets.push(createBandDataset({
                 label: 'Network Latency (Low)',
                 data: latencyMinScaled,
                 originalData: latencyMinData,
-                borderColor: `rgba(${theme.primaryRgb}, 0.45)`,
-                backgroundColor: `rgba(${theme.primaryRgb}, 0.0)`,
-                spanGaps: true,
-                tension: 0.2,
-                yAxisID: 'y',
-                pointRadius: 0,
-                borderWidth: 1,
-                bandLine: true,
-                hidden: !showBounds,
-                order: 1
-            });
+                rgb: theme.primaryRgb
+            }));
 
-            datasets.push({
+            datasets.push(createBandDataset({
                 label: 'Network Latency (High)',
                 data: latencyMaxScaled,
                 originalData: latencyMaxData,
-                borderColor: `rgba(${theme.primaryRgb}, 0.45)`,
-                backgroundColor: `rgba(${theme.primaryRgb}, 0.0)`,
-                spanGaps: true,
-                tension: 0.2,
-                yAxisID: 'y',
-                pointRadius: 0,
-                borderWidth: 1,
-                bandLine: true,
-                hidden: !showBounds,
-                order: 1
-            });
+                rgb: theme.primaryRgb
+            }));
         }
 
         const errorBarPlugin = {
@@ -411,192 +439,114 @@
         };
 
         if (wsConfigured) {
-            datasets.push({
+            datasets.push(createLineDataset({
                 label: 'Head Delay',
                 data: headDelayScaled,
                 originalData: headDelayData,
-                borderColor: theme.headDelay,
-                backgroundColor: `rgba(${theme.headDelayRgb}, 0.2)`,
-                spanGaps: true,
-                tension: 0.2,
-                yAxisID: 'y',
+                color: theme.headDelay,
+                rgb: theme.headDelayRgb,
+                backgroundAlpha: 0.2,
                 order: 2
-            });
+            }));
 
             if (hasAggregatedDelays) {
-                datasets.push({
+                datasets.push(createBandDataset({
                     label: 'Head Delay (Low)',
                     data: headDelayMinScaled,
                     originalData: headDelayMinData,
-                    borderColor: `rgba(${theme.headDelayRgb}, 0.45)`,
-                    backgroundColor: `rgba(${theme.headDelayRgb}, 0.0)`,
-                    spanGaps: true,
-                    tension: 0.2,
-                    yAxisID: 'y',
-                    pointRadius: 0,
-                    borderWidth: 1,
-                    bandLine: true,
-                    hidden: !showBounds,
-                    order: 1
-                });
+                    rgb: theme.headDelayRgb
+                }));
 
-                datasets.push({
+                datasets.push(createBandDataset({
                     label: 'Head Delay (High)',
                     data: headDelayMaxScaled,
                     originalData: headDelayMaxData,
-                    borderColor: `rgba(${theme.headDelayRgb}, 0.45)`,
-                    backgroundColor: `rgba(${theme.headDelayRgb}, 0.0)`,
-                    spanGaps: true,
-                    tension: 0.2,
-                    yAxisID: 'y',
-                    pointRadius: 0,
-                    borderWidth: 1,
-                    bandLine: true,
-                    hidden: !showBounds,
-                    order: 1
-                });
+                    rgb: theme.headDelayRgb
+                }));
             }
 
                 if (referenceAvailable) {
-                    datasets.push({
-                        label: 'Head Delay (Reference)',
-                        data: referenceHeadDelayScaled,
-                        originalData: referenceHeadDelayData,
-                        borderColor: theme.headDelay,
-                            backgroundColor: `rgba(${theme.headDelayRgb}, 0.0)`,
-                        borderDash: [6, 6],
-                        hidden: !showReferences,
-                        spanGaps: true,
-                        tension: 0.2,
-                        yAxisID: 'y',
-                        referenceLine: true
-                    });
+                datasets.push(createReferenceDataset({
+                    label: 'Head Delay (Reference)',
+                    data: referenceHeadDelayScaled,
+                    originalData: referenceHeadDelayData,
+                    color: theme.headDelay,
+                    rgb: theme.headDelayRgb
+                }));
                 }
 
             if (safeBlocksEnabled) {
-                datasets.push({
+                datasets.push(createLineDataset({
                     label: 'Safe Delay',
                     data: safeDelayScaled,
                     originalData: safeDelayData,
-                borderColor: theme.safeDelay,
-                backgroundColor: `rgba(${theme.safeDelayRgb}, 0.18)`,
-                    spanGaps: true,
-                    tension: 0.2,
-                    yAxisID: 'y',
+                    color: theme.safeDelay,
+                    rgb: theme.safeDelayRgb,
+                    backgroundAlpha: 0.18,
                     order: 2
-                });
+                }));
 
                 if (hasAggregatedDelays) {
-                    datasets.push({
+                    datasets.push(createBandDataset({
                         label: 'Safe Delay (Low)',
                         data: safeDelayMinScaled,
                         originalData: safeDelayMinData,
-                        borderColor: `rgba(${theme.safeDelayRgb}, 0.45)`,
-                        backgroundColor: `rgba(${theme.safeDelayRgb}, 0.0)`,
-                        spanGaps: true,
-                        tension: 0.2,
-                        yAxisID: 'y',
-                        pointRadius: 0,
-                        borderWidth: 1,
-                        bandLine: true,
-                        hidden: !showBounds,
-                        order: 1
-                    });
+                        rgb: theme.safeDelayRgb
+                    }));
 
-                    datasets.push({
+                    datasets.push(createBandDataset({
                         label: 'Safe Delay (High)',
                         data: safeDelayMaxScaled,
                         originalData: safeDelayMaxData,
-                        borderColor: `rgba(${theme.safeDelayRgb}, 0.45)`,
-                        backgroundColor: `rgba(${theme.safeDelayRgb}, 0.0)`,
-                        spanGaps: true,
-                        tension: 0.2,
-                        yAxisID: 'y',
-                        pointRadius: 0,
-                        borderWidth: 1,
-                        bandLine: true,
-                        hidden: !showBounds,
-                        order: 1
-                    });
+                        rgb: theme.safeDelayRgb
+                    }));
                 }
 
                     if (referenceAvailable) {
-                        datasets.push({
-                            label: 'Safe Delay (Reference)',
-                            data: referenceSafeDelayScaled,
-                            originalData: referenceSafeDelayData,
-                        borderColor: theme.safeDelay,
-                            backgroundColor: `rgba(${theme.safeDelayRgb}, 0.0)`,
-                            borderDash: [6, 6],
-                            hidden: !showReferences,
-                            spanGaps: true,
-                            tension: 0.2,
-                            yAxisID: 'y',
-                            referenceLine: true
-                        });
+                    datasets.push(createReferenceDataset({
+                        label: 'Safe Delay (Reference)',
+                        data: referenceSafeDelayScaled,
+                        originalData: referenceSafeDelayData,
+                        color: theme.safeDelay,
+                        rgb: theme.safeDelayRgb
+                    }));
                     }
             }
 
-            datasets.push({
+            datasets.push(createLineDataset({
                 label: 'Finalized Delay',
                 data: finalizedDelayScaled,
                 originalData: finalizedDelayData,
-            borderColor: theme.success,
-            backgroundColor: `rgba(${theme.successRgb}, 0.2)`,
-                spanGaps: true,
-                tension: 0.2,
-                yAxisID: 'y',
+                color: theme.success,
+                rgb: theme.successRgb,
+                backgroundAlpha: 0.2,
                 order: 2
-            });
+            }));
 
             if (hasAggregatedDelays) {
-                datasets.push({
+                datasets.push(createBandDataset({
                     label: 'Finalized Delay (Low)',
                     data: finalizedDelayMinScaled,
                     originalData: finalizedDelayMinData,
-                    borderColor: `rgba(${theme.successRgb}, 0.45)`,
-                    backgroundColor: `rgba(${theme.successRgb}, 0.0)`,
-                    spanGaps: true,
-                    tension: 0.2,
-                    yAxisID: 'y',
-                    pointRadius: 0,
-                    borderWidth: 1,
-                    bandLine: true,
-                    hidden: !showBounds,
-                    order: 1
-                });
+                    rgb: theme.successRgb
+                }));
 
-                datasets.push({
+                datasets.push(createBandDataset({
                     label: 'Finalized Delay (High)',
                     data: finalizedDelayMaxScaled,
                     originalData: finalizedDelayMaxData,
-                    borderColor: `rgba(${theme.successRgb}, 0.45)`,
-                    backgroundColor: `rgba(${theme.successRgb}, 0.0)`,
-                    spanGaps: true,
-                    tension: 0.2,
-                    yAxisID: 'y',
-                    pointRadius: 0,
-                    borderWidth: 1,
-                    bandLine: true,
-                    hidden: !showBounds,
-                    order: 1
-                });
+                    rgb: theme.successRgb
+                }));
             }
 
                 if (referenceAvailable) {
-                    datasets.push({
-                        label: 'Finalized Delay (Reference)',
-                        data: referenceFinalizedDelayScaled,
-                        originalData: referenceFinalizedDelayData,
-                    borderColor: theme.success,
-                        backgroundColor: `rgba(${theme.successRgb}, 0.0)`,
-                        borderDash: [6, 6],
-                        hidden: !showReferences,
-                        spanGaps: true,
-                        tension: 0.2,
-                        yAxisID: 'y',
-                        referenceLine: true
-                    });
+                datasets.push(createReferenceDataset({
+                    label: 'Finalized Delay (Reference)',
+                    data: referenceFinalizedDelayScaled,
+                    originalData: referenceFinalizedDelayData,
+                    color: theme.success,
+                    rgb: theme.successRgb
+                }));
                 }
         }
 

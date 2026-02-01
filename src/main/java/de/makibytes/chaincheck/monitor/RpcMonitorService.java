@@ -28,9 +28,7 @@ import java.net.http.WebSocket;
 import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Deque;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -63,6 +61,9 @@ public class RpcMonitorService {
 
     private static final String JSONRPC_VERSION = "2.0";
     private static final Logger logger = LoggerFactory.getLogger(RpcMonitorService.class);
+    private static final long WS_FRESH_SECONDS = 30;
+    private static final long WS_DEAD_SECONDS = 10;
+    private static final String WS_NO_NEW_HEADS_PREFIX = "WebSocket not receiving newHeads events";
 
     private final NodeRegistry nodeRegistry;
     private final InMemoryMetricsStore store;
@@ -73,9 +74,10 @@ public class RpcMonitorService {
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
     private final Map<String, NodeState> nodeStates = new ConcurrentHashMap<>();
     private final AtomicReference<ReferenceState> referenceState = new AtomicReference<>();
-    private final Deque<String> referenceSelections = new ArrayDeque<>();
-    private static final int REFERENCE_SELECTION_WINDOW = 20;
-    private static final int REFERENCE_SWITCH_THRESHOLD = 15;
+        private static final int REFERENCE_SELECTION_WINDOW = 20;
+        private static final int REFERENCE_SWITCH_THRESHOLD = 15;
+        private final ReferenceSelectionPolicy referenceSelectionPolicy =
+            new ReferenceSelectionPolicy(REFERENCE_SELECTION_WINDOW, REFERENCE_SWITCH_THRESHOLD);
     private Long referenceFirstSetAtBlock = null;
     private String currentReferenceNodeKey;
 
@@ -209,8 +211,8 @@ public class RpcMonitorService {
                 null);
         store.addSample(node.key(), sample);
         NodeState state = nodeStates.get(node.key());
-        Long lastBlock = source == MetricSource.HTTP ? (state != null ? state.lastHttpBlockNumber : null) : (state != null ? state.lastWsBlockNumber : null);
-        String lastHash = source == MetricSource.HTTP ? (state != null ? state.lastHttpBlockHash : null) : (state != null ? state.lastWsBlockHash : null);
+        Long lastBlock = getLastBlock(state, source);
+        String lastHash = getLastHash(state, source);
 
         List<AnomalyEvent> anomalies = detector.detect(
                 node.key(),
@@ -240,7 +242,7 @@ public class RpcMonitorService {
         if (error == null) {
             return null;
         }
-        if (error.startsWith("WebSocket not receiving newHeads events")) {
+        if (isWsNoNewHeadsError(error)) {
             return "ws-no-new-heads";
         }
         if (error.contains("call rate limit exhausted")) {
@@ -267,7 +269,7 @@ public class RpcMonitorService {
 
     private void checkAndCloseAnomaly(NodeDefinition node, String currentError, MetricSource source) {
         NodeState state = nodeStates.computeIfAbsent(node.key(), key -> new NodeState());
-        String previousError = source == MetricSource.HTTP ? state.lastHttpError : state.lastWsError;
+        String previousError = getLastError(state, source);
         
         // If the result changed significantly (not just a counter update)
         if (!areErrorsSame(currentError, previousError)) {
@@ -279,11 +281,7 @@ public class RpcMonitorService {
         
         // Always update state to the latest error message (even if technically "same" type)
         // so that we have the latest counter/details
-        if (source == MetricSource.HTTP) {
-            state.lastHttpError = currentError;
-        } else {
-            state.lastWsError = currentError;
-        }
+        setLastError(state, source, currentError);
     }
 
     private void pollHttp(NodeDefinition node, NodeState state) {
@@ -308,12 +306,12 @@ public class RpcMonitorService {
                         // Check if WS is receiving events
                         if (lastWsEvent == null) {
                             // Never received any WS event - dead from beginning
-                            recordFailure(node, MetricSource.WS, "WebSocket not receiving newHeads events (no events since connection)");
+                            recordFailure(node, MetricSource.WS, wsNoNewHeadsSinceConnectionMessage());
                         } else {
                             // Check if last WS event is too old (no events for 10+ seconds)
                             long secondsSinceLastEvent = Duration.between(lastWsEvent, Instant.now()).toSeconds();
-                            if (secondsSinceLastEvent > 10) {
-                                recordFailure(node, MetricSource.WS, "WebSocket not receiving newHeads events (last event " + secondsSinceLastEvent + "s ago)");
+                            if (secondsSinceLastEvent > WS_DEAD_SECONDS) {
+                                recordFailure(node, MetricSource.WS, wsNoNewHeadsForSecondsMessage(secondsSinceLastEvent));
                             } else {
                                 // WS is healthy (receiving events recently), treat as update to close potential previous errors
                                 checkAndCloseAnomaly(node, null, MetricSource.WS);
@@ -366,7 +364,7 @@ public class RpcMonitorService {
             
             // Only calculate head delay if WS data is fresh (received within last 30 seconds)
             boolean wsDataFresh = state.lastWsBlockTimestamp != null
-                && Duration.between(state.lastWsBlockTimestamp, timestamp).toSeconds() < 30;
+                && Duration.between(state.lastWsBlockTimestamp, timestamp).toSeconds() < WS_FRESH_SECONDS;
 
             if (wsDataFresh) {
                 // Head delay: age of the WS head block
@@ -431,8 +429,7 @@ public class RpcMonitorService {
         }
 
         NodeState state = nodeStates.get(node.key());
-        if (state != null && state.lastWsError != null
-                && state.lastWsError.startsWith("WebSocket not receiving newHeads events")) {
+        if (state != null && isWsNoNewHeadsError(state.lastWsError)) {
             return;
         }
 
@@ -440,8 +437,7 @@ public class RpcMonitorService {
         Long blockNumber = null;
         String blockHash = null;
         if (state != null) {
-            boolean wsFresh = state.lastWsEventReceivedAt != null
-                    && Duration.between(state.lastWsEventReceivedAt, Instant.now()).toSeconds() < 30;
+            boolean wsFresh = isWsFresh(state, Instant.now());
             if (wsFresh && state.lastWsBlockNumber != null && state.lastWsBlockHash != null) {
                 source = MetricSource.WS;
                 blockNumber = state.lastWsBlockNumber;
@@ -589,8 +585,7 @@ public class RpcMonitorService {
                 continue;
             }
 
-            boolean wsFresh = state.lastWsEventReceivedAt != null
-                    && Duration.between(state.lastWsEventReceivedAt, now).toSeconds() < 30;
+                boolean wsFresh = isWsFresh(state, now);
 
             if (wsFresh && state.lastWsBlockNumber != null && state.lastWsBlockHash != null) {
                 candidates.add(new ReferenceCandidate(node.key(), state.lastWsBlockNumber, state.lastWsBlockHash, true));
@@ -624,7 +619,7 @@ public class RpcMonitorService {
 
         if (majority != null) {
             String selectedKey = majority.nodeKey();
-            registerReferenceSelection(selectedKey);
+            referenceSelectionPolicy.registerSelection(selectedKey);
 
             if (currentReferenceNodeKey == null) {
                 currentReferenceNodeKey = selectedKey;
@@ -632,8 +627,8 @@ public class RpcMonitorService {
                 return;
             }
 
-            if (!currentReferenceNodeKey.equals(selectedKey)
-                    && shouldSwitchReference(selectedKey)) {
+                if (!currentReferenceNodeKey.equals(selectedKey)
+                    && referenceSelectionPolicy.shouldSwitchTo(selectedKey)) {
                 currentReferenceNodeKey = selectedKey;
                 updateReferenceState(majority, true);
                 return;
@@ -674,27 +669,53 @@ public class RpcMonitorService {
         }
     }
 
-    private void registerReferenceSelection(String selectedKey) {
-        if (selectedKey == null) {
+    private boolean isWsFresh(NodeState state, Instant now) {
+        return state.lastWsEventReceivedAt != null
+                && Duration.between(state.lastWsEventReceivedAt, now).toSeconds() < WS_FRESH_SECONDS;
+    }
+
+    private boolean isWsNoNewHeadsError(String error) {
+        return error != null && error.startsWith(WS_NO_NEW_HEADS_PREFIX);
+    }
+
+    private String wsNoNewHeadsSinceConnectionMessage() {
+        return WS_NO_NEW_HEADS_PREFIX + " (no events since connection)";
+    }
+
+    private String wsNoNewHeadsForSecondsMessage(long secondsSinceLastEvent) {
+        return WS_NO_NEW_HEADS_PREFIX + " (last event " + secondsSinceLastEvent + "s ago)";
+    }
+
+    private String getLastError(NodeState state, MetricSource source) {
+        if (state == null) {
+            return null;
+        }
+        return source == MetricSource.HTTP ? state.lastHttpError : state.lastWsError;
+    }
+
+    private void setLastError(NodeState state, MetricSource source, String currentError) {
+        if (state == null) {
             return;
         }
-        referenceSelections.addLast(selectedKey);
-        while (referenceSelections.size() > REFERENCE_SELECTION_WINDOW) {
-            referenceSelections.removeFirst();
+        if (source == MetricSource.HTTP) {
+            state.lastHttpError = currentError;
+        } else {
+            state.lastWsError = currentError;
         }
     }
 
-    private boolean shouldSwitchReference(String selectedKey) {
-        if (selectedKey == null) {
-            return false;
+    private Long getLastBlock(NodeState state, MetricSource source) {
+        if (state == null) {
+            return null;
         }
-        int count = 0;
-        for (String key : referenceSelections) {
-            if (selectedKey.equals(key)) {
-                count++;
-            }
+        return source == MetricSource.HTTP ? state.lastHttpBlockNumber : state.lastWsBlockNumber;
+    }
+
+    private String getLastHash(NodeState state, MetricSource source) {
+        if (state == null) {
+            return null;
         }
-        return count >= REFERENCE_SWITCH_THRESHOLD;
+        return source == MetricSource.HTTP ? state.lastHttpBlockHash : state.lastWsBlockHash;
     }
 
     private ReferenceCandidate selectMajority(List<ReferenceCandidate> candidates) {
