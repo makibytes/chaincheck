@@ -35,6 +35,7 @@
     const anomalyPageSize = /*[[${view.anomalyPageSize}]]*/ 50;
     const anomalyTotalPages = /*[[${view.anomalyTotalPages}]]*/ 1;
     const scaleChangeMs = /*[[${view.scaleChangeMs}]]*/ 500;
+    const scaleMaxMs = /*[[${view.scaleMaxMs}]]*/ 30000;
     const hasOlderAggregates = /*[[${view.hasOlderAggregates}]]*/ false;
     const rangeKey = /*[[${range.key}]]*/ null;
     const viewEndEpochMs = /*[[${endEpochMs}]]*/ null;
@@ -80,7 +81,7 @@
             referenceToggle.checked = false;
         }
     }
-    const maxDelayValue = Math.max(
+    const rawMaxDelayValue = Math.max(
         0,
         ...latencyData.filter(value => value != null),
         ...latencyMaxData.filter(value => value != null),
@@ -94,6 +95,7 @@
         ...(referenceAvailable && showReferences ? referenceSafeDelayData.filter(value => value != null) : []),
         ...(referenceAvailable && showReferences ? referenceFinalizedDelayData.filter(value => value != null) : [])
     );
+    const maxDelayValue = Math.min(scaleMaxMs, rawMaxDelayValue);
     const scaledAxisMax = 1000;
     const lowBandRatio = 0.2;
     const lowBandMax = scaleChangeMs;

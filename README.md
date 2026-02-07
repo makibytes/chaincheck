@@ -64,40 +64,44 @@ rpc:
   title: "Polygon Mainnet"  # Optional: Dashboard title
   title-color: "#8247e5"     # Optional: Title color
   defaults:
-    connect-timeout-ms: 1500
-    read-timeout-ms: 2500
-    max-retries: 2
-    retry-backoff-ms: 150
+    connect-timeout-ms: 2000
+    read-timeout-ms: 4000
+    max-retries: 1
+    retry-backoff-ms: 200
   persistence:
     enabled: false
-    file: ./data/chaincheck-snapshot.json
+    file: ./chaincheck-snapshot.json
     flush-interval-seconds: 30
   anomaly-detection:
     high-latency-ms: 2000
     long-delay-block-count: 15
+  scale-change-ms: 500
+  scale-max-ms: 30000
   nodes:
     - name: polygon-rpc.com
       http: https://polygon-rpc.com
       ws: wss://polygon-rpc.com            # Optional: WebSocket endpoint
-      poll-interval-ms: 1000               # HTTP polling interval (milliseconds)
+      poll-interval-ms: 3000               # HTTP polling interval (milliseconds)
       safe-blocks-enabled: false           # Only enable when available (e.g. on Ethereum)
       headers:                             # Optional: custom headers / auth
         Authorization: "Bearer <token>"
-      read-timeout-ms: 2500                # Optional per-node override
-      max-retries: 2
+      read-timeout-ms: 4000                # Optional per-node override
+      max-retries: 1
 ```
 
 ### Configuration Options
 
-- **poll-interval-ms**: How often to poll the HTTP endpoint (default: 1000ms)
-- **anomaly-detection.high-latency**: Threshold for flagging high latency anomalies (default: 2000ms)
-- **nodes[].anomaly-detection.high-latency**: Optional per-node override for high latency anomalies
+- **poll-interval-ms**: How often to poll the HTTP endpoint (default: 3000ms)
+- **anomaly-detection.high-latency-ms**: Threshold for flagging high latency anomalies (default: 2000ms)
+- **nodes[].anomaly-detection.high-latency-ms**: Optional per-node override for high latency anomalies
+- **scale-change-ms**: Threshold (ms) used as the low band limit when scaling chart values; values below this are mapped into a low band for better visual resolution (default: 500ms)
+- **scale-max-ms**: Maximum Y-axis scale in milliseconds used to clamp chart max delay and avoid extremely large spikes on the charts (default: 30000ms)
 - **safe-blocks-enabled**: When true, HTTP queries alternate between safe and finalized blocks
 - **http**: HTTP RPC endpoint URL (required)
 - **ws**: WebSocket RPC endpoint URL (optional, enables real-time head block tracking)
 - **headers**: Map of custom headers (useful for API keys and auth)
-- **connect-timeout-ms / read-timeout-ms**: HTTP connect and read timeouts
-- **max-retries / retry-backoff-ms**: Retry attempts and base backoff for transient HTTP failures
+- **connect-timeout-ms / read-timeout-ms**: HTTP connect and read timeouts (defaults: connect 2000ms, read 4000ms)
+- **max-retries / retry-backoff-ms**: Retry attempts and base backoff for transient HTTP failures (defaults: 1 retry, 200ms backoff)
 - **Reference selection**: Reference head is chosen automatically by majority; when many nodes are stale, only nodes still emitting newHeads are trusted and their majority is used
 - **persistence.enabled/file/flush-interval-seconds**: Enable simple on-disk snapshots of recent data
 

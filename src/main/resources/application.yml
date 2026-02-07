@@ -10,6 +10,7 @@ rpc:
   title-color: "#ff0000"
   safe-blocks-enabled: false
   scale-change-ms: 500
+  scale-max-ms: 30000
   anomaly-detection:
     high-latency-ms: 2000
     long-delay-block-count: 15

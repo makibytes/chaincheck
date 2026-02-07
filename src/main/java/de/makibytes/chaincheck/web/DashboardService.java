@@ -759,6 +759,7 @@ public class DashboardService {
 
         ReferenceComparison referenceComparison = calculateReferenceComparison(nodeKey);
         int scaleChangeMs = properties.getScaleChangeMs();
+        int scaleMaxMs = properties.getScaleMaxMs();
         Instant oldestAggregate = store.getOldestAggregateTimestamp(nodeKey);
         boolean hasOlderAggregates = oldestAggregate != null && oldestAggregate.isBefore(since);
 
@@ -841,6 +842,7 @@ public class DashboardService {
                 PAGE_SIZE,
                 totalAnomalies,
                 scaleChangeMs,
+                scaleMaxMs,
                 hasOlderAggregates,
                 now,
                 referenceComparison,
