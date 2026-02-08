@@ -95,40 +95,52 @@ public class AnomalyDetector {
                                      MetricSample sample,
                                      long anomalyDelayMs,
                                      Long previousBlockNumber,
-                                     String previousBlockHash) {
+                                     String previousBlockHash,
+                                     Long currentNodeHttpBlockNumber) {
         List<AnomalyEvent> anomalies = new ArrayList<>();
         Instant now = sample.getTimestamp();
-        MetricSource source = sample.getSource();
 
         if (!sample.isSuccess()) {
-            String shortError = sample.getError() != null && sample.getError().length() > 50
-                    ? sample.getError().substring(0, 50) + "..."
-                    : sample.getError();
-            AnomalyType errorType = classifyErrorType(sample.getError());
-            String details = sample.getError();
-            if (details == null || details.isBlank()) {
-                details = shortError == null ? "RPC error" : shortError;
-            }
-            anomalies.add(new AnomalyEvent(
-                    idSequence.getAndIncrement(),
-                    nodeKey,
-                    now,
-                    source,
-                errorType,
-                    shortError == null ? "RPC error" : shortError,
-                    sample.getBlockNumber(),
-                    sample.getBlockHash(),
-                    sample.getParentHash(),
-                    details));
+            anomalies.add(createErrorAnomaly(nodeKey, sample, now));
             return anomalies;
         }
 
+        anomalies.addAll(detectLatencyAnomalies(nodeKey, sample, anomalyDelayMs, now));
+        anomalies.addAll(detectBlockAnomalies(nodeKey, sample, previousBlockNumber, previousBlockHash, currentNodeHttpBlockNumber, now));
+
+        return anomalies;
+    }
+
+    private AnomalyEvent createErrorAnomaly(String nodeKey, MetricSample sample, Instant now) {
+        String shortError = sample.getError() != null && sample.getError().length() > 50
+                ? sample.getError().substring(0, 50) + "..."
+                : sample.getError();
+        AnomalyType errorType = classifyErrorType(sample.getError());
+        String details = sample.getError();
+        if (details == null || details.isBlank()) {
+            details = shortError == null ? "RPC error" : shortError;
+        }
+        return new AnomalyEvent(
+                idSequence.getAndIncrement(),
+                nodeKey,
+                now,
+                sample.getSource(),
+                errorType,
+                shortError == null ? "RPC error" : shortError,
+                sample.getBlockNumber(),
+                sample.getBlockHash(),
+                sample.getParentHash(),
+                details);
+    }
+
+    private List<AnomalyEvent> detectLatencyAnomalies(String nodeKey, MetricSample sample, long anomalyDelayMs, Instant now) {
+        List<AnomalyEvent> anomalies = new ArrayList<>();
         if (sample.getLatencyMs() >= anomalyDelayMs && sample.getLatencyMs() >= 0) {
             anomalies.add(new AnomalyEvent(
                     idSequence.getAndIncrement(),
                     nodeKey,
                     now,
-                    source,
+                    sample.getSource(),
                     AnomalyType.DELAY,
                     "High latency",
                     sample.getBlockNumber(),
@@ -136,7 +148,12 @@ public class AnomalyDetector {
                     sample.getParentHash(),
                     "Latency " + sample.getLatencyMs() + "ms"));
         }
+        return anomalies;
+    }
 
+    private List<AnomalyEvent> detectBlockAnomalies(String nodeKey, MetricSample sample, Long previousBlockNumber, String previousBlockHash, Long currentNodeHttpBlockNumber, Instant now) {
+        List<AnomalyEvent> anomalies = new ArrayList<>();
+        MetricSource source = sample.getSource();
         Long currentBlockNumber = sample.getBlockNumber();
         String currentBlockHash = sample.getBlockHash();
         String currentParentHash = sample.getParentHash();
@@ -145,68 +162,62 @@ public class AnomalyDetector {
         if (currentBlockNumber != null && previousBlockNumber != null) {
             if (currentBlockNumber < previousBlockNumber) {
                 if (allowReorgDetection) {
-                    anomalies.add(new AnomalyEvent(
-                            idSequence.getAndIncrement(),
-                            nodeKey,
-                            now,
-                            source,
-                            AnomalyType.REORG,
-                            "Block height decreased",
-                            currentBlockNumber,
-                            currentBlockHash,
-                            currentParentHash,
+                    anomalies.add(createReorgAnomaly(nodeKey, sample, now, "Block height decreased",
                             "Previous height " + previousBlockNumber + ", current " + currentBlockNumber));
                 }
-            } else if (source == MetricSource.WS && currentBlockNumber > previousBlockNumber + 1) {
-                anomalies.add(new AnomalyEvent(
-                        idSequence.getAndIncrement(),
-                    nodeKey,
-                        now,
-                        source,
-                        AnomalyType.BLOCK_GAP,
-                        "Block gap detected",
-                        currentBlockNumber,
-                        currentBlockHash,
-                        currentParentHash,
-                        "Gap of " + (currentBlockNumber - previousBlockNumber) + " blocks"));
+            } else if (source == MetricSource.WS && currentNodeHttpBlockNumber != null && currentNodeHttpBlockNumber - currentBlockNumber >= 5) {
+                anomalies.add(createBlockGapAnomaly(nodeKey, sample, now, currentNodeHttpBlockNumber - currentBlockNumber));
             } else if (currentBlockNumber.equals(previousBlockNumber)) {
-                if (allowReorgDetection
-                        && previousBlockHash != null
-                        && currentBlockHash != null
-                        && !previousBlockHash.equals(currentBlockHash)) {
-                    anomalies.add(new AnomalyEvent(
-                            idSequence.getAndIncrement(),
-                            nodeKey,
-                            now,
-                            source,
-                            AnomalyType.REORG,
-                            "Block hash changed at same height",
-                            currentBlockNumber,
-                            currentBlockHash,
-                            currentParentHash,
-                            "Previous hash " + previousBlockHash + ", current " + currentBlockHash));
-                }
+                detectSameHeightAnomalies(nodeKey, sample, previousBlockHash, currentBlockHash, currentParentHash, allowReorgDetection, anomalies, now);
             } else if (currentBlockNumber.equals(previousBlockNumber + 1)) {
-                if (allowReorgDetection
-                        && previousBlockHash != null
-                        && currentParentHash != null
-                        && !previousBlockHash.equals(currentParentHash)) {
-                    anomalies.add(new AnomalyEvent(
-                            idSequence.getAndIncrement(),
-                            nodeKey,
-                            now,
-                            source,
-                            AnomalyType.REORG,
-                            "Parent hash mismatch",
-                            currentBlockNumber,
-                            currentBlockHash,
-                            currentParentHash,
-                            "Expected parent " + previousBlockHash + ", got " + currentParentHash));
-                }
+                detectParentMismatchAnomalies(nodeKey, sample, previousBlockHash, currentParentHash, allowReorgDetection, anomalies, now);
             }
         }
-
         return anomalies;
+    }
+
+    private void detectSameHeightAnomalies(String nodeKey, MetricSample sample, String previousBlockHash, String currentBlockHash,
+            String currentParentHash, boolean allowReorgDetection, List<AnomalyEvent> anomalies, Instant now) {
+        if (allowReorgDetection && previousBlockHash != null && currentBlockHash != null && !previousBlockHash.equals(currentBlockHash)) {
+            anomalies.add(createReorgAnomaly(nodeKey, sample, now, "Block hash changed at same height",
+                    "Previous hash " + previousBlockHash + ", current " + currentBlockHash));
+        }
+    }
+
+    private void detectParentMismatchAnomalies(String nodeKey, MetricSample sample, String previousBlockHash, String currentParentHash,
+            boolean allowReorgDetection, List<AnomalyEvent> anomalies, Instant now) {
+        if (allowReorgDetection && previousBlockHash != null && currentParentHash != null && !previousBlockHash.equals(currentParentHash)) {
+            anomalies.add(createReorgAnomaly(nodeKey, sample, now, "Parent hash mismatch",
+                    "Expected parent " + previousBlockHash + ", got " + currentParentHash));
+        }
+    }
+
+    private AnomalyEvent createReorgAnomaly(String nodeKey, MetricSample sample, Instant now, String message, String details) {
+        return new AnomalyEvent(
+                idSequence.getAndIncrement(),
+                nodeKey,
+                now,
+                sample.getSource(),
+                AnomalyType.REORG,
+                message,
+                sample.getBlockNumber(),
+                sample.getBlockHash(),
+                sample.getParentHash(),
+                details);
+    }
+
+    private AnomalyEvent createBlockGapAnomaly(String nodeKey, MetricSample sample, Instant now, long gap) {
+        return new AnomalyEvent(
+                idSequence.getAndIncrement(),
+                nodeKey,
+                now,
+                sample.getSource(),
+                AnomalyType.BLOCK_GAP,
+                "Block gap detected",
+                sample.getBlockNumber(),
+                sample.getBlockHash(),
+                sample.getParentHash(),
+                "Gap of " + gap + " blocks");
     }
 
     private AnomalyType classifyErrorType(String error) {

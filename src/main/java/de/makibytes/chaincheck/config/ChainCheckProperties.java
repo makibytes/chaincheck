@@ -29,6 +29,7 @@ public class ChainCheckProperties {
     private String titleColor = "white";
     private boolean safeBlocksEnabled = false;
     private int scaleChangeMs = 500;
+    private int scaleMaxMs = 30000;
     private ReferenceNode reference = new ReferenceNode();
     private Defaults defaults = new Defaults();
     private Persistence persistence = new Persistence();
@@ -65,6 +66,14 @@ public class ChainCheckProperties {
 
     public void setScaleChangeMs(int scaleChangeMs) {
         this.scaleChangeMs = scaleChangeMs;
+    }
+
+    public int getScaleMaxMs() {
+        return scaleMaxMs;
+    }
+
+    public void setScaleMaxMs(int scaleMaxMs) {
+        this.scaleMaxMs = scaleMaxMs;
     }
 
     public ReferenceNode getReference() {

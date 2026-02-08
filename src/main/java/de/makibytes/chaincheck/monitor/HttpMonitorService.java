@@ -43,6 +43,7 @@ import de.makibytes.chaincheck.model.AnomalyType;
 import de.makibytes.chaincheck.model.MetricSample;
 import de.makibytes.chaincheck.model.MetricSource;
 import de.makibytes.chaincheck.monitor.NodeRegistry.NodeDefinition;
+import de.makibytes.chaincheck.monitor.ReferenceBlocks.Confidence;
 import de.makibytes.chaincheck.store.InMemoryMetricsStore;
 
 public class HttpMonitorService {
@@ -142,6 +143,7 @@ public class HttpMonitorService {
                     state.lastSafeBlockNumber = safeBlock.blockNumber();
                     state.lastSafeBlockHash = safeBlock.blockHash();
                     monitor.maybeCompareToReference(node, "safe", safeBlock);
+                    monitor.recordBlock(node.key(), safeBlock.blockNumber(), safeBlock.blockHash(), Confidence.SAFE);
                 }
 
                 if (shouldFetchLatest(state, timestamp, node.pollIntervalMs())) {
@@ -163,6 +165,7 @@ public class HttpMonitorService {
                 state.lastFinalizedFetchAt = timestamp;
                 trackFinalizedChainAndCloseReorg(node, state, finalizedBlock);
                 monitor.maybeCompareToReference(node, "finalized", finalizedBlock);
+                monitor.recordBlock(node.key(), finalizedBlock.blockNumber(), finalizedBlock.blockHash(), Confidence.FINALIZED);
             } else {
                 String blockTag;
                 if (node.safeBlocksEnabled()) {
@@ -189,6 +192,8 @@ public class HttpMonitorService {
                 }
 
                 monitor.maybeCompareToReference(node, blockTag, checkpointBlock);
+                Confidence conf = "safe".equals(blockTag) ? Confidence.SAFE : Confidence.FINALIZED;
+                monitor.recordBlock(node.key(), checkpointBlock.blockNumber(), checkpointBlock.blockHash(), conf);
                 finalizedBlock = checkpointBlock;
             }
 
@@ -431,12 +436,17 @@ public class HttpMonitorService {
                 null);
         store.addSample(node.key(), sample);
 
+        if (latestBlock.blockNumber() != null && latestBlock.blockHash() != null) {
+            monitor.recordBlock(node.key(), latestBlock.blockNumber(), latestBlock.blockHash(), Confidence.NEW);
+        }
+
         List<AnomalyEvent> anomalies = detector.detect(
                 node.key(),
                 sample,
                 node.anomalyDelayMs(),
                 null,
-                null);
+                null,
+                sample.getBlockNumber());
         for (AnomalyEvent anomaly : anomalies) {
             store.addAnomaly(node.key(), anomaly);
         }
@@ -480,7 +490,8 @@ public class HttpMonitorService {
                 sample,
                 node.anomalyDelayMs(),
                 previousNumber,
-                previousHash);
+                previousHash,
+                sample.getBlockNumber());
         for (AnomalyEvent anomaly : anomalies) {
             store.addAnomaly(node.key(), anomaly);
         }

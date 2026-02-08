@@ -36,9 +36,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import de.makibytes.chaincheck.config.ChainCheckProperties;
 import de.makibytes.chaincheck.model.AnomalyEvent;
+import de.makibytes.chaincheck.model.AnomalyType;
 import de.makibytes.chaincheck.model.MetricSample;
 import de.makibytes.chaincheck.model.MetricSource;
 import de.makibytes.chaincheck.monitor.NodeRegistry.NodeDefinition;
+import de.makibytes.chaincheck.monitor.ReferenceBlocks.Confidence;
 import de.makibytes.chaincheck.store.InMemoryMetricsStore;
 
 public class WsMonitorService {
@@ -289,14 +291,39 @@ public class WsMonitorService {
                             sample,
                             node.anomalyDelayMs(),
                             state.lastWsBlockNumber,
-                            state.lastWsBlockHash);
+                            state.lastWsBlockHash,
+                            state.lastHttpBlockNumber);
                     for (AnomalyEvent anomaly : anomalies) {
                         store.addAnomaly(node.key(), anomaly);
+                        // Track block height decreased anomalies for auto-closing
+                        if (anomaly.getType() == AnomalyType.REORG && "Block height decreased".equals(anomaly.getMessage())) {
+                            state.hasOpenBlockHeightDecreasedAnomaly = true;
+                            state.consecutiveIncreasingBlocksAfterDecrease = 0;
+                        }
+                    }
+
+                    // Handle auto-closing of block height decreased anomalies
+                    if (state.hasOpenBlockHeightDecreasedAnomaly && blockNumber != null && state.lastWsBlockNumber != null) {
+                        if (blockNumber > state.lastWsBlockNumber) {
+                            state.consecutiveIncreasingBlocksAfterDecrease++;
+                            if (state.consecutiveIncreasingBlocksAfterDecrease >= 3) {
+                                store.closeLastAnomaly(node.key(), MetricSource.WS, AnomalyType.REORG);
+                                state.hasOpenBlockHeightDecreasedAnomaly = false;
+                                state.consecutiveIncreasingBlocksAfterDecrease = 0;
+                            }
+                        } else {
+                            // Reset counter if block number didn't increase
+                            state.consecutiveIncreasingBlocksAfterDecrease = 0;
+                        }
                     }
 
                     state.lastWsBlockNumber = blockNumber;
                     if (blockHash != null) {
                         state.lastWsBlockHash = blockHash;
+                    }
+
+                    if (blockNumber != null && blockHash != null) {
+                        monitor.recordBlock(node.key(), blockNumber, blockHash, Confidence.NEW);
                     }
                 }
             } catch (IOException | RuntimeException ex) {

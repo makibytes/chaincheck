@@ -176,116 +176,53 @@
             }
         };
 
-        if (delayChartsAvailable) {
+        // Helper function to add delay datasets
+        function addDelayDatasets(datasets, type, color, rgb, data, minData, maxData, refData) {
             datasets.push(createLineDataset({
-                label: 'Head Delay',
-                data: headDelayScaled,
-                originalData: headDelayData,
-                color: theme.headDelay,
-                rgb: theme.headDelayRgb,
+                label: `${type} Delay`,
+                data: data,
+                originalData: eval(`${type.toLowerCase()}DelayData`),
+                color: color,
+                rgb: rgb,
                 backgroundAlpha: 0.2,
                 order: 2
             }));
 
             if (hasAggregatedDelays) {
                 datasets.push(createBandDataset({
-                    label: 'Head Delay (Low)',
-                    data: headDelayMinScaled,
-                    originalData: headDelayMinData,
-                    rgb: theme.headDelayRgb
+                    label: `${type} Delay (Low)`,
+                    data: minData,
+                    originalData: eval(`${type.toLowerCase()}DelayMinData`),
+                    rgb: rgb
                 }));
 
                 datasets.push(createBandDataset({
-                    label: 'Head Delay (High)',
-                    data: headDelayMaxScaled,
-                    originalData: headDelayMaxData,
-                    rgb: theme.headDelayRgb
+                    label: `${type} Delay (High)`,
+                    data: maxData,
+                    originalData: eval(`${type.toLowerCase()}DelayMaxData`),
+                    rgb: rgb
                 }));
             }
 
             if (referenceAvailable) {
                 datasets.push(createReferenceDataset({
-                    label: 'Head Delay (Reference)',
-                    data: referenceHeadDelayScaled,
-                    originalData: referenceHeadDelayData,
-                    color: theme.headDelay,
-                    rgb: theme.headDelayRgb
+                    label: `${type} Delay (Reference)`,
+                    data: refData,
+                    originalData: eval(`reference${type}DelayData`),
+                    color: color,
+                    rgb: rgb
                 }));
             }
+        }
+
+        if (delayChartsAvailable) {
+            addDelayDatasets(datasets, 'Head', theme.headDelay, theme.headDelayRgb, headDelayScaled, headDelayMinScaled, headDelayMaxScaled, referenceHeadDelayScaled);
 
             if (safeBlocksEnabled) {
-                datasets.push(createLineDataset({
-                    label: 'Safe Delay',
-                    data: safeDelayScaled,
-                    originalData: safeDelayData,
-                    color: theme.safeDelay,
-                    rgb: theme.safeDelayRgb,
-                    backgroundAlpha: 0.18,
-                    order: 2
-                }));
-
-                if (hasAggregatedDelays) {
-                    datasets.push(createBandDataset({
-                        label: 'Safe Delay (Low)',
-                        data: safeDelayMinScaled,
-                        originalData: safeDelayMinData,
-                        rgb: theme.safeDelayRgb
-                    }));
-
-                    datasets.push(createBandDataset({
-                        label: 'Safe Delay (High)',
-                        data: safeDelayMaxScaled,
-                        originalData: safeDelayMaxData,
-                        rgb: theme.safeDelayRgb
-                    }));
-                }
-
-                if (referenceAvailable) {
-                    datasets.push(createReferenceDataset({
-                        label: 'Safe Delay (Reference)',
-                        data: referenceSafeDelayScaled,
-                        originalData: referenceSafeDelayData,
-                        color: theme.safeDelay,
-                        rgb: theme.safeDelayRgb
-                    }));
-                }
+                addDelayDatasets(datasets, 'Safe', theme.safeDelay, theme.safeDelayRgb, safeDelayScaled, safeDelayMinScaled, safeDelayMaxScaled, referenceSafeDelayScaled);
             }
 
-            datasets.push(createLineDataset({
-                label: 'Finalized Delay',
-                data: finalizedDelayScaled,
-                originalData: finalizedDelayData,
-                color: theme.success,
-                rgb: theme.successRgb,
-                backgroundAlpha: 0.2,
-                order: 2
-            }));
-
-            if (hasAggregatedDelays) {
-                datasets.push(createBandDataset({
-                    label: 'Finalized Delay (Low)',
-                    data: finalizedDelayMinScaled,
-                    originalData: finalizedDelayMinData,
-                    rgb: theme.successRgb
-                }));
-
-                datasets.push(createBandDataset({
-                    label: 'Finalized Delay (High)',
-                    data: finalizedDelayMaxScaled,
-                    originalData: finalizedDelayMaxData,
-                    rgb: theme.successRgb
-                }));
-            }
-
-            if (referenceAvailable) {
-                datasets.push(createReferenceDataset({
-                    label: 'Finalized Delay (Reference)',
-                    data: referenceFinalizedDelayScaled,
-                    originalData: referenceFinalizedDelayData,
-                    color: theme.success,
-                    rgb: theme.successRgb
-                }));
-            }
+            addDelayDatasets(datasets, 'Finalized', theme.success, theme.successRgb, finalizedDelayScaled, finalizedDelayMinScaled, finalizedDelayMaxScaled, referenceFinalizedDelayScaled);
         }
 
         datasets.push({

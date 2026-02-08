@@ -1,37 +1,39 @@
 <th:block th:fragment="scripts-ui">
 <script>
-    const toggleButton = document.getElementById('toggleSamples');
-    const samplesPanel = document.getElementById('samplesPanel');
-    const samplesSection = toggleButton ? toggleButton.closest('.panel') : null;
-    if (toggleButton && samplesPanel) {
-        toggleButton.addEventListener('click', () => {
-            const collapsed = samplesPanel.classList.toggle('collapsed');
-            toggleButton.textContent = collapsed ? 'Show samples' : 'Hide samples';
-            if (samplesSection) {
-                samplesSection.classList.toggle('expanded', !collapsed);
-            }
-        });
-        if (samplesSection && !samplesPanel.classList.contains('collapsed')) {
-            samplesSection.classList.add('expanded');
-        }
-    }
+    // Helper functions
+    const formatHash = (hash) => {
+        if (!hash || hash.length < 15) return hash || '-';
+        return hash.substring(0, 6) + '...' + hash.substring(hash.length - 6);
+    };
 
-    const toggleAnomalies = document.getElementById('toggleAnomalies');
-    const anomaliesPanel = document.getElementById('anomaliesPanel');
-    const anomaliesSection = toggleAnomalies ? toggleAnomalies.closest('.panel') : null;
-    if (toggleAnomalies && anomaliesPanel) {
-        toggleAnomalies.addEventListener('click', () => {
-            const collapsed = anomaliesPanel.classList.toggle('collapsed');
-            toggleAnomalies.textContent = collapsed ? 'Show anomalies' : 'Hide anomalies';
-            if (anomaliesSection) {
-                anomaliesSection.classList.toggle('expanded', !collapsed);
-            }
-        });
-        if (anomaliesSection && !anomaliesPanel.classList.contains('collapsed')) {
-            anomaliesSection.classList.add('expanded');
-        }
-    }
+    const copyBtn = (text) => {
+        if (!text) return '';
+        return `<button class="copy-btn" onclick="copyToClipboard('${text}')" title="Copy full hash">📋</button>`;
+    };
 
+    // Generic toggle function
+    const createToggle = (buttonId, panelId, showText, hideText) => {
+        const toggleButton = document.getElementById(buttonId);
+        const panel = document.getElementById(panelId);
+        const section = toggleButton ? toggleButton.closest('.panel') : null;
+        if (toggleButton && panel) {
+            toggleButton.addEventListener('click', () => {
+                const collapsed = panel.classList.toggle('collapsed');
+                toggleButton.textContent = collapsed ? showText : hideText;
+                if (section) {
+                    section.classList.toggle('expanded', !collapsed);
+                }
+            });
+            if (section && !panel.classList.contains('collapsed')) {
+                section.classList.add('expanded');
+            }
+        }
+    };
+
+    createToggle('toggleSamples', 'samplesPanel', 'Show samples', 'Hide samples');
+    createToggle('toggleAnomalies', 'anomaliesPanel', 'Show anomalies', 'Hide anomalies');
+
+    // Node select handler
     const nodeSelect = document.getElementById('nodeSelect');
     if (nodeSelect) {
         nodeSelect.addEventListener('change', () => {
@@ -45,64 +47,43 @@
         });
     }
 
-    const anomalyModal = document.getElementById('anomalyModal');
-    const anomalyContent = document.getElementById('anomalyContent');
-    const closeAnomaly = document.getElementById('closeAnomaly');
-    const sampleModal = document.getElementById('sampleModal');
-    const sampleContent = document.getElementById('sampleContent');
-    const closeSample = document.getElementById('closeSample');
-    const openModal = () => {
-        if (anomalyModal) {
-            anomalyModal.classList.remove('hidden');
-            anomalyModal.setAttribute('aria-hidden', 'false');
+    // Generic modal functions
+    const createModalHandlers = (modalId, contentId, closeId, openFunc, closeFunc) => {
+        const modal = document.getElementById(modalId);
+        const closeBtn = document.getElementById(closeId);
+        const openModal = () => {
+            if (modal) {
+                modal.classList.remove('hidden');
+                modal.setAttribute('aria-hidden', 'false');
+            }
+        };
+        const closeModal = () => {
+            if (modal) {
+                modal.classList.add('hidden');
+                modal.setAttribute('aria-hidden', 'true');
+            }
+        };
+        if (closeBtn) {
+            closeBtn.addEventListener('click', closeModal);
         }
-    };
-    const closeModal = () => {
-        if (anomalyModal) {
-            anomalyModal.classList.add('hidden');
-            anomalyModal.setAttribute('aria-hidden', 'true');
+        if (modal) {
+            const backdrop = modal.querySelector('.modal-backdrop');
+            if (backdrop) {
+                backdrop.addEventListener('click', closeModal);
+            }
         }
-    };
-    if (closeAnomaly) {
-        closeAnomaly.addEventListener('click', closeModal);
-    }
-    if (anomalyModal) {
-        const backdrop = anomalyModal.querySelector('.modal-backdrop');
-        if (backdrop) {
-            backdrop.addEventListener('click', closeModal);
-        }
-    }
-
-    const openSampleModal = () => {
-        if (sampleModal) {
-            sampleModal.classList.remove('hidden');
-            sampleModal.setAttribute('aria-hidden', 'false');
-        }
+        return { openModal, closeModal };
     };
 
-    const closeSampleModal = () => {
-        if (sampleModal) {
-            sampleModal.classList.add('hidden');
-            sampleModal.setAttribute('aria-hidden', 'true');
-        }
-    };
-
-    if (closeSample) {
-        closeSample.addEventListener('click', closeSampleModal);
-    }
-    if (sampleModal) {
-        const backdrop = sampleModal.querySelector('.modal-backdrop');
-        if (backdrop) {
-            backdrop.addEventListener('click', closeSampleModal);
-        }
-    }
+    const { openModal: openAnomalyModal, closeModal: closeAnomalyModal } = createModalHandlers('anomalyModal', 'anomalyContent', 'closeAnomaly');
+    const { openModal: openSampleModal, closeModal: closeSampleModal } = createModalHandlers('sampleModal', 'sampleContent', 'closeSample');
 
     const openAnomaly = async (id) => {
         if (!anomalyContent) {
             return;
         }
         const numericId = Number(id);
-        openModal();
+        openAnomalyModal();
 
         const renderDetails = (payload) => {
             if (!payload) {
@@ -112,14 +93,6 @@
             const timeText = payload.timestamp
                 ? new Date(payload.timestamp).toLocaleString()
                 : (payload.time ?? '-');
-            const formatHash = (hash) => {
-                if (!hash || hash.length < 15) return hash || '-';
-                return hash.substring(0, 6) + '...' + hash.substring(hash.length - 6);
-            };
-            const copyBtn = (text) => {
-                if (!text) return '';
-                return `<button class="copy-btn" onclick="copyToClipboard('${text}')" title="Copy full hash">📋</button>`;
-            };
             const detailsText = payload.details && String(payload.details).trim().length > 0
                 ? payload.details
                 : (payload.message ?? '-');
@@ -180,15 +153,6 @@
         }).catch(err => {
             console.error('Failed to copy text: ', err);
         });
-    };
-
-    const formatHash = (hash) => {
-        if (!hash || hash.length < 15) return hash || '-';
-        return hash.substring(0, 6) + '...' + hash.substring(hash.length - 6);
-    };
-    const copyBtn = (text) => {
-        if (!text) return '';
-        return `<button class="copy-btn" onclick="copyToClipboard('${text}')" title="Copy full hash">📋</button>`;
     };
 
     const openSampleDetails = (sample) => {

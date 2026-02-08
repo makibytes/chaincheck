@@ -196,6 +196,12 @@ class RpcMonitorServiceTest {
         setReferenceState(svc, 100L, "0xref");
         ReflectionTestUtils.setField(svc, "referenceFirstSetAtBlock", 70L);
 
+        // Establish reference blocks
+        ReferenceBlocks refBlocks = new ReferenceBlocks();
+        refBlocks.setHash(70L, ReferenceBlocks.Confidence.FINALIZED, "0xsafe");
+        BlockVotingService votingService = (BlockVotingService) ReflectionTestUtils.getField(svc, "blockVotingService");
+        ReflectionTestUtils.setField(votingService, "referenceBlocks", refBlocks);
+
         Object checkpoint = createBlockInfo(70L, "0xsafe", "0xparent", 10, 1_000L, Instant.now());
         ReflectionTestUtils.invokeMethod(svc, "maybeCompareToReference", registry.getNode("mock-node"), "finalized", checkpoint);
 
@@ -235,6 +241,12 @@ class RpcMonitorServiceTest {
 
         setReferenceState(svc, 210L, "0xhead");
         ReflectionTestUtils.setField(svc, "referenceFirstSetAtBlock", 180L);
+
+        // Establish reference blocks
+        ReferenceBlocks refBlocks = new ReferenceBlocks();
+        refBlocks.setHash(200L, ReferenceBlocks.Confidence.SAFE, "0xbbb");
+        BlockVotingService votingService = (BlockVotingService) ReflectionTestUtils.getField(svc, "blockVotingService");
+        ReflectionTestUtils.setField(votingService, "referenceBlocks", refBlocks);
 
         Object checkpoint = createBlockInfo(200L, "0xaaa", "0xparent", 12, 1_000L, Instant.now());
         ReflectionTestUtils.invokeMethod(svc, "maybeCompareToReference", registry.getNode("mock-node"), "safe", checkpoint);

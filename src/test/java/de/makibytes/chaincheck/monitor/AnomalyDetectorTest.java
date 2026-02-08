@@ -59,7 +59,7 @@ class AnomalyDetectorTest {
             null
         );
 
-        var anomalies = detector.detect("node1", sample, 1000, null, null);
+        var anomalies = detector.detect("node1", sample, 1000, null, null, null);
 
         assertEquals(1, anomalies.size());
         assertEquals(AnomalyType.TIMEOUT, anomalies.get(0).getType());
@@ -87,7 +87,7 @@ class AnomalyDetectorTest {
             null
         );
 
-        var anomalies = detector.detect("node1", sample, 1000, null, null);
+        var anomalies = detector.detect("node1", sample, 1000, null, null, null);
 
         assertEquals(1, anomalies.size());
         assertTrue(anomalies.get(0).getMessage().length() <= 53, "Message should be truncated to ~50 chars + '...'");
@@ -113,7 +113,7 @@ class AnomalyDetectorTest {
             null
         );
 
-        var anomalies = detector.detect("node1", sample, 1000, 1233L, "0xprevblock");
+        var anomalies = detector.detect("node1", sample, 1000, 1233L, "0xprevblock", null);
 
         assertTrue(anomalies.stream().anyMatch(a -> a.getType() == AnomalyType.DELAY),
                 "Should detect high latency anomaly");
@@ -139,7 +139,7 @@ class AnomalyDetectorTest {
             null
         );
 
-        var anomalies = detector.detect("node1", sample, 1000, 1233L, "0xprevblock");
+        var anomalies = detector.detect("node1", sample, 1000, 1233L, "0xprevblock", null);
 
         assertTrue(anomalies.stream().noneMatch(a -> a.getType() == AnomalyType.DELAY),
                 "Should not detect latency below threshold");
@@ -165,7 +165,7 @@ class AnomalyDetectorTest {
             null
         );
 
-        var anomalies = detector.detect("node1", sample, 1000, 1233L, "0xprevblock");
+        var anomalies = detector.detect("node1", sample, 1000, 1233L, "0xprevblock", null);
 
         assertTrue(anomalies.stream().anyMatch(a -> a.getType() == AnomalyType.REORG),
                 "Should detect block reorg");
@@ -179,7 +179,7 @@ class AnomalyDetectorTest {
             MetricSource.WS,
             true,
             100,
-            1235L,  // Previous was 1233, now 1235 (gap of 1 block)
+            1235L,  // Node is at 1235
             Instant.now(),
             "0xblock",
             "0xparent",
@@ -191,10 +191,10 @@ class AnomalyDetectorTest {
             null
         );
 
-        var anomalies = detector.detect("node1", sample, 1000, 1233L, "0xprevblock");
+        var anomalies = detector.detect("node1", sample, 1000, 1233L, "0xprevblock", 1240L); // HTTP is at 1240, WS is at 1235 (5 behind)
 
         assertTrue(anomalies.stream().anyMatch(a -> a.getType() == AnomalyType.BLOCK_GAP),
-                "WebSocket should detect block gap > 1");
+                "WebSocket should detect block gap when WS is behind HTTP");
     }
 
     @Test
@@ -217,7 +217,7 @@ class AnomalyDetectorTest {
             null
         );
 
-        var anomalies = detector.detect("node1", sample, 1000, 1233L, "0xprevblock");
+        var anomalies = detector.detect("node1", sample, 1000, 1233L, "0xprevblock", null);
 
         assertTrue(anomalies.stream().noneMatch(a -> a.getType() == AnomalyType.BLOCK_GAP),
                 "HTTP should not detect block gaps");
@@ -243,7 +243,7 @@ class AnomalyDetectorTest {
             null
         );
 
-        var anomalies = detector.detect("node1", sample, 1000, 1233L, "0xprevblock");
+        var anomalies = detector.detect("node1", sample, 1000, 1233L, "0xprevblock", null);
 
         assertEquals(0, anomalies.size(), "Successful normal block should not generate anomalies");
     }

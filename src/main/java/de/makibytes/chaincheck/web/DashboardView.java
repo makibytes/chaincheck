@@ -71,83 +71,69 @@ public class DashboardView {
     private final int anomalyPageSize;
     private final int totalAnomalies;
     private final int scaleChangeMs;
+    private final int scaleMaxMs;
     private final boolean hasOlderAggregates;
     private final Instant generatedAt;
     private final ReferenceComparison referenceComparison;
     private final boolean isReferenceNode;
 
-    public DashboardView(TimeRange range,
-                         DashboardSummary summary,
-                         List<AnomalyEvent> anomalies,
-                         List<AnomalyRow> anomalyRows,
-                         List<SampleRow> sampleRows,
-                         List<Long> chartTimestamps,
-                         List<String> chartLabels,
-                         List<Long> chartLatencies,
-                         List<Long> chartLatencyMins,
-                         List<Long> chartLatencyMaxs,
-                         List<Double> chartErrorRates,
-                         List<Double> chartWsErrorRates,
-                         List<Boolean> chartHttpErrors,
-                         List<Boolean> chartWsErrors,
-                         List<Long> chartHeadDelays,
-                         List<Long> chartHeadDelayMins,
-                         List<Long> chartHeadDelayMaxs,
-                         List<Long> chartSafeDelays,
-                         List<Long> chartSafeDelayMins,
-                         List<Long> chartSafeDelayMaxs,
-                         List<Long> chartFinalizedDelays,
-                         List<Long> chartFinalizedDelayMins,
-                         List<Long> chartFinalizedDelayMaxs,
-                         List<Long> chartReferenceHeadDelays,
-                         List<Long> chartReferenceSafeDelays,
-                         List<Long> chartReferenceFinalizedDelays,
-                         boolean hasAggregatedLatencies,
-                         boolean hasAggregatedDelays,
-                         boolean httpErrorOngoing,
-                         boolean wsErrorOngoing,
-                         boolean httpConfigured,
-                         boolean wsConfigured,
-                         boolean safeBlocksEnabled,
-                         boolean httpUp,
-                         boolean wsUp,
-                         Long latestBlockNumber,
-                         HttpStatus httpStatus,
-                         WsStatus wsStatus,
-                         int totalPages,
-                         int pageSize,
-                         int totalSamples,
-                         int anomalyTotalPages,
-                         int anomalyPageSize,
-                         int totalAnomalies,
-                         int scaleChangeMs,
-                         boolean hasOlderAggregates,
-                         Instant generatedAt,
-                         ReferenceComparison referenceComparison,
-                         boolean isReferenceNode) {
+    private DashboardView(TimeRange range,
+                          DashboardSummary summary,
+                          List<AnomalyEvent> anomalies,
+                          List<AnomalyRow> anomalyRows,
+                          List<SampleRow> sampleRows,
+                          ChartBuilder.ChartData chartData,
+                          ChartBuilder.DelayChartData delayChartData,
+                          List<Long> chartReferenceHeadDelays,
+                          List<Long> chartReferenceSafeDelays,
+                          List<Long> chartReferenceFinalizedDelays,
+                          boolean hasAggregatedLatencies,
+                          boolean hasAggregatedDelays,
+                          boolean httpErrorOngoing,
+                          boolean wsErrorOngoing,
+                          boolean httpConfigured,
+                          boolean wsConfigured,
+                          boolean safeBlocksEnabled,
+                          boolean httpUp,
+                          boolean wsUp,
+                          Long latestBlockNumber,
+                          HttpStatus httpStatus,
+                          WsStatus wsStatus,
+                          int totalPages,
+                          int pageSize,
+                          int totalSamples,
+                          int anomalyTotalPages,
+                          int anomalyPageSize,
+                          int totalAnomalies,
+                          int scaleChangeMs,
+                          int scaleMaxMs,
+                          boolean hasOlderAggregates,
+                          Instant generatedAt,
+                          ReferenceComparison referenceComparison,
+                          boolean isReferenceNode) {
         this.range = range;
         this.summary = summary;
         this.anomalies = anomalies;
         this.anomalyRows = anomalyRows;
         this.sampleRows = sampleRows;
-        this.chartTimestamps = chartTimestamps;
-        this.chartLabels = chartLabels;
-        this.chartLatencies = chartLatencies;
-        this.chartLatencyMins = chartLatencyMins;
-        this.chartLatencyMaxs = chartLatencyMaxs;
-        this.chartErrorRates = chartErrorRates;
-        this.chartWsErrorRates = chartWsErrorRates;
-        this.chartHttpErrors = chartHttpErrors;
-        this.chartWsErrors = chartWsErrors;
-        this.chartHeadDelays = chartHeadDelays;
-        this.chartHeadDelayMins = chartHeadDelayMins;
-        this.chartHeadDelayMaxs = chartHeadDelayMaxs;
-        this.chartSafeDelays = chartSafeDelays;
-        this.chartSafeDelayMins = chartSafeDelayMins;
-        this.chartSafeDelayMaxs = chartSafeDelayMaxs;
-        this.chartFinalizedDelays = chartFinalizedDelays;
-        this.chartFinalizedDelayMins = chartFinalizedDelayMins;
-        this.chartFinalizedDelayMaxs = chartFinalizedDelayMaxs;
+        this.chartTimestamps = chartData.timestamps();
+        this.chartLabels = chartData.labels();
+        this.chartLatencies = chartData.latencies();
+        this.chartLatencyMins = chartData.latencyMins();
+        this.chartLatencyMaxs = chartData.latencyMaxs();
+        this.chartErrorRates = chartData.errorRates();
+        this.chartWsErrorRates = chartData.wsErrorRates();
+        this.chartHttpErrors = chartData.httpErrorBuckets();
+        this.chartWsErrors = chartData.wsErrorBuckets();
+        this.chartHeadDelays = delayChartData.headDelays();
+        this.chartHeadDelayMins = delayChartData.headDelayMins();
+        this.chartHeadDelayMaxs = delayChartData.headDelayMaxs();
+        this.chartSafeDelays = delayChartData.safeDelays();
+        this.chartSafeDelayMins = delayChartData.safeDelayMins();
+        this.chartSafeDelayMaxs = delayChartData.safeDelayMaxs();
+        this.chartFinalizedDelays = delayChartData.finalizedDelays();
+        this.chartFinalizedDelayMins = delayChartData.finalizedDelayMins();
+        this.chartFinalizedDelayMaxs = delayChartData.finalizedDelayMaxs();
         this.chartReferenceHeadDelays = chartReferenceHeadDelays;
         this.chartReferenceSafeDelays = chartReferenceSafeDelays;
         this.chartReferenceFinalizedDelays = chartReferenceFinalizedDelays;
@@ -170,10 +156,58 @@ public class DashboardView {
         this.anomalyPageSize = anomalyPageSize;
         this.totalAnomalies = totalAnomalies;
         this.scaleChangeMs = scaleChangeMs;
+        this.scaleMaxMs = scaleMaxMs;
         this.hasOlderAggregates = hasOlderAggregates;
         this.generatedAt = generatedAt;
         this.referenceComparison = referenceComparison;
         this.isReferenceNode = isReferenceNode;
+    }
+
+    static DashboardView create(TimeRange range,
+                                DashboardSummary summary,
+                                List<AnomalyEvent> anomalies,
+                                List<AnomalyRow> anomalyRows,
+                                List<SampleRow> sampleRows,
+                                ChartBuilder.ChartData chartData,
+                                ChartBuilder.DelayChartData delayChartData,
+                                List<Long> chartReferenceHeadDelays,
+                                List<Long> chartReferenceSafeDelays,
+                                List<Long> chartReferenceFinalizedDelays,
+                                boolean hasAggregatedLatencies,
+                                boolean hasAggregatedDelays,
+                                boolean httpErrorOngoing,
+                                boolean wsErrorOngoing,
+                                boolean httpConfigured,
+                                boolean wsConfigured,
+                                boolean safeBlocksEnabled,
+                                boolean httpUp,
+                                boolean wsUp,
+                                Long latestBlockNumber,
+                                HttpStatus httpStatus,
+                                WsStatus wsStatus,
+                                int totalPages,
+                                int pageSize,
+                                int totalSamples,
+                                int anomalyTotalPages,
+                                int anomalyPageSize,
+                                int totalAnomalies,
+                                int scaleChangeMs,
+                                int scaleMaxMs,
+                                boolean hasOlderAggregates,
+                                Instant generatedAt,
+                                ReferenceComparison referenceComparison,
+                                boolean isReferenceNode) {
+        return new DashboardView(range, summary, anomalies, anomalyRows, sampleRows,
+                chartData, delayChartData,
+                chartReferenceHeadDelays, chartReferenceSafeDelays, chartReferenceFinalizedDelays,
+                hasAggregatedLatencies, hasAggregatedDelays,
+                httpErrorOngoing, wsErrorOngoing,
+                httpConfigured, wsConfigured, safeBlocksEnabled,
+                httpUp, wsUp, latestBlockNumber, httpStatus, wsStatus,
+                totalPages, pageSize, totalSamples,
+                anomalyTotalPages, anomalyPageSize, totalAnomalies,
+                scaleChangeMs, scaleMaxMs, hasOlderAggregates,
+                generatedAt, referenceComparison, isReferenceNode);
     }
 
     public TimeRange getRange() {
@@ -354,6 +388,10 @@ public class DashboardView {
 
     public int getScaleChangeMs() {
         return scaleChangeMs;
+    }
+
+    public int getScaleMaxMs() {
+        return scaleMaxMs;
     }
 
     public boolean hasOlderAggregates() {
