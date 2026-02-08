@@ -30,6 +30,7 @@ import de.makibytes.chaincheck.model.TimeRange;
 public class MetricsCache {
 
     private static final Duration TTL = Duration.ofSeconds(2);
+    static final int MAX_ENTRIES = 50;
 
     private final Map<String, CacheEntry> cache = new ConcurrentHashMap<>();
 
@@ -46,6 +47,23 @@ public class MetricsCache {
 
     public void put(String nodeKey, TimeRange range, Instant end, DashboardView view) {
         cache.put(key(nodeKey, range, end), new CacheEntry(view, view.getGeneratedAt()));
+        if (cache.size() > MAX_ENTRIES) {
+            evict();
+        }
+    }
+
+    private void evict() {
+        Instant now = Instant.now();
+        cache.entrySet().removeIf(entry -> entry.getValue().generatedAt.plus(TTL).isBefore(now));
+        if (cache.size() > MAX_ENTRIES) {
+            cache.entrySet().stream()
+                    .min(Map.Entry.comparingByValue(java.util.Comparator.comparing(CacheEntry::generatedAt)))
+                    .ifPresent(oldest -> cache.remove(oldest.getKey()));
+        }
+    }
+
+    int size() {
+        return cache.size();
     }
 
     private String key(String nodeKey, TimeRange range, Instant end) {

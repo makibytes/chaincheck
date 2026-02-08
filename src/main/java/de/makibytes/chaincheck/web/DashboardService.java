@@ -140,8 +140,8 @@ public class DashboardService {
             }
         }
         latencyValues = latencyValues.stream().sorted().toList();
-        double p95Latency = percentile(latencyValues, 0.95);
-        double p99Latency = percentile(latencyValues, 0.99);
+        double p95Latency = ChartBuilder.percentile(latencyValues, 0.95);
+        double p99Latency = ChartBuilder.percentile(latencyValues, 0.99);
 
         long httpCount = rawSamples.stream().filter(sample -> sample.getSource() == MetricSource.HTTP).count()
                 + aggregateSamples.stream().mapToLong(SampleAggregate::getHttpCount).sum();
@@ -182,8 +182,8 @@ public class DashboardService {
             }
         }
         newBlockValues = newBlockValues.stream().sorted().toList();
-        double p95NewBlockPropagation = percentile(newBlockValues, 0.95);
-        double p99NewBlockPropagation = percentile(newBlockValues, 0.99);
+        double p95NewBlockPropagation = ChartBuilder.percentile(newBlockValues, 0.95);
+        double p99NewBlockPropagation = ChartBuilder.percentile(newBlockValues, 0.99);
 
         List<Long> safeDelays = rawSamples.stream()
                 .map(MetricSample::getSafeDelayMs)
@@ -207,8 +207,8 @@ public class DashboardService {
             }
         }
         safeValues = safeValues.stream().sorted().toList();
-        double p95SafePropagation = percentile(safeValues, 0.95);
-        double p99SafePropagation = percentile(safeValues, 0.99);
+        double p95SafePropagation = ChartBuilder.percentile(safeValues, 0.95);
+        double p99SafePropagation = ChartBuilder.percentile(safeValues, 0.99);
 
         List<Long> finalizedDelays = rawSamples.stream()
                 .map(MetricSample::getFinalizedDelayMs)
@@ -232,8 +232,8 @@ public class DashboardService {
             }
         }
         finalizedValues = finalizedValues.stream().sorted().toList();
-        double p95FinalizedPropagation = percentile(finalizedValues, 0.95);
-        double p99FinalizedPropagation = percentile(finalizedValues, 0.99);
+        double p95FinalizedPropagation = ChartBuilder.percentile(finalizedValues, 0.95);
+        double p99FinalizedPropagation = ChartBuilder.percentile(finalizedValues, 0.99);
 
         List<Long> propagationValues = new ArrayList<>(propagationDelays);
         for (SampleAggregate aggregate : aggregateSamples) {
@@ -275,58 +275,40 @@ public class DashboardService {
         Long currentLatest = store.getLatestBlockNumber(nodeKey);
         long blockLagBlocks = currentLatest == null ? 0 : Math.max(0, maxBlockNumber - currentLatest);
 
-        ChartData chartData = buildLatencyChart(rawSamples, aggregateSamples, range);
-        List<String> chartLabels = chartData.labels();
-        List<Long> chartLatencies = chartData.latencies();
-        List<Long> chartLatencyMins = chartData.latencyMins();
-        List<Long> chartLatencyMaxs = chartData.latencyMaxs();
-        List<Double> chartErrorRates = chartData.errorRates();
-        List<Double> chartWsErrorRates = chartData.wsErrorRates();
-        List<Boolean> chartHttpErrors = chartData.httpErrorBuckets();
-        List<Boolean> chartWsErrors = chartData.wsErrorBuckets();
+        ChartBuilder.ChartData chartData = ChartBuilder.buildLatencyChart(rawSamples, aggregateSamples, range, now);
+        ChartBuilder.DelayChartData delayChartData = ChartBuilder.buildDelayChart(rawSamples, aggregateSamples, range, now);
 
-        DelayChartData delayChartData = buildDelayChart(rawSamples, aggregateSamples, range);
-        List<Long> chartHeadDelays = delayChartData.headDelays();
-        List<Long> chartHeadDelayMins = delayChartData.headDelayMins();
-        List<Long> chartHeadDelayMaxs = delayChartData.headDelayMaxs();
-        List<Long> chartSafeDelays = delayChartData.safeDelays();
-        List<Long> chartSafeDelayMins = delayChartData.safeDelayMins();
-        List<Long> chartSafeDelayMaxs = delayChartData.safeDelayMaxs();
-        List<Long> chartFinalizedDelays = delayChartData.finalizedDelays();
-        List<Long> chartFinalizedDelayMins = delayChartData.finalizedDelayMins();
-        List<Long> chartFinalizedDelayMaxs = delayChartData.finalizedDelayMaxs();
-
-        List<Long> headDelaySeries = chartHeadDelays.stream()
+        List<Long> headDelaySeries = delayChartData.headDelays().stream()
                 .filter(value -> value != null && value >= 0)
                 .toList();
         if (!headDelaySeries.isEmpty()) {
             long headDelaySum = headDelaySeries.stream().mapToLong(Long::longValue).sum();
             avgNewBlockPropagation = (double) headDelaySum / headDelaySeries.size();
             List<Long> sortedHeadDelaySeries = headDelaySeries.stream().sorted().toList();
-            p95NewBlockPropagation = percentile(sortedHeadDelaySeries, 0.95);
-            p99NewBlockPropagation = percentile(sortedHeadDelaySeries, 0.99);
+            p95NewBlockPropagation = ChartBuilder.percentile(sortedHeadDelaySeries, 0.95);
+            p99NewBlockPropagation = ChartBuilder.percentile(sortedHeadDelaySeries, 0.99);
         }
 
-        List<Long> safeDelaySeries = chartSafeDelays.stream()
+        List<Long> safeDelaySeries = delayChartData.safeDelays().stream()
                 .filter(value -> value != null && value >= 0)
                 .toList();
         if (!safeDelaySeries.isEmpty()) {
             long safeDelaySum = safeDelaySeries.stream().mapToLong(Long::longValue).sum();
             avgSafePropagation = (double) safeDelaySum / safeDelaySeries.size();
             List<Long> sortedSafeDelaySeries = safeDelaySeries.stream().sorted().toList();
-            p95SafePropagation = percentile(sortedSafeDelaySeries, 0.95);
-            p99SafePropagation = percentile(sortedSafeDelaySeries, 0.99);
+            p95SafePropagation = ChartBuilder.percentile(sortedSafeDelaySeries, 0.95);
+            p99SafePropagation = ChartBuilder.percentile(sortedSafeDelaySeries, 0.99);
         }
 
-        List<Long> finalizedDelaySeries = chartFinalizedDelays.stream()
+        List<Long> finalizedDelaySeries = delayChartData.finalizedDelays().stream()
                 .filter(value -> value != null && value >= 0)
                 .toList();
         if (!finalizedDelaySeries.isEmpty()) {
             long finalizedDelaySum = finalizedDelaySeries.stream().mapToLong(Long::longValue).sum();
             avgFinalizedPropagation = (double) finalizedDelaySum / finalizedDelaySeries.size();
             List<Long> sortedFinalizedDelaySeries = finalizedDelaySeries.stream().sorted().toList();
-            p95FinalizedPropagation = percentile(sortedFinalizedDelaySeries, 0.95);
-            p99FinalizedPropagation = percentile(sortedFinalizedDelaySeries, 0.99);
+            p95FinalizedPropagation = ChartBuilder.percentile(sortedFinalizedDelaySeries, 0.95);
+            p99FinalizedPropagation = ChartBuilder.percentile(sortedFinalizedDelaySeries, 0.99);
         }
 
         boolean hasAggregatedLatencies = aggregateSamples.stream().anyMatch(sample -> sample.getLatencyCount() > 0);
@@ -584,10 +566,10 @@ public class DashboardService {
             }
 
         ChainSelection latestChain = selectLatestChain(intermediateRows, finalizedHashesByNumber);
-        Long chainTipNumber = latestChain == null ? null : latestChain.tipNumber;
-        java.util.Set<String> chainHashes = latestChain == null ? java.util.Set.of() : latestChain.hashes;
-        java.util.Set<Long> chainNumbers = latestChain == null ? java.util.Set.of() : latestChain.numbers;
-        int chainDepth = latestChain == null ? 0 : latestChain.depth;
+        Long chainTipNumber = latestChain == null ? null : latestChain.tipNumber();
+        java.util.Set<String> chainHashes = latestChain == null ? java.util.Set.of() : latestChain.hashes();
+        java.util.Set<Long> chainNumbers = latestChain == null ? java.util.Set.of() : latestChain.numbers();
+        int chainDepth = latestChain == null ? 0 : latestChain.depth();
         Long latestFinalizedNumber = finalizedHashesByNumber.keySet().stream()
             .max(Long::compareTo)
             .orElse(null);
@@ -676,7 +658,7 @@ public class DashboardService {
             List<MetricSample> refRawSamples = store.getRawSamplesSince(referenceNodeKey, since);
             List<SampleAggregate> refAggregateSamples = store.getAggregatedSamplesSince(referenceNodeKey, since).stream()
                 .toList();
-            DelayChartData refDelayChart = buildDelayChartAligned(refRawSamples, refAggregateSamples, delayChartData.timestamps());
+            ChartBuilder.DelayChartData refDelayChart = ChartBuilder.buildDelayChartAligned(refRawSamples, refAggregateSamples, delayChartData.timestamps());
             chartReferenceHeadDelays = refDelayChart.headDelays();
             chartReferenceSafeDelays = refDelayChart.safeDelays();
             chartReferenceFinalizedDelays = refDelayChart.finalizedDelays();
@@ -689,11 +671,11 @@ public class DashboardService {
         boolean httpErrorOngoing = anomalies.stream()
             .anyMatch(event -> !event.isClosed()
                 && event.getSource() == MetricSource.HTTP
-                && isErrorAnomaly(event.getType()));
+                && ERROR_ANOMALY_TYPES.contains(event.getType()));
         boolean wsErrorOngoing = anomalies.stream()
             .anyMatch(event -> !event.isClosed()
                 && event.getSource() == MetricSource.WS
-                && isErrorAnomaly(event.getType()));
+                && ERROR_ANOMALY_TYPES.contains(event.getType()));
 
         DateTimeFormatter anomalyFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.systemDefault());
         
@@ -796,57 +778,19 @@ public class DashboardService {
             anomalyCounts.getOrDefault(AnomalyType.WRONG_HEAD, 0L),
             anomalyCounts.getOrDefault(AnomalyType.CONFLICT, 0L));
 
-        DashboardView view = new DashboardView(
-                range,
-                summary,
-                anomalies,
-                anomalyRows,
-                sampleRows,
-                chartData.timestamps(),
-                chartLabels,
-                chartLatencies,
-            chartLatencyMins,
-            chartLatencyMaxs,
-                chartErrorRates,
-                chartWsErrorRates,
-            chartHttpErrors,
-            chartWsErrors,
-                chartHeadDelays,
-            chartHeadDelayMins,
-            chartHeadDelayMaxs,
-                chartSafeDelays,
-            chartSafeDelayMins,
-            chartSafeDelayMaxs,
-                chartFinalizedDelays,
-            chartFinalizedDelayMins,
-            chartFinalizedDelayMaxs,
-                chartReferenceHeadDelays,
-                chartReferenceSafeDelays,
-                chartReferenceFinalizedDelays,
-                hasAggregatedLatencies,
-                hasAggregatedDelays,
-                httpErrorOngoing,
-                wsErrorOngoing,
-                httpConfigured,
-                wsConfigured,
+        DashboardView view = DashboardView.create(
+                range, summary, anomalies, anomalyRows, sampleRows,
+                chartData, delayChartData,
+                chartReferenceHeadDelays, chartReferenceSafeDelays, chartReferenceFinalizedDelays,
+                hasAggregatedLatencies, hasAggregatedDelays,
+                httpErrorOngoing, wsErrorOngoing,
+                httpConfigured, wsConfigured,
                 nodeDefinition != null && nodeDefinition.safeBlocksEnabled(),
-                httpUp,
-                wsUp,
-                latestBlockNumber,
-                httpStatus,
-                wsStatus,
-                totalPages,
-                PAGE_SIZE,
-                totalSamples,
-                anomalyTotalPages,
-                PAGE_SIZE,
-                totalAnomalies,
-                scaleChangeMs,
-                scaleMaxMs,
-                hasOlderAggregates,
-                now,
-                referenceComparison,
-                isReferenceNode);
+                httpUp, wsUp, latestBlockNumber, httpStatus, wsStatus,
+                totalPages, PAGE_SIZE, totalSamples,
+                anomalyTotalPages, PAGE_SIZE, totalAnomalies,
+                scaleChangeMs, scaleMaxMs, hasOlderAggregates,
+                now, referenceComparison, isReferenceNode);
             cache.put(nodeKey, range, now, view);
         return view;
     }
@@ -854,456 +798,6 @@ public class DashboardService {
     public AnomalyEvent getAnomaly(long id) {
         return store.getAnomaly(id);
     }
-    private static double percentile(List<Long> sortedValues, double percentile) {
-        if (sortedValues == null || sortedValues.isEmpty()) {
-            return 0;
-        }
-        int size = sortedValues.size();
-        if (size == 1) {
-            return sortedValues.get(0);
-        }
-        double position = percentile * (size - 1);
-        int lowerIndex = (int) Math.floor(position);
-        int upperIndex = (int) Math.ceil(position);
-        double lowerValue = sortedValues.get(lowerIndex);
-        double upperValue = sortedValues.get(upperIndex);
-        if (lowerIndex == upperIndex) {
-            return lowerValue;
-        }
-        double fraction = position - lowerIndex;
-        return lowerValue + (upperValue - lowerValue) * fraction;
-    }
-
-    private ChartData buildLatencyChart(List<MetricSample> rawSamples,
-                                        List<SampleAggregate> aggregateSamples,
-                                        TimeRange range) {
-        List<MetricSample> sortedSamples = rawSamples.stream()
-                .sorted(Comparator.comparing(MetricSample::getTimestamp))
-                .toList();
-        if (sortedSamples.isEmpty() && aggregateSamples.isEmpty()) {
-            return new ChartData(List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
-        }
-
-        Instant now = Instant.now();
-        Instant rangeStart = now.minus(range.getDuration());
-        Instant earliest = null;
-        if (!sortedSamples.isEmpty()) {
-            earliest = sortedSamples.get(0).getTimestamp();
-        }
-        if (!aggregateSamples.isEmpty()) {
-            Instant aggregateStart = aggregateSamples.get(0).getBucketStart();
-            if (earliest == null || aggregateStart.isBefore(earliest)) {
-                earliest = aggregateStart;
-            }
-        }
-        if (earliest == null) {
-            return new ChartData(List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
-        }
-        Instant chartStart = earliest.isAfter(rangeStart) ? earliest : rangeStart;
-        Instant chartEnd = now;
-        if (chartStart.isAfter(chartEnd)) {
-            return new ChartData(List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
-        }
-
-        long spanMs = Math.max(1, Duration.between(chartStart, chartEnd).toMillis());
-        int targetPoints = 120;
-        long bucketMs = Math.max(1000, spanMs / targetPoints);
-        int bucketCount = (int) Math.min(targetPoints, Math.max(1, Math.ceil((double) spanMs / bucketMs)));
-
-        DateTimeFormatter formatter;
-        if (spanMs <= Duration.ofHours(6).toMillis()) {
-            formatter = DateTimeFormatter.ofPattern("HH:mm");
-        } else if (spanMs > Duration.ofDays(10).toMillis()) {
-            formatter = DateTimeFormatter.ofPattern("MM-dd");
-        } else {
-            formatter = DateTimeFormatter.ofPattern("MM-dd HH:mm");
-        }
-        formatter = formatter.withZone(ZoneId.systemDefault());
-
-        List<Long> timestamps = new ArrayList<>(bucketCount);
-        List<String> labels = new ArrayList<>(bucketCount);
-        List<Long> latencies = new ArrayList<>(bucketCount);
-        List<Long> latencyMins = new ArrayList<>(bucketCount);
-        List<Long> latencyMaxs = new ArrayList<>(bucketCount);
-        List<Double> errorRates = new ArrayList<>(bucketCount);
-        List<Double> wsErrorRates = new ArrayList<>(bucketCount);
-        List<Boolean> httpErrorBuckets = new ArrayList<>(bucketCount);
-        List<Boolean> wsErrorBuckets = new ArrayList<>(bucketCount);
-
-        int sampleIndex = 0;
-        int aggregateIndex = 0;
-
-        for (int i = 0; i < bucketCount; i++) {
-            Instant bucketStart = chartStart.plusMillis(bucketMs * i);
-            Instant bucketEnd = bucketStart.plusMillis(bucketMs);
-            if (bucketEnd.isAfter(chartEnd)) {
-                bucketEnd = chartEnd;
-            }
-
-            long latencySum = 0;
-            long latencyCount = 0;
-            long latencyMin = Long.MAX_VALUE;
-            long latencyMax = 0;
-            int totalBucket = 0;
-            int errorBucket = 0;
-            int wsBucket = 0;
-            int wsErrorBucket = 0;
-
-            while (sampleIndex < sortedSamples.size()) {
-                MetricSample sample = sortedSamples.get(sampleIndex);
-                Instant ts = sample.getTimestamp();
-                if (ts.isBefore(bucketStart)) {
-                    sampleIndex++;
-                    continue;
-                }
-                if (!ts.isBefore(bucketEnd)) {
-                    break;
-                }
-                
-                if (sample.getSource() == MetricSource.HTTP) {
-                    totalBucket++;
-                    if (!sample.isSuccess()) {
-                        errorBucket++;
-                    }
-                    if (sample.getLatencyMs() >= 0) {
-                        latencySum += sample.getLatencyMs();
-                        latencyCount++;
-                        if (sample.getLatencyMs() < latencyMin) {
-                            latencyMin = sample.getLatencyMs();
-                        }
-                        if (sample.getLatencyMs() > latencyMax) {
-                            latencyMax = sample.getLatencyMs();
-                        }
-                    }
-                } else if (sample.getSource() == MetricSource.WS) {
-                    wsBucket++;
-                    if (!sample.isSuccess()) {
-                        wsErrorBucket++;
-                    }
-                }
-                sampleIndex++;
-            }
-
-            while (aggregateIndex < aggregateSamples.size()) {
-                SampleAggregate aggregate = aggregateSamples.get(aggregateIndex);
-                Instant ts = aggregate.getBucketStart();
-                if (ts.isBefore(bucketStart)) {
-                    aggregateIndex++;
-                    continue;
-                }
-                if (!ts.isBefore(bucketEnd)) {
-                    break;
-                }
-                latencySum += aggregate.getLatencySumMs();
-                latencyCount += aggregate.getLatencyCount();
-                if (aggregate.getLatencyCount() > 0) {
-                    latencyMin = Math.min(latencyMin, aggregate.getMinLatencyMs());
-                    latencyMax = Math.max(latencyMax, aggregate.getMaxLatencyMs());
-                }
-                
-                // For HTTP error rates, we need only HTTP samples
-                totalBucket += aggregate.getHttpCount();
-                // errorCount contains total errors (HTTP + WS). wsErrorCount is known.
-                // Assuming only HTTP and WS exist.
-                long httpErrors = aggregate.getErrorCount() - aggregate.getWsErrorCount();
-                errorBucket += Math.max(0, httpErrors);
-                
-                wsBucket += aggregate.getWsCount();
-                wsErrorBucket += aggregate.getWsErrorCount();
-                aggregateIndex++;
-            }
-
-            labels.add(formatter.format(bucketStart));
-            timestamps.add(bucketStart.toEpochMilli());
-            latencies.add(latencyCount == 0 ? null : Math.round((double) latencySum / latencyCount));
-            latencyMins.add(latencyCount == 0 ? null : latencyMin);
-            latencyMaxs.add(latencyCount == 0 ? null : latencyMax);
-            errorRates.add(totalBucket == 0 ? null : (double) errorBucket / totalBucket);
-            wsErrorRates.add(wsBucket == 0 ? null : (double) wsErrorBucket / wsBucket);
-            httpErrorBuckets.add(errorBucket > 0);
-            wsErrorBuckets.add(wsErrorBucket > 0);
-
-            if (bucketEnd.equals(chartEnd)) {
-                break;
-            }
-        }
-
-        return new ChartData(timestamps, labels, latencies, latencyMins, latencyMaxs, errorRates, wsErrorRates, httpErrorBuckets, wsErrorBuckets);
-    }
-
-    private DelayChartData buildDelayChart(List<MetricSample> rawSamples,
-                                           List<SampleAggregate> aggregateSamples,
-                                           TimeRange range) {
-        List<MetricSample> sortedSamples = rawSamples.stream()
-                .sorted(Comparator.comparing(MetricSample::getTimestamp))
-                .toList();
-        if (sortedSamples.isEmpty() && aggregateSamples.isEmpty()) {
-            return new DelayChartData(List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
-        }
-
-        Instant now = Instant.now();
-        Instant rangeStart = now.minus(range.getDuration());
-        Instant earliest = null;
-        if (!sortedSamples.isEmpty()) {
-            earliest = sortedSamples.get(0).getTimestamp();
-        }
-        if (!aggregateSamples.isEmpty()) {
-            Instant aggregateStart = aggregateSamples.get(0).getBucketStart();
-            if (earliest == null || aggregateStart.isBefore(earliest)) {
-                earliest = aggregateStart;
-            }
-        }
-        if (earliest == null) {
-            return new DelayChartData(List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
-        }
-        Instant chartStart = earliest.isAfter(rangeStart) ? earliest : rangeStart;
-        Instant chartEnd = now;
-        if (chartStart.isAfter(chartEnd)) {
-            return new DelayChartData(List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
-        }
-
-        long spanMs = Math.max(1, Duration.between(chartStart, chartEnd).toMillis());
-        int targetPoints = 120;
-        long bucketMs = Math.max(1000, spanMs / targetPoints);
-        int bucketCount = (int) Math.min(targetPoints, Math.max(1, Math.ceil((double) spanMs / bucketMs)));
-
-        List<Long> timestamps = new ArrayList<>(bucketCount);
-        List<Long> headDelays = new ArrayList<>(bucketCount);
-        List<Long> headDelayMins = new ArrayList<>(bucketCount);
-        List<Long> headDelayMaxs = new ArrayList<>(bucketCount);
-        List<Long> safeDelays = new ArrayList<>(bucketCount);
-        List<Long> safeDelayMins = new ArrayList<>(bucketCount);
-        List<Long> safeDelayMaxs = new ArrayList<>(bucketCount);
-        List<Long> finalizedDelays = new ArrayList<>(bucketCount);
-        List<Long> finalizedDelayMins = new ArrayList<>(bucketCount);
-        List<Long> finalizedDelayMaxs = new ArrayList<>(bucketCount);
-
-        int sampleIndex = 0;
-        int aggregateIndex = 0;
-
-        for (int i = 0; i < bucketCount; i++) {
-            Instant bucketStart = chartStart.plusMillis(bucketMs * i);
-            Instant bucketEnd = bucketStart.plusMillis(bucketMs);
-            if (bucketEnd.isAfter(chartEnd)) {
-                bucketEnd = chartEnd;
-            }
-
-            long headDelaySum = 0;
-            long headDelayCount = 0;
-            long headDelayMin = Long.MAX_VALUE;
-            long headDelayMax = 0;
-            long safeDelaySum = 0;
-            long safeDelayCount = 0;
-            long safeDelayMin = Long.MAX_VALUE;
-            long safeDelayMax = 0;
-            long finalizedDelaySum = 0;
-            long finalizedDelayCount = 0;
-            long finalizedDelayMin = Long.MAX_VALUE;
-            long finalizedDelayMax = 0;
-
-            while (sampleIndex < sortedSamples.size()) {
-                MetricSample sample = sortedSamples.get(sampleIndex);
-                Instant ts = sample.getTimestamp();
-                if (ts.isBefore(bucketStart)) {
-                    sampleIndex++;
-                    continue;
-                }
-                if (!ts.isBefore(bucketEnd)) {
-                    break;
-                }
-                
-                if (sample.getHeadDelayMs() != null) {
-                    headDelaySum += sample.getHeadDelayMs();
-                    headDelayCount++;
-                    headDelayMin = Math.min(headDelayMin, sample.getHeadDelayMs());
-                    headDelayMax = Math.max(headDelayMax, sample.getHeadDelayMs());
-                }
-                if (sample.getSafeDelayMs() != null) {
-                    safeDelaySum += sample.getSafeDelayMs();
-                    safeDelayCount++;
-                    safeDelayMin = Math.min(safeDelayMin, sample.getSafeDelayMs());
-                    safeDelayMax = Math.max(safeDelayMax, sample.getSafeDelayMs());
-                }
-                if (sample.getFinalizedDelayMs() != null) {
-                    finalizedDelaySum += sample.getFinalizedDelayMs();
-                    finalizedDelayCount++;
-                    finalizedDelayMin = Math.min(finalizedDelayMin, sample.getFinalizedDelayMs());
-                    finalizedDelayMax = Math.max(finalizedDelayMax, sample.getFinalizedDelayMs());
-                }
-                sampleIndex++;
-            }
-
-            while (aggregateIndex < aggregateSamples.size()) {
-                SampleAggregate aggregate = aggregateSamples.get(aggregateIndex);
-                Instant ts = aggregate.getBucketStart();
-                if (ts.isBefore(bucketStart)) {
-                    aggregateIndex++;
-                    continue;
-                }
-                if (!ts.isBefore(bucketEnd)) {
-                    break;
-                }
-                headDelaySum += aggregate.getHeadDelaySumMs();
-                headDelayCount += aggregate.getHeadDelayCount();
-                if (aggregate.getHeadDelayCount() > 0) {
-                    headDelayMin = Math.min(headDelayMin, aggregate.getMinHeadDelayMs());
-                    headDelayMax = Math.max(headDelayMax, aggregate.getMaxHeadDelayMs());
-                }
-                safeDelaySum += aggregate.getSafeDelaySumMs();
-                safeDelayCount += aggregate.getSafeDelayCount();
-                if (aggregate.getSafeDelayCount() > 0) {
-                    safeDelayMin = Math.min(safeDelayMin, aggregate.getMinSafeDelayMs());
-                    safeDelayMax = Math.max(safeDelayMax, aggregate.getMaxSafeDelayMs());
-                }
-                finalizedDelaySum += aggregate.getFinalizedDelaySumMs();
-                finalizedDelayCount += aggregate.getFinalizedDelayCount();
-                if (aggregate.getFinalizedDelayCount() > 0) {
-                    finalizedDelayMin = Math.min(finalizedDelayMin, aggregate.getMinFinalizedDelayMs());
-                    finalizedDelayMax = Math.max(finalizedDelayMax, aggregate.getMaxFinalizedDelayMs());
-                }
-                aggregateIndex++;
-            }
-
-            headDelays.add(headDelayCount == 0 ? null : Math.round((double) headDelaySum / headDelayCount));
-            headDelayMins.add(headDelayCount == 0 ? null : headDelayMin);
-            headDelayMaxs.add(headDelayCount == 0 ? null : headDelayMax);
-            timestamps.add(bucketStart.toEpochMilli());
-            safeDelays.add(safeDelayCount == 0 ? null : Math.round((double) safeDelaySum / safeDelayCount));
-            safeDelayMins.add(safeDelayCount == 0 ? null : safeDelayMin);
-            safeDelayMaxs.add(safeDelayCount == 0 ? null : safeDelayMax);
-            finalizedDelays.add(finalizedDelayCount == 0 ? null : Math.round((double) finalizedDelaySum / finalizedDelayCount));
-            finalizedDelayMins.add(finalizedDelayCount == 0 ? null : finalizedDelayMin);
-            finalizedDelayMaxs.add(finalizedDelayCount == 0 ? null : finalizedDelayMax);
-
-            if (bucketEnd.equals(chartEnd)) {
-                break;
-            }
-        }
-
-        return new DelayChartData(timestamps, headDelays, headDelayMins, headDelayMaxs, safeDelays, safeDelayMins, safeDelayMaxs, finalizedDelays, finalizedDelayMins, finalizedDelayMaxs);
-    }
-
-    private DelayChartData buildDelayChartAligned(List<MetricSample> rawSamples,
-                                                  List<SampleAggregate> aggregateSamples,
-                                                  List<Long> baseTimestamps) {
-        if (baseTimestamps == null || baseTimestamps.isEmpty()) {
-            return new DelayChartData(List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
-        }
-
-        List<MetricSample> sortedSamples = rawSamples.stream()
-                .sorted(Comparator.comparing(MetricSample::getTimestamp))
-                .toList();
-
-        long bucketMs = baseTimestamps.size() > 1
-                ? Math.max(1000, baseTimestamps.get(1) - baseTimestamps.get(0))
-                : 1000;
-
-        List<Long> headDelays = new ArrayList<>(baseTimestamps.size());
-        List<Long> headDelayMins = new ArrayList<>(baseTimestamps.size());
-        List<Long> headDelayMaxs = new ArrayList<>(baseTimestamps.size());
-        List<Long> safeDelays = new ArrayList<>(baseTimestamps.size());
-        List<Long> safeDelayMins = new ArrayList<>(baseTimestamps.size());
-        List<Long> safeDelayMaxs = new ArrayList<>(baseTimestamps.size());
-        List<Long> finalizedDelays = new ArrayList<>(baseTimestamps.size());
-        List<Long> finalizedDelayMins = new ArrayList<>(baseTimestamps.size());
-        List<Long> finalizedDelayMaxs = new ArrayList<>(baseTimestamps.size());
-
-        int sampleIndex = 0;
-        int aggregateIndex = 0;
-
-        for (Long tsMillis : baseTimestamps) {
-            Instant bucketStart = Instant.ofEpochMilli(tsMillis);
-            Instant bucketEnd = bucketStart.plusMillis(bucketMs);
-
-            long headDelaySum = 0;
-            long headDelayCount = 0;
-            long headDelayMin = Long.MAX_VALUE;
-            long headDelayMax = 0;
-            long safeDelaySum = 0;
-            long safeDelayCount = 0;
-            long safeDelayMin = Long.MAX_VALUE;
-            long safeDelayMax = 0;
-            long finalizedDelaySum = 0;
-            long finalizedDelayCount = 0;
-            long finalizedDelayMin = Long.MAX_VALUE;
-            long finalizedDelayMax = 0;
-
-            while (sampleIndex < sortedSamples.size()) {
-                MetricSample sample = sortedSamples.get(sampleIndex);
-                Instant ts = sample.getTimestamp();
-                if (ts.isBefore(bucketStart)) {
-                    sampleIndex++;
-                    continue;
-                }
-                if (!ts.isBefore(bucketEnd)) {
-                    break;
-                }
-                if (sample.getHeadDelayMs() != null) {
-                    headDelaySum += sample.getHeadDelayMs();
-                    headDelayCount++;
-                    headDelayMin = Math.min(headDelayMin, sample.getHeadDelayMs());
-                    headDelayMax = Math.max(headDelayMax, sample.getHeadDelayMs());
-                }
-                if (sample.getSafeDelayMs() != null) {
-                    safeDelaySum += sample.getSafeDelayMs();
-                    safeDelayCount++;
-                    safeDelayMin = Math.min(safeDelayMin, sample.getSafeDelayMs());
-                    safeDelayMax = Math.max(safeDelayMax, sample.getSafeDelayMs());
-                }
-                if (sample.getFinalizedDelayMs() != null) {
-                    finalizedDelaySum += sample.getFinalizedDelayMs();
-                    finalizedDelayCount++;
-                    finalizedDelayMin = Math.min(finalizedDelayMin, sample.getFinalizedDelayMs());
-                    finalizedDelayMax = Math.max(finalizedDelayMax, sample.getFinalizedDelayMs());
-                }
-                sampleIndex++;
-            }
-
-            while (aggregateIndex < aggregateSamples.size()) {
-                SampleAggregate aggregate = aggregateSamples.get(aggregateIndex);
-                Instant ts = aggregate.getBucketStart();
-                if (ts.isBefore(bucketStart)) {
-                    aggregateIndex++;
-                    continue;
-                }
-                if (!ts.isBefore(bucketEnd)) {
-                    break;
-                }
-                headDelaySum += aggregate.getHeadDelaySumMs();
-                headDelayCount += aggregate.getHeadDelayCount();
-                if (aggregate.getHeadDelayCount() > 0) {
-                    headDelayMin = Math.min(headDelayMin, aggregate.getMinHeadDelayMs());
-                    headDelayMax = Math.max(headDelayMax, aggregate.getMaxHeadDelayMs());
-                }
-                safeDelaySum += aggregate.getSafeDelaySumMs();
-                safeDelayCount += aggregate.getSafeDelayCount();
-                if (aggregate.getSafeDelayCount() > 0) {
-                    safeDelayMin = Math.min(safeDelayMin, aggregate.getMinSafeDelayMs());
-                    safeDelayMax = Math.max(safeDelayMax, aggregate.getMaxSafeDelayMs());
-                }
-                finalizedDelaySum += aggregate.getFinalizedDelaySumMs();
-                finalizedDelayCount += aggregate.getFinalizedDelayCount();
-                if (aggregate.getFinalizedDelayCount() > 0) {
-                    finalizedDelayMin = Math.min(finalizedDelayMin, aggregate.getMinFinalizedDelayMs());
-                    finalizedDelayMax = Math.max(finalizedDelayMax, aggregate.getMaxFinalizedDelayMs());
-                }
-                aggregateIndex++;
-            }
-
-            headDelays.add(headDelayCount == 0 ? null : Math.round((double) headDelaySum / headDelayCount));
-            headDelayMins.add(headDelayCount == 0 ? null : headDelayMin);
-            headDelayMaxs.add(headDelayCount == 0 ? null : headDelayMax);
-            safeDelays.add(safeDelayCount == 0 ? null : Math.round((double) safeDelaySum / safeDelayCount));
-            safeDelayMins.add(safeDelayCount == 0 ? null : safeDelayMin);
-            safeDelayMaxs.add(safeDelayCount == 0 ? null : safeDelayMax);
-            finalizedDelays.add(finalizedDelayCount == 0 ? null : Math.round((double) finalizedDelaySum / finalizedDelayCount));
-            finalizedDelayMins.add(finalizedDelayCount == 0 ? null : finalizedDelayMin);
-            finalizedDelayMaxs.add(finalizedDelayCount == 0 ? null : finalizedDelayMax);
-        }
-
-        return new DelayChartData(baseTimestamps, headDelays, headDelayMins, headDelayMaxs, safeDelays, safeDelayMins, safeDelayMaxs, finalizedDelays, finalizedDelayMins, finalizedDelayMaxs);
-    }
-
     private AnomalyRow createAnomalyRow(AnomalyEvent firstEvent, AnomalyEvent lastEvent, int count, DateTimeFormatter formatter, boolean isFirstRowForSource) {
         String details = resolveAnomalyDetails(lastEvent);
         if (count == 1) {
@@ -1374,37 +868,9 @@ public class DashboardService {
         return fallback.isEmpty() ? null : fallback.toString();
     }
 
-    private record ChartData(List<Long> timestamps,
-                             List<String> labels,
-                             List<Long> latencies,
-                             List<Long> latencyMins,
-                             List<Long> latencyMaxs,
-                             List<Double> errorRates,
-                             List<Double> wsErrorRates,
-                             List<Boolean> httpErrorBuckets,
-                             List<Boolean> wsErrorBuckets) {
-    }
 
-    private record DelayChartData(List<Long> timestamps,
-                                  List<Long> headDelays,
-                                  List<Long> headDelayMins,
-                                  List<Long> headDelayMaxs,
-                                  List<Long> safeDelays,
-                                  List<Long> safeDelayMins,
-                                  List<Long> safeDelayMaxs,
-                                  List<Long> finalizedDelays,
-                                  List<Long> finalizedDelayMins,
-                                  List<Long> finalizedDelayMaxs) {
-    }
-
-    private boolean isErrorAnomaly(de.makibytes.chaincheck.model.AnomalyType type) {
-        if (type == null) {
-            return false;
-        }
-        return type == de.makibytes.chaincheck.model.AnomalyType.ERROR
-                || type == de.makibytes.chaincheck.model.AnomalyType.RATE_LIMIT
-                || type == de.makibytes.chaincheck.model.AnomalyType.TIMEOUT;
-    }
+    private static final EnumSet<AnomalyType> ERROR_ANOMALY_TYPES =
+            EnumSet.of(AnomalyType.ERROR, AnomalyType.RATE_LIMIT, AnomalyType.TIMEOUT);
 
     private ReferenceComparison calculateReferenceComparison(String nodeKey) {
         // Reference comparison is optional feature - only show if multiple nodes are configured
@@ -1468,47 +934,26 @@ public class DashboardService {
         int depth = 0;
         int finalizedMatches = 0;
         while (current != null && depth < maxDepth) {
-            hashes.add(current.hash);
-            if (current.blockNumber != null) {
-                numbers.add(current.blockNumber);
+            hashes.add(current.hash());
+            if (current.blockNumber() != null) {
+                numbers.add(current.blockNumber());
             }
-            if (finalizedHashes.contains(current.hash)) {
+            if (finalizedHashes.contains(current.hash())) {
                 finalizedMatches++;
             }
             depth++;
-            current = current.parentHash == null ? null : nodes.get(current.parentHash);
+            current = current.parentHash() == null ? null : nodes.get(current.parentHash());
         }
-        return new ChainSelection(start.blockNumber, depth, finalizedMatches, hashes, numbers);
+        return new ChainSelection(start.blockNumber(), depth, finalizedMatches, hashes, numbers);
     }
 
-    private static class ChainNode {
-        private final String hash;
-        private final String parentHash;
-        private final Long blockNumber;
-
-        private ChainNode(String hash, String parentHash, Long blockNumber) {
-            this.hash = hash;
-            this.parentHash = parentHash;
-            this.blockNumber = blockNumber;
-        }
+    private record ChainNode(String hash, String parentHash, Long blockNumber) {
     }
 
-    private static class ChainSelection {
-        private final Long tipNumber;
-        private final int depth;
-        private final int finalizedMatches;
-        private final java.util.Set<String> hashes;
-        private final java.util.Set<Long> numbers;
+    private record ChainSelection(Long tipNumber, int depth, int finalizedMatches,
+                                   java.util.Set<String> hashes, java.util.Set<Long> numbers) {
 
-        private ChainSelection(Long tipNumber, int depth, int finalizedMatches, java.util.Set<String> hashes, java.util.Set<Long> numbers) {
-            this.tipNumber = tipNumber;
-            this.depth = depth;
-            this.finalizedMatches = finalizedMatches;
-            this.hashes = hashes;
-            this.numbers = numbers;
-        }
-
-        private boolean isBetterThan(ChainSelection other) {
+        boolean isBetterThan(ChainSelection other) {
             if (other == null) {
                 return true;
             }
