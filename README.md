@@ -15,7 +15,7 @@
 - **Metric Aggregation**: Efficiently stores raw samples (2 hours) and aggregated metrics (30 days) for long-term analysis
 - **Responsive Dashboard**: Modern web interface built with Thymeleaf and Chart.js
 - **Multi-Node Support**: Monitor multiple RPC endpoints and easily switch between them
-- **Reference Modes**: Default auto-reference via node majority, or optional configured consensus/beacon reference source
+- **Reference Modes**: Default auto-reference via node majority, or optional configured consensus reference source
 - **Pluggable Storage**: In-memory by default with optional on-disk snapshotting for persistence across restarts
 
 ## Getting Started
@@ -79,8 +79,8 @@ rpc:
     long-delay-block-count: 15
   consensus:
     # Optional: If configured, auto reference voting/selection is disabled.
-    # Use a dedicated consensus/beacon node as single source of truth (Ethereum mode).
-    http: http://beacon-node:5052
+    # Use a dedicated consensus node as single source of truth (Ethereum mode).
+    http: http://consensus-node:5052
     safe-poll-interval-ms: 1000
     finalized-poll-interval-ms: 1000
     timeout-ms: 2000
@@ -113,7 +113,7 @@ rpc:
 - **connect-timeout-ms / read-timeout-ms**: HTTP connect and read timeouts (defaults: connect 2000ms, read 4000ms)
 - **max-retries / retry-backoff-ms**: Retry attempts and base backoff for transient HTTP failures (defaults: 1 retry, 200ms backoff)
 - **Reference mode (default)**: Reference head is chosen automatically by majority; when many nodes are stale, only nodes still emitting newHeads are trusted
-- **Reference mode (configured)**: Set `rpc.consensus.http` to use a dedicated beacon/consensus reference and disable auto-voting/auto-selection
+- **Reference mode (configured)**: Set `rpc.consensus.http` to use a dedicated consensus reference and disable auto-voting/auto-selection
 - **rpc.consensus.safe-poll-interval-ms**: Optional poll interval for safe checkpoints from `/eth/v1/beacon/states/head/finality_checkpoints`; if omitted, safe checkpoints are not polled
 - **rpc.consensus.finalized-poll-interval-ms**: Optional poll interval for finalized checkpoints from `/eth/v1/beacon/states/head/finality_checkpoints`; if omitted, finalized checkpoints are not polled
 - **Consensus polling independence**: `rpc.consensus.*-poll-interval-ms` controls configured consensus-node safe/finalized polling independently; `rpc.get-safe-blocks` and `rpc.get-finalized-blocks` only affect execution `rpc.nodes[]` polling

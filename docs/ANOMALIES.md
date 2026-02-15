@@ -44,7 +44,7 @@ Two independent delay signals use the same anomaly type:
 - A node’s head is behind the reference head by at least the long-delay threshold.
 - The threshold is `rpc.anomaly-detection.long-delay-block-count` (default 15).
 - In default mode, reference comparisons start after auto reference selection has enough data.
-- In configured mode (`rpc.consensus.http`), the beacon/consensus node is used directly as reference source.
+- In configured mode (`rpc.consensus.http`), the consensus node is used directly as reference source.
 
 ## BLOCK_GAP
 
@@ -83,7 +83,7 @@ Reorg detection is conservative and can be triggered in multiple ways:
 - The node’s safe or finalized block hash differs from the reference node at the same checkpoint height.
 
 **Signal source**
-- HTTP safe/finalized polling with reference comparison (auto-voted reference in default mode, configured beacon reference in configured mode).
+- HTTP safe/finalized polling with reference comparison (auto-voted reference in default mode, configured consensus reference in configured mode).
 
 ## CONFLICT
 

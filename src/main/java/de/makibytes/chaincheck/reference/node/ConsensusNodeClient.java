@@ -15,7 +15,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-package de.makibytes.chaincheck.monitor;
+package de.makibytes.chaincheck.reference.node;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -47,11 +47,11 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import de.makibytes.chaincheck.config.ChainCheckProperties;
-import de.makibytes.chaincheck.monitor.ReferenceBlocks.Confidence;
+import de.makibytes.chaincheck.reference.block.ReferenceBlocks.Confidence;
 
-class BeaconReferenceService {
+public class ConsensusNodeClient {
 
-    private static final Logger logger = LoggerFactory.getLogger(BeaconReferenceService.class);
+    private static final Logger logger = LoggerFactory.getLogger(ConsensusNodeClient.class);
 
     private final String baseUrl;
     private final String eventsPath;
@@ -70,12 +70,14 @@ class BeaconReferenceService {
     private final Map<Confidence, Deque<ReferenceObservation>> historyByConfidence = new ConcurrentHashMap<>();
     private static final Duration HISTORY_RETENTION = Duration.ofDays(35);
 
-    BeaconReferenceService(ChainCheckProperties.Consensus referenceNode) {
+    private static final long CHECKPOINT_TIMEOUT_MS = 60_000; // 1 minute
+    private final AtomicReference<Instant> safeFirstRequestAt = new AtomicReference<>();
+    private final AtomicReference<Instant> finalizedFirstRequestAt = new AtomicReference<>();
+
+    ConsensusNodeClient(ChainCheckProperties.Consensus referenceNode) {
         this.baseUrl = trimTrailingSlash(referenceNode == null ? null : referenceNode.getHttp());
-        this.eventsPath = sanitizePath(referenceNode == null ? null : referenceNode.getEventsPath(),
-                "/eth/v1/events?topics=head&topics=finalized_checkpoint");
-        this.finalityCheckpointsPath = sanitizePath(referenceNode == null ? null : referenceNode.getFinalityCheckpointsPath(),
-                "/eth/v1/beacon/states/head/finality_checkpoints");
+        this.eventsPath = sanitizePath(referenceNode == null ? null : referenceNode.getEventsPath(), null);
+        this.finalityCheckpointsPath = sanitizePath(referenceNode == null ? null : referenceNode.getFinalityCheckpointsPath(), null);
         this.safePollIntervalMs = normalizePollInterval(referenceNode == null ? null : referenceNode.getSafePollIntervalMs());
         this.finalizedPollIntervalMs = normalizePollInterval(referenceNode == null ? null : referenceNode.getFinalizedPollIntervalMs());
         long timeoutMs = Math.max(500, referenceNode == null ? 2000 : referenceNode.getTimeoutMs());
@@ -117,25 +119,67 @@ class BeaconReferenceService {
         executor.submit(this::runEventLoop);
     }
 
-    void refreshCheckpoints(boolean refreshSafe, boolean refreshFinalized) {
+    boolean refreshCheckpoints(boolean refreshSafe, boolean refreshFinalized) {
         if (!isEnabled()) {
-            return;
+            return false;
         }
         if (!refreshSafe && !refreshFinalized) {
-            return;
+            return false;
         }
+
+        Instant now = Instant.now();
+
+        // Track first request time for each checkpoint type
+        if (refreshSafe && safe.get() == null) {
+            safeFirstRequestAt.compareAndSet(null, now);
+            Instant firstRequest = safeFirstRequestAt.get();
+            if (Duration.between(firstRequest, now).toMillis() > CHECKPOINT_TIMEOUT_MS) {
+                String errorMsg = String.format(
+                        "Timeout fetching safe checkpoint from consensus node %s after %d ms. " +
+                        "Endpoint: %s%s. Check that the consensus node is running and accessible.",
+                        baseUrl, CHECKPOINT_TIMEOUT_MS, baseUrl, finalityCheckpointsPath);
+                logger.error(errorMsg);
+                throw new RuntimeException(errorMsg);
+            }
+        }
+
+        if (refreshFinalized && finalized.get() == null) {
+            finalizedFirstRequestAt.compareAndSet(null, now);
+            Instant firstRequest = finalizedFirstRequestAt.get();
+            if (Duration.between(firstRequest, now).toMillis() > CHECKPOINT_TIMEOUT_MS) {
+                String errorMsg = String.format(
+                        "Timeout fetching finalized checkpoint from consensus node %s after %d ms. " +
+                        "Endpoint: %s%s. Check that the consensus node is running and accessible.",
+                        baseUrl, CHECKPOINT_TIMEOUT_MS, baseUrl, finalityCheckpointsPath);
+                logger.error(errorMsg);
+                throw new RuntimeException(errorMsg);
+            }
+        }
+
+        boolean changed = false;
         try {
             JsonNode response = sendGet(finalityCheckpointsPath, "application/json");
             JsonNode data = response.path("data");
+            if (data.isMissingNode() || data.isNull()) {
+                String errorMsg = String.format(
+                        "Consensus node %s returned invalid response for finality checkpoints: missing 'data' field. " +
+                        "Response: %s", baseUrl, response.toString());
+                logger.error(errorMsg);
+                return false;
+            }
             if (refreshSafe) {
-                updateCheckpointFromRoot(data.path("current_justified").path("root").asText(null), safe, Confidence.SAFE);
+                changed |= updateCheckpointFromRoot(data.path("current_justified").path("root").asText(null), safe, Confidence.SAFE);
             }
             if (refreshFinalized) {
-                updateCheckpointFromRoot(data.path("finalized").path("root").asText(null), finalized, Confidence.FINALIZED);
+                changed |= updateCheckpointFromRoot(data.path("finalized").path("root").asText(null), finalized, Confidence.FINALIZED);
             }
         } catch (IOException | InterruptedException ex) {
-            logger.debug("Beacon finality checkpoint fetch failed: {}", ex.getMessage());
+            String errorMsg = String.format(
+                    "Consensus finality checkpoint fetch failed for %s%s: %s: %s",
+                    baseUrl, finalityCheckpointsPath, ex.getClass().getSimpleName(), ex.getMessage());
+            logger.error(errorMsg, ex);
         }
+        return changed;
     }
 
     ReferenceObservation getObservation(Confidence confidence) {
@@ -148,13 +192,12 @@ class BeaconReferenceService {
 
     List<ReferenceObservation> getObservationHistorySince(Confidence confidence, Instant since) {
         Deque<ReferenceObservation> history = historyByConfidence.get(confidence);
-        if (history == null || history.isEmpty()) {
+        if (history.isEmpty()) {
             return List.of();
         }
-        Instant effectiveSince = since == null ? Instant.EPOCH : since;
         List<ReferenceObservation> result = new ArrayList<>();
         for (ReferenceObservation observation : history) {
-            if (observation.observedAt() != null && !observation.observedAt().isBefore(effectiveSince)) {
+            if (!observation.observedAt().isBefore(since)) {
                 result.add(observation);
             }
         }
@@ -184,7 +227,7 @@ class BeaconReferenceService {
         try {
             HttpResponse<java.io.InputStream> response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
             if (response.statusCode() != 200) {
-                logger.debug("Beacon SSE returned status {}", response.statusCode());
+                logger.debug("Consensus SSE returned status {}", response.statusCode());
                 return;
             }
 
@@ -216,12 +259,12 @@ class BeaconReferenceService {
                 Thread.currentThread().interrupt();
                 throw new RuntimeException(interruptedException);
             }
-            logger.debug("Beacon SSE stream disconnected: {}", ex.getMessage());
+            logger.debug("Consensus SSE stream disconnected: {}", ex.getMessage());
         }
     }
 
     private void dispatchEvent(String eventType, String data) {
-        if (eventType == null || data == null || data.isBlank()) {
+        if (eventType == null || data.isBlank()) {
             return;
         }
 
@@ -258,47 +301,58 @@ class BeaconReferenceService {
                         delayMs));
             }
         } catch (IOException ex) {
-            logger.debug("Failed to parse beacon SSE event {}: {}", eventType, ex.getMessage());
+            logger.debug("Failed to parse consensus SSE event {}: {}", eventType, ex.getMessage());
         }
     }
 
-    private void updateCheckpointFromRoot(String root, AtomicReference<ReferenceObservation> destination, Confidence confidence) {
+    private boolean updateCheckpointFromRoot(String root, AtomicReference<ReferenceObservation> destination, Confidence confidence) {
         if (root == null || root.isBlank() || isZeroRoot(root)) {
-            return;
+            logger.debug("Skipping {} checkpoint update: root is null, blank, or zero ({})", confidence, root);
+            return false;
         }
         ExecutionBlock executionBlock = resolveExecutionBlock(root);
         if (executionBlock == null) {
-            return;
+            logger.warn("Failed to update {} checkpoint: could not resolve execution block from beacon root {}", confidence, root);
+            return false;
         }
         Instant observedAt = Instant.now();
         Instant knowledgeAt = resolveKnowledgeTimestamp(observedAt);
         Long delayMs = computeDelayMs(executionBlock.blockTimestamp(), knowledgeAt);
-        updateObservation(confidence, destination, new ReferenceObservation(
+        boolean changed = updateObservation(confidence, destination, new ReferenceObservation(
                 executionBlock.blockNumber(),
                 executionBlock.blockHash(),
                 executionBlock.blockTimestamp(),
                 observedAt,
                 knowledgeAt,
                 delayMs));
+
+        // Reset timeout tracking when we successfully receive a checkpoint
+        if (confidence == Confidence.SAFE) {
+            safeFirstRequestAt.set(null);
+            logger.debug("Successfully received safe checkpoint: block #{} ({})", executionBlock.blockNumber(), executionBlock.blockHash());
+        } else if (confidence == Confidence.FINALIZED) {
+            finalizedFirstRequestAt.set(null);
+            logger.debug("Successfully received finalized checkpoint: block #{} ({})", executionBlock.blockNumber(), executionBlock.blockHash());
+        }
+
         if (confidence == Confidence.FINALIZED) {
             updateObservation(Confidence.FINALIZED, finalized, destination.get());
         }
+        return changed;
     }
 
-    private void updateObservation(Confidence confidence,
+    private boolean updateObservation(Confidence confidence,
                                    AtomicReference<ReferenceObservation> destination,
                                    ReferenceObservation next) {
-        if (next == null || next.blockNumber() == null || next.blockHash() == null) {
-            return;
-        }
         ReferenceObservation current = destination.get();
         if (current != null
                 && current.blockNumber().equals(next.blockNumber())
                 && current.blockHash().equalsIgnoreCase(next.blockHash())) {
-            return;
+            return false;
         }
         destination.set(next);
         appendHistory(confidence, next);
+        return true;
     }
 
     private ExecutionBlock resolveExecutionBlock(String blockRoot) {
@@ -313,19 +367,24 @@ class BeaconReferenceService {
             JsonNode json = sendGet(path, "application/json");
             JsonNode executionPayload = json.path("data").path("message").path("body").path("execution_payload");
             if (executionPayload.isMissingNode() || executionPayload.isNull()) {
+                logger.error("Failed to resolve execution block from consensus root {}: missing execution_payload in response from {}{}",
+                        blockRoot, baseUrl, path);
                 return null;
             }
             String blockHash = executionPayload.path("block_hash").asText(null);
             Long blockNumber = parseDecimalOrHexLong(executionPayload.path("block_number").asText(null));
             Instant blockTimestamp = parseExecutionPayloadTimestamp(executionPayload.path("timestamp").asText(null));
             if (blockHash == null || blockHash.isBlank() || blockNumber == null) {
+                logger.error("Failed to resolve execution block from consensus root {}: invalid block data (hash={}, number={}) from {}{}",
+                        blockRoot, blockHash, blockNumber, baseUrl, path);
                 return null;
             }
             ExecutionBlock result = new ExecutionBlock(blockNumber, blockHash, blockTimestamp);
             executionBlockCache.put(blockRoot, result);
             return result;
         } catch (IOException | InterruptedException ex) {
-            logger.debug("Failed to resolve execution block from beacon root {}: {}", blockRoot, ex.getMessage());
+            logger.error("Failed to resolve execution block from consensus root {} at {}{}: {}: {}",
+                    blockRoot, baseUrl, path, ex.getClass().getSimpleName(), ex.getMessage(), ex);
             return null;
         }
     }
@@ -408,26 +467,15 @@ class BeaconReferenceService {
 
     private void appendHistory(Confidence confidence, ReferenceObservation observation) {
         Deque<ReferenceObservation> history = historyByConfidence.get(confidence);
-        if (history == null || observation == null || observation.observedAt() == null) {
-            return;
-        }
         history.addLast(observation);
         Instant cutoff = Instant.now().minus(HISTORY_RETENTION);
         while (true) {
             ReferenceObservation first = history.peekFirst();
-            if (first == null || first.observedAt() == null || !first.observedAt().isBefore(cutoff)) {
+            if (first == null || !first.observedAt().isBefore(cutoff)) {
                 break;
             }
             history.pollFirst();
         }
-    }
-
-    record ReferenceObservation(Long blockNumber,
-                                String blockHash,
-                                Instant blockTimestamp,
-                                Instant observedAt,
-                                Instant knowledgeAt,
-                                Long delayMs) {
     }
 
     private record ExecutionBlock(Long blockNumber, String blockHash, Instant blockTimestamp) {

@@ -15,20 +15,14 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-package de.makibytes.chaincheck.monitor;
+package de.makibytes.chaincheck.reference.node;
 
-import de.makibytes.chaincheck.store.InMemoryMetricsStore;
+import java.time.Instant;
 
-/**
- * Coordinates reference block voting/scoring over the low-level voting structures.
- */
-class ReferenceBlockCoordinator extends ReferenceBlockVoting {
-
-    ReferenceBlockCoordinator(NodeRegistry nodeRegistry,
-                              BlockVotingService blockVotingService,
-                              NodeScorer nodeScorer,
-                              InMemoryMetricsStore store,
-                              AnomalyDetector detector) {
-        super(nodeRegistry, blockVotingService, nodeScorer, store, detector);
-    }
+public record ReferenceObservation(Long blockNumber,
+                            String blockHash,
+                            Instant blockTimestamp,
+                            Instant observedAt,
+                            Instant knowledgeAt,
+                            Long delayMs) {
 }

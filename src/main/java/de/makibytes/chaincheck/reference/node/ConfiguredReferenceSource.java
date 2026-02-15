@@ -15,7 +15,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-package de.makibytes.chaincheck.monitor;
+package de.makibytes.chaincheck.reference.node;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -28,73 +28,82 @@ import org.slf4j.LoggerFactory;
 import de.makibytes.chaincheck.config.ChainCheckProperties;
 import de.makibytes.chaincheck.model.MetricSample;
 import de.makibytes.chaincheck.model.MetricSource;
-import de.makibytes.chaincheck.monitor.ReferenceBlocks.Confidence;
+import de.makibytes.chaincheck.monitor.NodeRegistry;
+import de.makibytes.chaincheck.monitor.RpcMonitorService;
+import de.makibytes.chaincheck.reference.block.BlockVotingService;
+import de.makibytes.chaincheck.reference.block.ReferenceBlocks.Confidence;
 
-class ConsensusNodeService {
+public class ConfiguredReferenceSource {
 
-    private static final Logger logger = LoggerFactory.getLogger(ConsensusNodeService.class);
+    private static final Logger logger = LoggerFactory.getLogger(ConfiguredReferenceSource.class);
 
     private final NodeRegistry nodeRegistry;
     private final BlockVotingService blockVotingService;
-    private final Map<String, NodeMonitorService.NodeState> nodeStates;
+    private final Map<String, RpcMonitorService.NodeState> nodeStates;
     private final String configuredReferenceNodeKey;
-    private final BeaconReferenceService beaconClient;
+    private final ConsensusNodeClient consensusNode;
+    private final String consensusNodeDisplayName;
 
-    ConsensusNodeService(NodeRegistry nodeRegistry,
+    public ConfiguredReferenceSource(NodeRegistry nodeRegistry,
                          BlockVotingService blockVotingService,
-                         Map<String, NodeMonitorService.NodeState> nodeStates,
+                         Map<String, RpcMonitorService.NodeState> nodeStates,
                          ChainCheckProperties properties,
                          String configuredReferenceNodeKey) {
         this.nodeRegistry = nodeRegistry;
         this.blockVotingService = blockVotingService;
         this.nodeStates = nodeStates;
         this.configuredReferenceNodeKey = configuredReferenceNodeKey;
-        this.beaconClient = new BeaconReferenceService(properties.getConsensus());
+        this.consensusNode = new ConsensusNodeClient(properties.getConsensus());
+        this.consensusNodeDisplayName = properties.getConsensus() != null ? properties.getConsensus().getDisplayName() : "consensus";
     }
 
-    boolean isBeaconEnabled() {
-        return beaconClient.isEnabled();
+    public boolean isConsensusNodeEnabled() {
+        return consensusNode.isEnabled();
     }
 
     boolean isSafePollingEnabled() {
-        return beaconClient.isSafePollingEnabled();
+        return consensusNode.isSafePollingEnabled();
     }
 
     boolean isFinalizedPollingEnabled() {
-        return beaconClient.isFinalizedPollingEnabled();
+        return consensusNode.isFinalizedPollingEnabled();
     }
 
-    Long getSafePollIntervalMs() {
-        return beaconClient.getSafePollIntervalMs();
+    public Long getSafePollIntervalMs() {
+        return consensusNode.getSafePollIntervalMs();
     }
 
-    Long getFinalizedPollIntervalMs() {
-        return beaconClient.getFinalizedPollIntervalMs();
+    public Long getFinalizedPollIntervalMs() {
+        return consensusNode.getFinalizedPollIntervalMs();
     }
 
-    void ensureEventStream() {
-        beaconClient.ensureEventStream();
+    ReferenceObservation getConsensusObservation(Confidence confidence) {
+        return consensusNode.getObservation(confidence);
     }
 
-    void refreshCheckpoints(boolean refreshSafe, boolean refreshFinalized) {
+    public void ensureEventStream() {
+        consensusNode.ensureEventStream();
+    }
+
+    public boolean refreshCheckpoints(boolean refreshSafe, boolean refreshFinalized) {
         if (refreshSafe) {
-            logger.debug("Consensus poll ({}) blockTag=safe", configuredReferenceNodeKey);
+            logger.debug("Consensus poll ({}) blockTag=safe", consensusNodeDisplayName);
         }
         if (refreshFinalized) {
-            logger.debug("Consensus poll ({}) blockTag=finalized", configuredReferenceNodeKey);
+            logger.debug("Consensus poll ({}) blockTag=finalized", consensusNodeDisplayName);
         }
-        beaconClient.refreshCheckpoints(refreshSafe, refreshFinalized);
+        return consensusNode.refreshCheckpoints(refreshSafe, refreshFinalized);
     }
 
-    BeaconReferenceService.ReferenceObservation getConfiguredObservation(Confidence confidence) {
-        BeaconReferenceService.ReferenceObservation beaconObservation = beaconClient.getObservation(confidence);
-        if (beaconObservation != null) {
-            return beaconObservation;
+    public ReferenceObservation getObservation(Confidence confidence) {
+        ReferenceObservation consensusNodeObservation = consensusNode.getObservation(confidence);
+        if (consensusNodeObservation != null) {
+            return consensusNodeObservation;
         }
         if (configuredReferenceNodeKey == null || configuredReferenceNodeKey.isBlank()) {
             return null;
         }
-        NodeMonitorService.NodeState state = nodeStates.get(configuredReferenceNodeKey);
+        RpcMonitorService.NodeState state = nodeStates.get(configuredReferenceNodeKey);
         if (state == null) {
             return null;
         }
@@ -106,13 +115,13 @@ class ConsensusNodeService {
                 Instant observedAt = state.lastWsEventReceivedAt != null ? state.lastWsEventReceivedAt : now;
                 yield number == null || hash == null
                         ? null
-                        : new BeaconReferenceService.ReferenceObservation(number, hash, null, observedAt, observedAt, null);
+                        : new ReferenceObservation(number, hash, null, observedAt, observedAt, null);
             }
             case SAFE -> {
                 if (state.lastSafeBlockNumber == null || state.lastSafeBlockHash == null) {
                     yield null;
                 }
-                yield new BeaconReferenceService.ReferenceObservation(
+                yield new ReferenceObservation(
                         state.lastSafeBlockNumber,
                         state.lastSafeBlockHash,
                         null,
@@ -125,7 +134,7 @@ class ConsensusNodeService {
                     yield null;
                 }
                 Instant observedAt = state.lastFinalizedFetchAt != null ? state.lastFinalizedFetchAt : now;
-                yield new BeaconReferenceService.ReferenceObservation(
+                yield new ReferenceObservation(
                         state.lastFinalizedBlockNumber,
                         state.lastFinalizedBlockHash,
                         null,
@@ -136,8 +145,8 @@ class ConsensusNodeService {
         };
     }
 
-    Instant getReferenceObservedAt(Confidence confidence, Long blockNumber, String blockHash) {
-        BeaconReferenceService.ReferenceObservation observation = getConfiguredObservation(confidence);
+    public Instant getObservedAt(Confidence confidence, Long blockNumber, String blockHash) {
+        ReferenceObservation observation = getObservation(confidence);
         if (observation == null || observation.knowledgeAt() == null) {
             return null;
         }
@@ -152,32 +161,28 @@ class ConsensusNodeService {
         return null;
     }
 
-    List<MetricSample> getConfiguredReferenceDelaySamplesSince(Instant since) {
-        if (!beaconClient.isEnabled()) {
+    public List<MetricSample> getDelaySamplesSince(Instant since) {
+        if (!consensusNode.isEnabled()) {
             return List.of();
         }
-        Instant effectiveSince = since == null ? Instant.EPOCH : since;
         List<MetricSample> result = new ArrayList<>();
-        appendReferenceDelaySamples(result, beaconClient.getObservationHistorySince(Confidence.NEW, effectiveSince), Confidence.NEW);
-        appendReferenceDelaySamples(result, beaconClient.getObservationHistorySince(Confidence.SAFE, effectiveSince), Confidence.SAFE);
-        appendReferenceDelaySamples(result, beaconClient.getObservationHistorySince(Confidence.FINALIZED, effectiveSince), Confidence.FINALIZED);
+        // Only include safe and finalized delays from consensus node
+        // Head (NEW) delay should come from the execution node monitoring, not consensus
+        appendReferenceDelaySamples(result, consensusNode.getObservationHistorySince(Confidence.SAFE, since), Confidence.SAFE);
+        appendReferenceDelaySamples(result, consensusNode.getObservationHistorySince(Confidence.FINALIZED, since), Confidence.FINALIZED);
         result.sort(java.util.Comparator.comparing(MetricSample::getTimestamp));
         return result;
     }
 
-    ConfiguredReferenceUpdate refreshReferenceFromConfiguredSource() {
-        if (nodeRegistry == null) {
-            return new ConfiguredReferenceUpdate(null, null);
+    ReferenceUpdate refresh() {
+        if (consensusNode.isEnabled()) {
+            consensusNode.ensureEventStream();
         }
 
-        if (beaconClient.isEnabled()) {
-            beaconClient.ensureEventStream();
-        }
-
-        BeaconReferenceService.ReferenceObservation headObservation = getConfiguredObservation(Confidence.NEW);
-        NodeMonitorService.ReferenceState state = null;
-        if (headObservation != null && headObservation.blockNumber() != null && headObservation.blockHash() != null) {
-            state = new NodeMonitorService.ReferenceState(headObservation.blockNumber(), headObservation.blockHash(), headObservation.observedAt());
+        ReferenceObservation headObservation = getObservation(Confidence.NEW);
+        RpcMonitorService.ReferenceState state = null;
+        if (headObservation != null) {
+            state = new RpcMonitorService.ReferenceState(headObservation.blockNumber(), headObservation.blockHash(), headObservation.observedAt());
         }
 
         String referenceNodeKey = configuredReferenceNodeKey != null && !configuredReferenceNodeKey.isBlank()
@@ -188,30 +193,27 @@ class ConsensusNodeService {
         blockVotingService.clearVotes();
         blockVotingService.getReferenceBlocks().clear();
 
-        if (headObservation != null && headObservation.blockNumber() != null && headObservation.blockHash() != null) {
+        if (headObservation != null) {
             blockVotingService.getReferenceBlocks().setHash(headObservation.blockNumber(), Confidence.NEW, headObservation.blockHash());
         }
 
-        BeaconReferenceService.ReferenceObservation safeObservation = getConfiguredObservation(Confidence.SAFE);
-        if (safeObservation != null && safeObservation.blockNumber() != null && safeObservation.blockHash() != null) {
+        ReferenceObservation safeObservation = getObservation(Confidence.SAFE);
+        if (safeObservation != null) {
             blockVotingService.getReferenceBlocks().setHash(safeObservation.blockNumber(), Confidence.SAFE, safeObservation.blockHash());
         }
 
-        BeaconReferenceService.ReferenceObservation finalizedObservation = getConfiguredObservation(Confidence.FINALIZED);
-        if (finalizedObservation != null && finalizedObservation.blockNumber() != null && finalizedObservation.blockHash() != null) {
+        ReferenceObservation finalizedObservation = getObservation(Confidence.FINALIZED);
+        if (finalizedObservation != null) {
             blockVotingService.getReferenceBlocks().setHash(finalizedObservation.blockNumber(), Confidence.FINALIZED, finalizedObservation.blockHash());
         }
 
-        return new ConfiguredReferenceUpdate(state, referenceNodeKey);
+        return new ReferenceUpdate(state, referenceNodeKey);
     }
 
     private void appendReferenceDelaySamples(List<MetricSample> target,
-                                             List<BeaconReferenceService.ReferenceObservation> observations,
+                                             List<ReferenceObservation> observations,
                                              Confidence confidence) {
-        for (BeaconReferenceService.ReferenceObservation observation : observations) {
-            if (observation == null || observation.observedAt() == null) {
-                continue;
-            }
+        for (ReferenceObservation observation : observations) {
             Long headDelay = confidence == Confidence.NEW ? observation.delayMs() : null;
             Long safeDelay = confidence == Confidence.SAFE ? observation.delayMs() : null;
             Long finalizedDelay = confidence == Confidence.FINALIZED ? observation.delayMs() : null;
@@ -233,6 +235,6 @@ class ConsensusNodeService {
         }
     }
 
-    record ConfiguredReferenceUpdate(NodeMonitorService.ReferenceState referenceState, String referenceNodeKey) {
+    record ReferenceUpdate(RpcMonitorService.ReferenceState referenceState, String referenceNodeKey) {
     }
 }

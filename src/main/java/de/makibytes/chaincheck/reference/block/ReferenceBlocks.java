@@ -15,7 +15,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-package de.makibytes.chaincheck.monitor;
+package de.makibytes.chaincheck.reference.block;
 
 import java.util.HashMap;
 import java.util.Map;

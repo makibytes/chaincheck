@@ -30,7 +30,7 @@ import de.makibytes.chaincheck.store.InMemoryMetricsStore;
 @Service
 @Primary
 @Profile("mock")
-public class MockRpcMonitorService extends NodeMonitorService {
+public class MockRpcMonitorService extends RpcMonitorService {
 
     private final NodeRegistry nodeRegistry;
     private final ChainCheckProperties properties;

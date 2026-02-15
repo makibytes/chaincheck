@@ -40,28 +40,28 @@ import de.makibytes.chaincheck.model.AnomalyType;
 import de.makibytes.chaincheck.model.MetricSample;
 import de.makibytes.chaincheck.model.MetricSource;
 import de.makibytes.chaincheck.monitor.NodeRegistry.NodeDefinition;
-import de.makibytes.chaincheck.monitor.ReferenceBlocks.Confidence;
+import de.makibytes.chaincheck.reference.block.ReferenceBlocks.Confidence;
 import de.makibytes.chaincheck.store.InMemoryMetricsStore;
 
 public class WsMonitorService {
 
     private static final Logger logger = LoggerFactory.getLogger(WsMonitorService.class);
 
-    private final NodeMonitorService monitor;
+    private final RpcMonitorService monitor;
     private final NodeRegistry nodeRegistry;
     private final InMemoryMetricsStore store;
     private final AnomalyDetector detector;
     private final ChainCheckProperties properties;
     private final ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
-    private final Map<String, NodeMonitorService.NodeState> nodeStates;
+    private final Map<String, RpcMonitorService.NodeState> nodeStates;
     private final HttpMonitorService httpMonitorService;
 
-    public WsMonitorService(NodeMonitorService monitor,
+    public WsMonitorService(RpcMonitorService monitor,
                             NodeRegistry nodeRegistry,
                             InMemoryMetricsStore store,
                             AnomalyDetector detector,
                             ChainCheckProperties properties,
-                            Map<String, NodeMonitorService.NodeState> nodeStates,
+                            Map<String, RpcMonitorService.NodeState> nodeStates,
                             HttpMonitorService httpMonitorService) {
         this.monitor = monitor;
         this.nodeRegistry = nodeRegistry;
@@ -82,7 +82,7 @@ public class WsMonitorService {
             if (node.ws() == null || node.ws().isBlank()) {
                 continue;
             }
-            NodeMonitorService.NodeState state = nodeStates.computeIfAbsent(node.key(), key -> new NodeMonitorService.NodeState());
+            RpcMonitorService.NodeState state = nodeStates.computeIfAbsent(node.key(), key -> new RpcMonitorService.NodeState());
             WebSocket existing = state.webSocketRef.get();
             if (existing != null) {
                 checkWsHealth(node, state, existing);
@@ -120,7 +120,7 @@ public class WsMonitorService {
         }
     }
 
-    void checkWsHealth(NodeDefinition node, NodeMonitorService.NodeState state, WebSocket webSocket) {
+    void checkWsHealth(NodeDefinition node, RpcMonitorService.NodeState state, WebSocket webSocket) {
         Instant now = Instant.now();
         Instant lastActivity = state.lastWsMessageReceivedAt != null
                 ? state.lastWsMessageReceivedAt
@@ -133,16 +133,16 @@ public class WsMonitorService {
         if (state.lastWsPingSentAt != null
                 && (state.lastWsPongReceivedAt == null || state.lastWsPongReceivedAt.isBefore(state.lastWsPingSentAt))) {
             long pingAge = Duration.between(state.lastWsPingSentAt, now).toSeconds();
-            if (pingAge > NodeMonitorService.WS_PING_INTERVAL_SECONDS) {
+            if (pingAge > RpcMonitorService.WS_PING_INTERVAL_SECONDS) {
                 monitor.recordFailure(node, MetricSource.WS, "WebSocket ping timeout after " + pingAge + "s");
                 monitor.closeWebSocket(node, state, "ping timeout");
                 return;
             }
         }
 
-        if (idleSeconds >= NodeMonitorService.WS_FRESH_SECONDS) {
+        if (idleSeconds >= RpcMonitorService.WS_FRESH_SECONDS) {
             boolean shouldPing = state.lastWsPingSentAt == null
-                || Duration.between(state.lastWsPingSentAt, now).toSeconds() >= NodeMonitorService.WS_PING_INTERVAL_SECONDS;
+                || Duration.between(state.lastWsPingSentAt, now).toSeconds() >= RpcMonitorService.WS_PING_INTERVAL_SECONDS;
             if (shouldPing) {
                 try {
                     state.lastWsPingSentAt = now;
@@ -159,9 +159,9 @@ public class WsMonitorService {
 
         private final StringBuilder buffer = new StringBuilder();
         private final NodeDefinition node;
-        private final NodeMonitorService.NodeState state;
+        private final RpcMonitorService.NodeState state;
 
-        private WsListener(NodeDefinition node, NodeMonitorService.NodeState state) {
+        private WsListener(NodeDefinition node, RpcMonitorService.NodeState state) {
             this.node = node;
             this.state = state;
         }

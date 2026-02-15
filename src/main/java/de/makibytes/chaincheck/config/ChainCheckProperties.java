@@ -269,6 +269,7 @@ public class ChainCheckProperties {
 
     public static class Consensus {
         private String nodeKey;
+        private String displayName = "consensus";
         private String http;
         private String eventsPath = "/eth/v1/events?topics=head&topics=finalized_checkpoint";
         private String finalityCheckpointsPath = "/eth/v1/beacon/states/head/finality_checkpoints";
@@ -282,6 +283,14 @@ public class ChainCheckProperties {
 
         public void setNodeKey(String nodeKey) {
             this.nodeKey = nodeKey;
+        }
+
+        public String getDisplayName() {
+            return displayName;
+        }
+
+        public void setDisplayName(String displayName) {
+            this.displayName = displayName;
         }
 
         public String getHttp() {

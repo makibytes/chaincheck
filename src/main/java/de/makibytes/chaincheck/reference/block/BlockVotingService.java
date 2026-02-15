@@ -15,7 +15,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-package de.makibytes.chaincheck.monitor;
+package de.makibytes.chaincheck.reference.block;
 
 import java.util.Map;
 import java.util.Set;
@@ -23,7 +23,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import org.springframework.stereotype.Service;
 
-import de.makibytes.chaincheck.monitor.ReferenceBlocks.Confidence;
+import de.makibytes.chaincheck.reference.block.ReferenceBlocks.Confidence;
 
 /**
  * Service responsible for collecting block votes from nodes and determining reference blocks through voting.

@@ -43,7 +43,7 @@ import de.makibytes.chaincheck.model.AnomalyType;
 import de.makibytes.chaincheck.model.MetricSample;
 import de.makibytes.chaincheck.model.MetricSource;
 import de.makibytes.chaincheck.monitor.NodeRegistry.NodeDefinition;
-import de.makibytes.chaincheck.monitor.ReferenceBlocks.Confidence;
+import de.makibytes.chaincheck.reference.block.ReferenceBlocks.Confidence;
 import de.makibytes.chaincheck.store.InMemoryMetricsStore;
 
 public class HttpMonitorService {
@@ -51,7 +51,7 @@ public class HttpMonitorService {
     private static final String JSONRPC_VERSION = "2.0";
     private static final Logger logger = LoggerFactory.getLogger(HttpMonitorService.class);
 
-    private final NodeMonitorService monitor;
+    private final RpcMonitorService monitor;
     private final NodeRegistry nodeRegistry;
     private final InMemoryMetricsStore store;
     private final AnomalyDetector detector;
@@ -59,14 +59,14 @@ public class HttpMonitorService {
     private final ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
     private final Map<Long, HttpClient> httpClients = new ConcurrentHashMap<>();
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
-    private final Map<String, NodeMonitorService.NodeState> nodeStates;
+    private final Map<String, RpcMonitorService.NodeState> nodeStates;
 
-    public HttpMonitorService(NodeMonitorService monitor,
+    public HttpMonitorService(RpcMonitorService monitor,
                               NodeRegistry nodeRegistry,
                               InMemoryMetricsStore store,
                               AnomalyDetector detector,
                               ChainCheckProperties properties,
-                              Map<String, NodeMonitorService.NodeState> nodeStates) {
+                              Map<String, RpcMonitorService.NodeState> nodeStates) {
         this.monitor = monitor;
         this.nodeRegistry = nodeRegistry;
         this.store = store;
@@ -88,7 +88,7 @@ public class HttpMonitorService {
             if (!monitor.shouldPollExecutionHttp(node.key())) {
                 continue;
             }
-            NodeMonitorService.NodeState state = nodeStates.computeIfAbsent(node.key(), key -> new NodeMonitorService.NodeState());
+            RpcMonitorService.NodeState state = nodeStates.computeIfAbsent(node.key(), key -> new RpcMonitorService.NodeState());
             if (now - state.lastPollEpochMs < node.pollIntervalMs()) {
                 continue;
             }
@@ -97,7 +97,7 @@ public class HttpMonitorService {
         }
     }
 
-    private void pollHttp(NodeDefinition node, NodeMonitorService.NodeState state) {
+    private void pollHttp(NodeDefinition node, RpcMonitorService.NodeState state) {
         Instant timestamp = Instant.now();
         long startNanos = System.nanoTime();
         try {
@@ -108,35 +108,11 @@ public class HttpMonitorService {
             }
 
             // Detect dead websocket connections using event timestamp
-            if (node.ws() != null && !node.ws().isBlank()) {
-                if (state.webSocketRef.get() != null) {
-                    Long previousHttpBlock = state.lastHttpBlockNumber;
-                    Instant lastWsEvent = state.lastWsEventReceivedAt;
+            checkWebSocketHealth(node, state, blockNumber);
 
-                    // If HTTP block advanced (meaning new blocks are being produced)
-                    if (previousHttpBlock != null && blockNumber > previousHttpBlock) {
-                        // Check if WS is receiving events
-                        if (lastWsEvent == null) {
-                            // Never received any WS event - dead from beginning
-                            monitor.recordFailure(node, MetricSource.WS, monitor.wsNoNewHeadsSinceConnectionMessage());
-                        } else {
-                            // Check if last WS event is too old
-                            long secondsSinceLastEvent = Duration.between(lastWsEvent, Instant.now()).toSeconds();
-                            if (secondsSinceLastEvent > NodeMonitorService.WS_DEAD_SECONDS) {
-                                monitor.recordFailure(node, MetricSource.WS, monitor.wsNoNewHeadsForSecondsMessage(secondsSinceLastEvent));
-                                monitor.closeWebSocket(node, state, "stale subscription");
-                            } else {
-                                // WS is healthy (receiving events recently), treat as update to close potential previous errors
-                                monitor.checkAndCloseAnomaly(node, null, MetricSource.WS);
-                            }
-                        }
-                    }
-                }
-            }
-
-            NodeMonitorService.BlockInfo safeBlock = null;
-            NodeMonitorService.BlockInfo finalizedBlock = null;
-            NodeMonitorService.BlockInfo latestBlock = null;
+            RpcMonitorService.BlockInfo safeBlock = null;
+            RpcMonitorService.BlockInfo finalizedBlock = null;
+            RpcMonitorService.BlockInfo latestBlock = null;
             boolean safeEnabled = node.safeBlocksEnabled();
             boolean finalizedEnabled = node.finalizedBlocksEnabled();
             if (node.ws() == null || node.ws().isBlank()) {
@@ -188,7 +164,7 @@ public class HttpMonitorService {
                 }
 
                 logger.debug("HTTP poll ({}) pollCounter={} blockTag={}", node.name(), state.pollCounter, blockTag);
-                NodeMonitorService.BlockInfo checkpointBlock = fetchBlockByTag(node, blockTag);
+                RpcMonitorService.BlockInfo checkpointBlock = fetchBlockByTag(node, blockTag);
                 if (checkpointBlock == null) {
                     monitor.recordFailure(node, MetricSource.HTTP, blockTag + " block not found");
                     return;
@@ -239,7 +215,7 @@ public class HttpMonitorService {
             Long finalizedDelayMs = null;
 
             boolean wsDataFresh = state.lastWsBlockTimestamp != null
-                    && Duration.between(state.lastWsBlockTimestamp, timestamp).toSeconds() < NodeMonitorService.WS_FRESH_SECONDS;
+                    && Duration.between(state.lastWsBlockTimestamp, timestamp).toSeconds() < RpcMonitorService.WS_FRESH_SECONDS;
 
             if (wsDataFresh) {
                 headDelayMs = Duration.between(state.lastWsBlockTimestamp, timestamp).toMillis();
@@ -274,7 +250,7 @@ public class HttpMonitorService {
                         node.name(), safeDelayMs, finalizedDelayMs,
                         (safeBlock != null ? safeBlock.blockHash() : (finalizedBlock != null ? finalizedBlock.blockHash() : null)));
             }
-                NodeMonitorService.BlockInfo metadataBlock = finalizedBlock != null
+                RpcMonitorService.BlockInfo metadataBlock = finalizedBlock != null
                     ? finalizedBlock
                     : (safeBlock != null ? safeBlock : latestBlock);
             state.lastHttpBlockNumber = blockNumber;
@@ -336,11 +312,36 @@ public class HttpMonitorService {
         return parseHexLong(result.asText());
     }
 
-    private NodeMonitorService.BlockInfo fetchBlockByTag(NodeDefinition node, String blockTag) throws IOException, InterruptedException {
+    private RpcMonitorService.BlockInfo fetchBlockByTag(NodeDefinition node, String blockTag) throws IOException, InterruptedException {
         return fetchBlockByTag(node.http(), node.readTimeoutMs(), node.headers(), node.maxRetries(), node.retryBackoffMs(), node.connectTimeoutMs(), blockTag);
     }
 
-    private NodeMonitorService.BlockInfo fetchBlockByTag(String httpUrl,
+    private void checkWebSocketHealth(NodeDefinition node, RpcMonitorService.NodeState state, Long blockNumber) {
+        if (node.ws() == null || node.ws().isBlank()) {
+            return;
+        }
+        if (state.webSocketRef.get() == null) {
+            return;
+        }
+        Long previousHttpBlock = state.lastHttpBlockNumber;
+        Instant lastWsEvent = state.lastWsEventReceivedAt;
+
+        if (previousHttpBlock != null && blockNumber > previousHttpBlock) {
+            if (lastWsEvent == null) {
+                monitor.recordFailure(node, MetricSource.WS, monitor.wsNoNewHeadsSinceConnectionMessage());
+            } else {
+                long secondsSinceLastEvent = Duration.between(lastWsEvent, Instant.now()).toSeconds();
+                if (secondsSinceLastEvent > RpcMonitorService.WS_DEAD_SECONDS) {
+                    monitor.recordFailure(node, MetricSource.WS, monitor.wsNoNewHeadsForSecondsMessage(secondsSinceLastEvent));
+                    monitor.closeWebSocket(node, state, "stale subscription");
+                } else {
+                    monitor.checkAndCloseAnomaly(node, null, MetricSource.WS);
+                }
+            }
+        }
+    }
+
+    private RpcMonitorService.BlockInfo fetchBlockByTag(String httpUrl,
                                                         long readTimeoutMs,
                                                         Map<String, String> headers,
                                                         int maxRetries,
@@ -379,7 +380,7 @@ public class HttpMonitorService {
         if (transactions.isArray()) {
             txCount = transactions.size();
         }
-        return new NodeMonitorService.BlockInfo(blockNumber, blockHash, parentHash, txCount, gasPriceWei, blockTimestamp);
+        return new RpcMonitorService.BlockInfo(blockNumber, blockHash, parentHash, txCount, gasPriceWei, blockTimestamp);
     }
 
     private JsonNode sendRpcWithRetry(String httpUrl,
@@ -463,7 +464,7 @@ public class HttpMonitorService {
         return new BigInteger(normalized, 16).longValue();
     }
 
-    private void handleLatestBlock(NodeDefinition node, NodeMonitorService.NodeState state, NodeMonitorService.BlockInfo latestBlock) {
+    private void handleLatestBlock(NodeDefinition node, RpcMonitorService.NodeState state, RpcMonitorService.BlockInfo latestBlock) {
         Instant now = Instant.now();
         state.lastWsEventReceivedAt = now;
         state.wsNewHeadCount++;
@@ -516,8 +517,8 @@ public class HttpMonitorService {
     }
 
     private void recordFinalizedReorgIfNeeded(NodeDefinition node,
-                                              NodeMonitorService.NodeState state,
-                                              NodeMonitorService.BlockInfo finalizedBlock,
+                                              RpcMonitorService.NodeState state,
+                                              RpcMonitorService.BlockInfo finalizedBlock,
                                               Instant timestamp) {
         if (finalizedBlock == null) {
             return;
@@ -562,7 +563,7 @@ public class HttpMonitorService {
         }
     }
 
-    private boolean shouldFetchLatest(NodeMonitorService.NodeState state, Instant now, long pollIntervalMs) {
+    private boolean shouldFetchLatest(RpcMonitorService.NodeState state, Instant now, long pollIntervalMs) {
         if (state.lastLatestFetchAt == null) {
             return true;
         }
@@ -571,13 +572,13 @@ public class HttpMonitorService {
     }
 
     private void trackFinalizedChainAndCloseReorg(NodeDefinition node,
-                                                  NodeMonitorService.NodeState state,
-                                                  NodeMonitorService.BlockInfo finalizedBlock) {
+                                                  RpcMonitorService.NodeState state,
+                                                  RpcMonitorService.BlockInfo finalizedBlock) {
         if (finalizedBlock == null || finalizedBlock.blockNumber() == null || finalizedBlock.blockHash() == null) {
             return;
         }
         if (!state.finalizedHistory.isEmpty()) {
-            NodeMonitorService.BlockInfo last = state.finalizedHistory.peekLast();
+            RpcMonitorService.BlockInfo last = state.finalizedHistory.peekLast();
             if (last != null
                     && last.blockNumber() != null
                     && last.blockHash() != null
@@ -596,9 +597,9 @@ public class HttpMonitorService {
             return;
         }
 
-        NodeMonitorService.BlockInfo first = state.finalizedHistory.pollFirst();
-        NodeMonitorService.BlockInfo second = state.finalizedHistory.pollFirst();
-        NodeMonitorService.BlockInfo third = state.finalizedHistory.pollFirst();
+        RpcMonitorService.BlockInfo first = state.finalizedHistory.pollFirst();
+        RpcMonitorService.BlockInfo second = state.finalizedHistory.pollFirst();
+        RpcMonitorService.BlockInfo third = state.finalizedHistory.pollFirst();
         state.finalizedHistory.addLast(first);
         state.finalizedHistory.addLast(second);
         state.finalizedHistory.addLast(third);

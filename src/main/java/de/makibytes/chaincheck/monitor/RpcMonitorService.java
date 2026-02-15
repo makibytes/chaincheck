@@ -40,19 +40,29 @@ import de.makibytes.chaincheck.model.AnomalyEvent;
 import de.makibytes.chaincheck.model.MetricSample;
 import de.makibytes.chaincheck.model.MetricSource;
 import de.makibytes.chaincheck.monitor.NodeRegistry.NodeDefinition;
-import de.makibytes.chaincheck.monitor.ReferenceBlocks.Confidence;
+import de.makibytes.chaincheck.reference.block.BlockVotingCoordinator;
+import de.makibytes.chaincheck.reference.block.BlockVotingService;
+import de.makibytes.chaincheck.reference.block.ReferenceBlocks.Confidence;
+import de.makibytes.chaincheck.reference.node.BlockAgreementTracker;
+import de.makibytes.chaincheck.reference.node.ConfiguredReferenceSource;
+import de.makibytes.chaincheck.reference.node.ConfiguredReferenceStrategy;
+import de.makibytes.chaincheck.reference.node.ReferenceNodeSelector;
+import de.makibytes.chaincheck.reference.node.ReferenceObservation;
+import de.makibytes.chaincheck.reference.node.ReferenceStrategy;
+import de.makibytes.chaincheck.reference.node.VotingReferenceStrategy;
 import de.makibytes.chaincheck.store.InMemoryMetricsStore;
 import jakarta.annotation.PostConstruct;
 
 @Service
-public class NodeMonitorService {
+public class RpcMonitorService {
 
-    private static final Logger logger = LoggerFactory.getLogger(NodeMonitorService.class);
+    private static final Logger logger = LoggerFactory.getLogger(RpcMonitorService.class);
     static final long WS_FRESH_SECONDS = 30;
     static final long WS_DEAD_SECONDS = 120;
     static final long WS_PING_INTERVAL_SECONDS = 30;
     private static final long WS_BACKOFF_BASE_SECONDS = 5;
     private static final long WS_BACKOFF_MAX_SECONDS = 120;
+    private static final long WARMUP_TIMEOUT_SECONDS = 60;
     private static final String WS_NO_NEW_HEADS_PREFIX = "WebSocket not receiving newHeads events";
 
     private final NodeRegistry nodeRegistry;
@@ -61,40 +71,47 @@ public class NodeMonitorService {
     private final ChainCheckProperties properties;
     private final Map<String, NodeState> nodeStates = new ConcurrentHashMap<>();
     private final AtomicReference<ReferenceState> referenceState = new AtomicReference<>();
-    private Long referenceFirstSetAtBlock = null;
     private String currentReferenceNodeKey;
     private final HttpMonitorService httpMonitorService;
     private final WsMonitorService wsMonitorService;
     private final BlockVotingService blockVotingService;
-    private final ConsensusNodeService consensusNodeService;
-    private final ReferenceNodeCoordinator referenceNodeCoordinator;
-    private final ReferenceBlockCoordinator referenceBlockCoordinator;
-    private final boolean configuredReferenceMode;
+    private final ConfiguredReferenceSource configuredSource;
+    private final ReferenceNodeSelector referenceNodeSelector;
+    private final BlockVotingCoordinator referenceBlockVoting;
+    private final BlockAgreementTracker blockAgreementTracker;
     private final String configuredReferenceNodeKey;
-    private Instant lastConfiguredSafePollAt;
-    private Instant lastConfiguredFinalizedPollAt;
+    private final ReferenceStrategy referenceStrategy;
     private final Instant warmupStartedAt = Instant.now();
     private volatile boolean warmupComplete = false;
     private String lastWarmupWaitingReason;
 
     @Autowired
-    public NodeMonitorService(NodeRegistry nodeRegistry,
+    public RpcMonitorService(NodeRegistry nodeRegistry,
             InMemoryMetricsStore store,
             AnomalyDetector detector,
             ChainCheckProperties properties,
             BlockVotingService blockVotingService,
-            NodeScorer nodeScorer,
+            BlockAgreementTracker blockAgreementTracker,
             ReferenceNodeSelector referenceNodeSelector) {
         this.nodeRegistry = nodeRegistry;
         this.store = store;
         this.detector = detector;
         this.properties = properties;
         this.blockVotingService = blockVotingService;
-        this.configuredReferenceMode = properties.getConsensus() != null && properties.getConsensus().hasConfiguredReferenceNode();
+        this.blockAgreementTracker = blockAgreementTracker;
+        this.referenceNodeSelector = referenceNodeSelector;
         this.configuredReferenceNodeKey = properties.getConsensus() != null ? properties.getConsensus().getNodeKey() : null;
-        this.consensusNodeService = new ConsensusNodeService(nodeRegistry, blockVotingService, nodeStates, properties, configuredReferenceNodeKey);
-        this.referenceNodeCoordinator = new ReferenceNodeCoordinator(nodeRegistry, referenceNodeSelector, nodeScorer, store);
-        this.referenceBlockCoordinator = new ReferenceBlockCoordinator(nodeRegistry, blockVotingService, nodeScorer, store, detector);
+        this.configuredSource = new ConfiguredReferenceSource(nodeRegistry, blockVotingService, nodeStates, properties, configuredReferenceNodeKey);
+        this.referenceBlockVoting = new BlockVotingCoordinator(nodeRegistry, blockVotingService, blockAgreementTracker, store, detector);
+
+        // Select reference strategy at startup based on configuration
+        boolean isConfiguredMode = properties.getConsensus() != null && properties.getConsensus().hasConfiguredReferenceNode();
+        if (isConfiguredMode) {
+            this.referenceStrategy = new ConfiguredReferenceStrategy(configuredSource, configuredReferenceNodeKey);
+        } else {
+            this.referenceStrategy = new VotingReferenceStrategy(nodeRegistry, blockVotingService, referenceBlockVoting, referenceNodeSelector, blockAgreementTracker, store);
+        }
+
         this.httpMonitorService = new HttpMonitorService(this, nodeRegistry, store, detector, properties, nodeStates);
         this.wsMonitorService = new WsMonitorService(this, nodeRegistry, store, detector, properties, nodeStates, httpMonitorService);
     }
@@ -103,27 +120,27 @@ public class NodeMonitorService {
      * Backwards-compatible constructor used by older tests that did not wire
      * properties.
      */
-    public NodeMonitorService(NodeRegistry nodeRegistry,
+    public RpcMonitorService(NodeRegistry nodeRegistry,
             InMemoryMetricsStore store,
             AnomalyDetector detector) {
-        this(nodeRegistry, store != null ? store : new InMemoryMetricsStore(), detector, new ChainCheckProperties(), new BlockVotingService(), new NodeScorer(), new ReferenceNodeSelector());
+        this(nodeRegistry, store != null ? store : new InMemoryMetricsStore(), detector, new ChainCheckProperties(), new BlockVotingService(), new BlockAgreementTracker(), new ReferenceNodeSelector());
     }
 
     /**
      * Backwards-compatible constructor used by tests.
      */
-    public NodeMonitorService(NodeRegistry nodeRegistry,
+    public RpcMonitorService(NodeRegistry nodeRegistry,
             InMemoryMetricsStore store,
             AnomalyDetector detector,
             ChainCheckProperties properties) {
-        this(nodeRegistry, store, detector, properties, new BlockVotingService(), new NodeScorer(), new ReferenceNodeSelector());
+        this(nodeRegistry, store, detector, properties, new BlockVotingService(), new BlockAgreementTracker(), new ReferenceNodeSelector());
     }
 
     @PostConstruct
     public void init() {
         wsMonitorService.ensureWebSocket();
-        if (configuredReferenceMode) {
-            consensusNodeService.ensureEventStream();
+        if (isConsensusNodeConfigured()) {
+            configuredSource.ensureEventStream();
         }
         logWarmupStart();
         updateWarmupState();
@@ -134,11 +151,25 @@ public class NodeMonitorService {
     }
 
     /**
+     * Returns true if a beacon node is configured (via rpc.consensus.http).
+     */
+    public boolean isConsensusNodeConfigured() {
+        return configuredSource.isConsensusNodeEnabled();
+    }
+
+    /**
+     * Returns true if using configured reference mode (either consensus node or specific execution node).
+     */
+    private boolean isConfiguredReferenceMode() {
+        return referenceStrategy instanceof ConfiguredReferenceStrategy;
+    }
+
+    /**
      * Returns the node key of the current reference node, or null if no reference
      * is set.
      */
     public String getReferenceNodeKey() {
-        if (configuredReferenceMode && configuredReferenceNodeKey != null && !configuredReferenceNodeKey.isBlank()) {
+        if (isConfiguredReferenceMode() && configuredReferenceNodeKey != null && !configuredReferenceNodeKey.isBlank()) {
             if (nodeRegistry != null && nodeRegistry.getNode(configuredReferenceNodeKey) != null) {
                 return configuredReferenceNodeKey;
             }
@@ -187,7 +218,7 @@ public class NodeMonitorService {
         if (nodeKey == null || nodeKey.isBlank()) {
             return Optional.empty();
         }
-        if (configuredReferenceMode && configuredReferenceNodeKey != null && !configuredReferenceNodeKey.isBlank()) {
+        if (isConfiguredReferenceMode() && configuredReferenceNodeKey != null && !configuredReferenceNodeKey.isBlank()) {
             return Optional.of(configuredReferenceNodeKey.equals(nodeKey));
         }
         ReferenceState ref = referenceState.get();
@@ -212,49 +243,42 @@ public class NodeMonitorService {
         httpMonitorService.pollNodes();
     }
 
-    @Scheduled(fixedDelay = 1000, initialDelay = 1000)
-    public void refreshConfiguredReference() {
-        if (!configuredReferenceMode) {
+    @Scheduled(fixedDelayString = "#{${rpc.consensus.finalized-poll-interval-ms:999999999}}",
+            initialDelayString = "#{${rpc.consensus.finalized-poll-interval-ms:999999999}}")
+    public void pollConfiguredFinalizedBlock() {
+        if (!isConfiguredReferenceMode()) {
             return;
         }
-        if (!consensusNodeService.isBeaconEnabled()) {
+        if (!configuredSource.isConsensusNodeEnabled()) {
             return;
         }
-        consensusNodeService.ensureEventStream();
-        Instant now = Instant.now();
-        boolean shouldPollSafe = false;
-        boolean shouldPollFinalized = false;
-
-        Long finalizedPollIntervalMs = consensusNodeService.getFinalizedPollIntervalMs();
-        if (finalizedPollIntervalMs != null
-                && (lastConfiguredFinalizedPollAt == null
-                || Duration.between(lastConfiguredFinalizedPollAt, now).toMillis() >= finalizedPollIntervalMs)) {
-            shouldPollFinalized = true;
-            lastConfiguredFinalizedPollAt = now;
+        Long finalizedPollIntervalMs = configuredSource.getFinalizedPollIntervalMs();
+        if (finalizedPollIntervalMs == null) {
+            return;
         }
-
-        Long safePollIntervalMs = consensusNodeService.getSafePollIntervalMs();
-        if (safePollIntervalMs != null) {
-            boolean bothCheckpointPollsEnabled = finalizedPollIntervalMs != null;
-            if (bothCheckpointPollsEnabled && lastConfiguredSafePollAt == null) {
-                Instant finalizedAnchor = shouldPollFinalized ? now : lastConfiguredFinalizedPollAt;
-                if (finalizedAnchor != null) {
-                    long halfFinalizedIntervalMs = Math.max(250L, finalizedPollIntervalMs / 2L);
-                    if (Duration.between(finalizedAnchor, now).toMillis() >= halfFinalizedIntervalMs) {
-                        shouldPollSafe = true;
-                        lastConfiguredSafePollAt = now;
-                    }
-                }
-            } else if (lastConfiguredSafePollAt == null
-                    || Duration.between(lastConfiguredSafePollAt, now).toMillis() >= safePollIntervalMs) {
-                shouldPollSafe = true;
-                lastConfiguredSafePollAt = now;
-            }
+        configuredSource.ensureEventStream();
+        if (configuredSource.refreshCheckpoints(false, true)) {
+            refreshReferenceFromNodes();
         }
+    }
 
-        consensusNodeService.refreshCheckpoints(shouldPollSafe, shouldPollFinalized);
-        refreshReferenceFromNodes();
-        updateWarmupState();
+    @Scheduled(fixedDelayString = "#{${rpc.consensus.safe-poll-interval-ms:999999999}}",
+            initialDelayString = "#{${rpc.consensus.safe-poll-interval-ms:999999999} / 2}")
+    public void pollConfiguredSafeBlock() {
+        if (!isConfiguredReferenceMode()) {
+            return;
+        }
+        if (!configuredSource.isConsensusNodeEnabled()) {
+            return;
+        }
+        Long safePollIntervalMs = configuredSource.getSafePollIntervalMs();
+        if (safePollIntervalMs == null) {
+            return;
+        }
+        configuredSource.ensureEventStream();
+        if (configuredSource.refreshCheckpoints(true, false)) {
+            refreshReferenceFromNodes();
+        }
     }
 
     void recordFailure(NodeDefinition node, MetricSource source, String errorMessage) {
@@ -426,12 +450,12 @@ public class NodeMonitorService {
             store.addAnomaly(node.key(), anomaly);
         }
 
-        if (configuredReferenceMode) {
+        if (isConfiguredReferenceMode()) {
             if (checkpointBlock == null) {
                 return;
             }
             Confidence confidence = "safe".equals(blockTag) ? Confidence.SAFE : Confidence.FINALIZED;
-            BeaconReferenceService.ReferenceObservation observation = consensusNodeService.getConfiguredObservation(confidence);
+            ReferenceObservation observation = configuredSource.getObservation(confidence);
             if (observation == null || observation.blockNumber() == null || observation.blockHash() == null
                     || checkpointBlock.blockNumber() == null || checkpointBlock.blockHash() == null) {
                 return;
@@ -485,68 +509,41 @@ public class NodeMonitorService {
     }
 
     void refreshReferenceFromNodes() {
-        if (configuredReferenceMode) {
-            ConsensusNodeService.ConfiguredReferenceUpdate update = consensusNodeService.refreshReferenceFromConfiguredSource();
-            referenceState.set(update.referenceState());
-            currentReferenceNodeKey = update.referenceNodeKey();
-            updateWarmupState();
-            return;
-        }
-
-        List<NodeDefinition> nodes = nodeRegistry.getNodes();
-        if (nodes.isEmpty()) {
-            referenceState.set(null);
-            blockVotingService.getReferenceBlocks().clear();
-            return;
-        }
-
-        referenceBlockCoordinator.collectVotesFromNodes(nodeStates);
-        Map<Long, Map<Confidence, String>> oldBlocks = referenceBlockCoordinator.snapshotOldReferenceBlocks();
-        referenceBlockCoordinator.performVotingAndScoring(oldBlocks, currentReferenceNodeKey, Instant.now(), warmupComplete, nodeStates);
-
-        ReferenceBlockVoting.ReferenceHead referenceHead = referenceBlockCoordinator.resolveReferenceHead();
-        if (referenceHead == null) {
-            referenceState.set(null);
-            return;
-        }
-
         Instant now = Instant.now();
-        referenceState.set(new ReferenceState(referenceHead.headNumber(), referenceHead.headHash(), now));
-        currentReferenceNodeKey = referenceNodeCoordinator.selectReferenceNode(
-                nodeStates,
-                blockVotingService.getReferenceBlocks(),
-                now,
-                currentReferenceNodeKey);
+        referenceStrategy.refresh(nodeStates, now, warmupComplete, currentReferenceNodeKey);
+        referenceState.set(referenceStrategy.getReference());
+        currentReferenceNodeKey = referenceStrategy.getReferenceNodeKey();
         updateWarmupState();
     }
 
     public boolean hasConfiguredReferenceMode() {
-        return configuredReferenceMode;
+        return isConfiguredReferenceMode();
     }
 
     boolean shouldPollExecutionHttp(String nodeKey) {
-        if (!configuredReferenceMode || configuredReferenceNodeKey == null || configuredReferenceNodeKey.isBlank()) {
+        if (!isConfiguredReferenceMode() || configuredReferenceNodeKey == null || configuredReferenceNodeKey.isBlank()) {
             return true;
         }
         return !configuredReferenceNodeKey.equals(nodeKey);
     }
 
     Instant getReferenceObservedAt(Confidence confidence, Long blockNumber, String blockHash) {
-        if (!configuredReferenceMode) {
+        if (!isConfiguredReferenceMode()) {
             return null;
         }
-        return consensusNodeService.getReferenceObservedAt(confidence, blockNumber, blockHash);
+        return configuredSource.getObservedAt(confidence, blockNumber, blockHash);
     }
 
     public List<MetricSample> getConfiguredReferenceDelaySamplesSince(Instant since) {
-        if (!configuredReferenceMode) {
+        if (!isConfiguredReferenceMode()) {
             return List.of();
         }
-        return consensusNodeService.getConfiguredReferenceDelaySamplesSince(since);
+        return configuredSource.getDelaySamplesSince(since);
     }
 
     private void logWarmupStart() {
         String waiting = currentWarmupWaitingReason();
+        lastWarmupWaitingReason = waiting;
         logger.info("Warm-up started: {}", waiting == null ? "collecting initial reference data" : "waiting for " + waiting);
     }
 
@@ -554,10 +551,22 @@ public class NodeMonitorService {
         if (warmupComplete) {
             return;
         }
+
+        Instant now = Instant.now();
+        long warmupSeconds = Duration.between(warmupStartedAt, now).toSeconds();
+
+        // Check if warmup has timed out
+        if (warmupSeconds >= WARMUP_TIMEOUT_SECONDS) {
+            warmupComplete = true;
+            logger.warn("Warm-up timed out after {} seconds (timeout: {} seconds). Still waiting for: {}. Proceeding with monitoring anyway.",
+                    warmupSeconds, WARMUP_TIMEOUT_SECONDS, lastWarmupWaitingReason);
+            return;
+        }
+
         String waiting = currentWarmupWaitingReason();
         if (waiting == null) {
             warmupComplete = true;
-            long warmupMs = Duration.between(warmupStartedAt, Instant.now()).toMillis();
+            long warmupMs = Duration.between(warmupStartedAt, now).toMillis();
             logger.info("Warm-up complete after {} ms. Metrics/sample collection is now enabled.", warmupMs);
             return;
         }
@@ -568,69 +577,7 @@ public class NodeMonitorService {
     }
 
     private String currentWarmupWaitingReason() {
-        if (configuredReferenceMode) {
-            if (consensusNodeService.isBeaconEnabled()) {
-                if (consensusNodeService.getConfiguredObservation(Confidence.NEW) == null) {
-                    return "reference head from configured consensus node";
-                }
-                boolean safePollingEnabled = consensusNodeService.isSafePollingEnabled();
-                boolean finalizedPollingEnabled = consensusNodeService.isFinalizedPollingEnabled();
-                if (safePollingEnabled && consensusNodeService.getConfiguredObservation(Confidence.SAFE) == null) {
-                    return "safe block from configured consensus node";
-                }
-                if (finalizedPollingEnabled && consensusNodeService.getConfiguredObservation(Confidence.FINALIZED) == null) {
-                    return "finalized block from configured consensus node";
-                }
-                return null;
-            }
-
-            boolean safeRequired = properties.isGetSafeBlocks();
-            boolean finalizedRequired = properties.isGetFinalizedBlocks();
-            if (configuredReferenceNodeKey != null && !configuredReferenceNodeKey.isBlank()) {
-                NodeState state = nodeStates.get(configuredReferenceNodeKey);
-                if (state == null) {
-                    return "configured reference execution node state";
-                }
-                boolean hasHead = (state.lastWsBlockNumber != null && state.lastWsBlockHash != null)
-                        || (state.lastHttpBlockNumber != null && state.lastHttpBlockHash != null);
-                if (!hasHead) {
-                    return "head block from configured reference execution node";
-                }
-                if (safeRequired && (state.lastSafeBlockNumber == null || state.lastSafeBlockHash == null)) {
-                    return "safe block from configured reference execution node";
-                }
-                if (finalizedRequired && (state.lastFinalizedBlockNumber == null || state.lastFinalizedBlockHash == null)) {
-                    return "finalized block from configured reference execution node";
-                }
-                return null;
-            }
-        }
-
-        boolean safeRequired = properties.isGetSafeBlocks();
-        boolean finalizedRequired = properties.isGetFinalizedBlocks();
-
-        ReferenceState reference = referenceState.get();
-        if (reference == null || reference.headNumber() == null || reference.headHash() == null) {
-            return "reference head by voting across monitored nodes";
-        }
-        if (getReferenceNodeKey() == null) {
-            return "reference node selection by voting";
-        }
-        if (safeRequired) {
-            boolean hasSafe = nodeStates.values().stream().anyMatch(
-                    state -> state.lastSafeBlockNumber != null && state.lastSafeBlockHash != null);
-            if (!hasSafe) {
-                return "first safe block from monitored nodes";
-            }
-        }
-        if (finalizedRequired) {
-            boolean hasFinalized = nodeStates.values().stream().anyMatch(
-                    state -> state.lastFinalizedBlockNumber != null && state.lastFinalizedBlockHash != null);
-            if (!hasFinalized) {
-                return "first finalized block from monitored nodes";
-            }
-        }
-        return null;
+        return referenceStrategy.getWarmupWaitingReason(nodeStates, properties);
     }
 
     boolean isWsFresh(NodeState state, Instant now) {
@@ -767,25 +714,25 @@ public class NodeMonitorService {
         }
     }
 
-    static class NodeState {
-        final AtomicReference<WebSocket> webSocketRef = new AtomicReference<>();
+    public static class NodeState {
+        public final AtomicReference<WebSocket> webSocketRef = new AtomicReference<>();
         long lastPollEpochMs = 0;
         long lastWsAttemptEpochMs = 0;
-        Long lastHttpBlockNumber;
-        String lastHttpBlockHash;
-        Long lastWsBlockNumber;
-        String lastWsBlockHash;
-        Long lastSafeBlockNumber;
-        String lastSafeBlockHash;
-        Long lastFinalizedBlockNumber;
-        String lastFinalizedBlockHash;
+        public Long lastHttpBlockNumber;
+        public String lastHttpBlockHash;
+        public Long lastWsBlockNumber;
+        public String lastWsBlockHash;
+        public Long lastSafeBlockNumber;
+        public String lastSafeBlockHash;
+        public Long lastFinalizedBlockNumber;
+        public String lastFinalizedBlockHash;
         Instant lastWsBlockTimestamp;
-        Instant lastWsEventReceivedAt; // Timestamp when last WS newHeads event was received
+        public Instant lastWsEventReceivedAt; // Timestamp when last WS newHeads event was received
         Instant lastWsConnectedAt;
         Instant lastWsMessageReceivedAt;
         Instant lastWsPingSentAt;
         Instant lastWsPongReceivedAt;
-        Instant lastFinalizedFetchAt;
+        public Instant lastFinalizedFetchAt;
         Instant lastLatestFetchAt;
         Long lastReorgBlockNumber;
         String lastReorgBlockHash;
@@ -805,26 +752,26 @@ public class NodeMonitorService {
         blockVotingService.recordBlock(nodeKey, blockNumber, blockHash, confidence);
     }
 
-    static class ReferenceState {
+    public static class ReferenceState {
         private final Long headNumber;
         private final String headHash;
         private final Instant fetchedAt;
 
-        ReferenceState(Long headNumber, String headHash, Instant fetchedAt) {
+        public ReferenceState(Long headNumber, String headHash, Instant fetchedAt) {
             this.headNumber = headNumber;
             this.headHash = headHash;
             this.fetchedAt = fetchedAt;
         }
 
-        Long headNumber() {
+        public Long headNumber() {
             return headNumber;
         }
 
-        String headHash() {
+        public String headHash() {
             return headHash;
         }
 
-        Instant fetchedAt() {
+        public Instant fetchedAt() {
             return fetchedAt;
         }
     }

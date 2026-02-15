@@ -4,7 +4,7 @@ rpc:
   get-safe-blocks: false
   get-finalized-blocks: false
   consensus:
-    # When configured, ChainCheck uses this consensus/beacon endpoint as reference source
+    # When configured, ChainCheck uses this consensus endpoint as reference source
     # and disables internal auto-reference voting/selection.
     name: nibbler-nimbus
     http: http://nibbler:5052

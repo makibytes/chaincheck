@@ -30,7 +30,7 @@ import org.springframework.web.bind.annotation.ResponseBody;
 import de.makibytes.chaincheck.config.ChainCheckProperties;
 import de.makibytes.chaincheck.model.AnomalyEvent;
 import de.makibytes.chaincheck.model.TimeRange;
-import de.makibytes.chaincheck.monitor.NodeMonitorService;
+import de.makibytes.chaincheck.monitor.RpcMonitorService;
 import de.makibytes.chaincheck.monitor.NodeRegistry;
 import de.makibytes.chaincheck.monitor.NodeRegistry.NodeDefinition;
 
@@ -40,13 +40,13 @@ public class DashboardController {
     private final DashboardService dashboardService;
     private final NodeRegistry nodeRegistry;
     private final ChainCheckProperties properties;
-    private final NodeMonitorService nodeMonitorService;
+    private final RpcMonitorService nodeMonitorService;
     private final AppVersionProvider appVersionProvider;
 
     public DashboardController(DashboardService dashboardService,
                                NodeRegistry nodeRegistry,
                                ChainCheckProperties properties,
-                               NodeMonitorService nodeMonitorService,
+                               RpcMonitorService nodeMonitorService,
                                AppVersionProvider appVersionProvider) {
         this.dashboardService = dashboardService;
         this.nodeRegistry = nodeRegistry;

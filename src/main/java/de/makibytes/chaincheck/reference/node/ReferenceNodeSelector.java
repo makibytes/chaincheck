@@ -15,7 +15,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-package de.makibytes.chaincheck.monitor;
+package de.makibytes.chaincheck.reference.node;
 
 import java.time.Instant;
 import java.util.List;
@@ -24,6 +24,8 @@ import java.util.Map;
 import org.springframework.stereotype.Service;
 
 import de.makibytes.chaincheck.model.MetricSample;
+import de.makibytes.chaincheck.monitor.RpcMonitorService;
+import de.makibytes.chaincheck.reference.block.ReferenceBlocks;
 import de.makibytes.chaincheck.store.InMemoryMetricsStore;
 
 /**
@@ -34,21 +36,21 @@ import de.makibytes.chaincheck.store.InMemoryMetricsStore;
 @Service
 public class ReferenceNodeSelector {
 
-    private final ReferenceSelectionPolicy referenceSelectionPolicy;
+    private final NodeSwitchPolicy switchPolicy;
 
     public ReferenceNodeSelector() {
-        this.referenceSelectionPolicy = new ReferenceSelectionPolicy(20, 15);
+        this.switchPolicy = new NodeSwitchPolicy(20, 15);
     }
 
     /**
      * Selects the best reference node from the available nodes based on comprehensive scoring.
-     * Uses the selection policy to ensure stability.
+     * Uses the switch policy to ensure stability.
      */
-    public String selectReferenceNode(Map<String, NodeMonitorService.NodeState> nodeStates, ReferenceBlocks referenceBlocks, InMemoryMetricsStore store, Instant now, NodeScorer nodeScorer, String currentReferenceNodeKey) {
+    public String select(Map<String, RpcMonitorService.NodeState> nodeStates, ReferenceBlocks referenceBlocks, InMemoryMetricsStore store, Instant now, BlockAgreementTracker blockAgreementTracker, String currentReferenceNodeKey) {
         String bestNode = null;
         double bestScore = -1;
         for (String nodeKey : nodeStates.keySet()) {
-            double score = computeNodeScore(nodeKey, nodeScorer, nodeStates, referenceBlocks, store, now);
+            double score = computeNodeScore(nodeKey, blockAgreementTracker, nodeStates, referenceBlocks, store, now);
             if (score > bestScore) {
                 bestScore = score;
                 bestNode = nodeKey;
@@ -56,19 +58,16 @@ public class ReferenceNodeSelector {
         }
 
         if (bestNode != null) {
-            referenceSelectionPolicy.registerSelection(bestNode);
+            switchPolicy.registerSelection(bestNode);
             // For now, always switch if better score, but could use policy for threshold
             return bestNode;
         }
         return null;
     }
 
-    private double computeNodeScore(String nodeKey, NodeScorer scorer, Map<String, NodeMonitorService.NodeState> nodeStates,
+    private double computeNodeScore(String nodeKey, BlockAgreementTracker tracker, Map<String, RpcMonitorService.NodeState> nodeStates,
             ReferenceBlocks referenceBlocks, InMemoryMetricsStore store, Instant now) {
-        NodeMonitorService.NodeState state = nodeStates.get(nodeKey);
-        if (state == null) {
-            return 0;
-        }
+        RpcMonitorService.NodeState state = nodeStates.get(nodeKey);
 
         // WebSocket health: 0 or 1000 points (most important after delays)
         double wsScore = isWsHealthy(state, now) ? 1000 : 0;
@@ -109,22 +108,22 @@ public class ReferenceNodeSelector {
         double finalizedDelayScore = 1000 / (1 + avgFinalizedDelay / 1000.0); // 0-1000
 
         // Matching score: points from agreement with reference
-        double matchingScore = scorer.getPoints(nodeKey);
+        double matchingScore = tracker.getPoints(nodeKey);
 
         // Total score: block delays are now the dominant factor, WS health is secondary, latency is least important
         return wsScore + latencyScore + headDelayScore + safeDelayScore + finalizedDelayScore + matchingScore;
     }
 
-    private boolean isWsHealthy(NodeMonitorService.NodeState state, Instant now) {
+    private boolean isWsHealthy(RpcMonitorService.NodeState state, Instant now) {
         return state.webSocketRef.get() != null
                 && state.lastWsEventReceivedAt != null
                 && state.lastWsEventReceivedAt.isAfter(now.minusSeconds(30)); // fresh within 30s
     }
 
     /**
-     * Resets the selection policy.
+     * Resets the switch policy.
      */
     public void reset() {
-        referenceSelectionPolicy.reset();
+        switchPolicy.reset();
     }
 }

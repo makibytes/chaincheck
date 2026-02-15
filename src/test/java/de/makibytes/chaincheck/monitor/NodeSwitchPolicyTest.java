@@ -17,18 +17,19 @@
  */
 package de.makibytes.chaincheck.monitor;
 
+import de.makibytes.chaincheck.reference.node.NodeSwitchPolicy;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-@DisplayName("ReferenceSelectionPolicy Tests")
-class ReferenceSelectionPolicyTest {
+@DisplayName("NodeSwitchPolicy Tests")
+class NodeSwitchPolicyTest {
 
     @Test
     @DisplayName("switches only when a node wins 15 of last 20 selections")
     void switchesOnlyAfterThreshold() {
-        ReferenceSelectionPolicy policy = new ReferenceSelectionPolicy(20, 15);
+        NodeSwitchPolicy policy = new NodeSwitchPolicy(20, 15);
 
         addSelections(policy, "A", 8);
         addSelections(policy, "B", 12);
@@ -55,7 +56,7 @@ class ReferenceSelectionPolicyTest {
         assertTrue(policy.shouldSwitchTo("A"));
     }
 
-    private void addSelections(ReferenceSelectionPolicy policy, String key, int count) {
+    private void addSelections(NodeSwitchPolicy policy, String key, int count) {
         for (int i = 0; i < count; i++) {
             policy.registerSelection(key);
         }

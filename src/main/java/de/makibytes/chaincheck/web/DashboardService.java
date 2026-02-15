@@ -39,8 +39,8 @@ import de.makibytes.chaincheck.model.DashboardSummary;
 import de.makibytes.chaincheck.model.MetricSample;
 import de.makibytes.chaincheck.model.MetricSource;
 import de.makibytes.chaincheck.model.TimeRange;
-import de.makibytes.chaincheck.monitor.NodeMonitorService;
 import de.makibytes.chaincheck.monitor.NodeRegistry;
+import de.makibytes.chaincheck.monitor.RpcMonitorService;
 import de.makibytes.chaincheck.monitor.WsConnectionTracker;
 import de.makibytes.chaincheck.store.AnomalyAggregate;
 import de.makibytes.chaincheck.store.InMemoryMetricsStore;
@@ -52,7 +52,7 @@ public class DashboardService {
     private final InMemoryMetricsStore store;
     private final MetricsCache cache;
     private final NodeRegistry nodeRegistry;
-    private final NodeMonitorService nodeMonitorService;
+    private final RpcMonitorService nodeMonitorService;
     private final ChainCheckProperties properties;
     private static final int MAX_SAMPLES = 10000;
     private static final int PAGE_SIZE = 50;
@@ -62,7 +62,7 @@ public class DashboardService {
     public DashboardService(InMemoryMetricsStore store,
                             MetricsCache cache,
                             NodeRegistry nodeRegistry,
-                            NodeMonitorService nodeMonitorService,
+                            RpcMonitorService nodeMonitorService,
                             ChainCheckProperties properties) {
         this.store = store;
         this.cache = cache;
@@ -434,6 +434,85 @@ public class DashboardService {
                 })
                 .collect(Collectors.toList());
         
+        // Backward propagation: tag parent blocks as safe/finalized
+        Map<String, String> blockHashToParentHash = new HashMap<>();
+        Map<String, SampleRow> rowByHash = new HashMap<>();
+        for (SampleRow row : intermediateRows) {
+            if (row.getBlockHash() != null && !row.getBlockHash().isBlank()) {
+                rowByHash.put(row.getBlockHash(), row);
+                if (row.getParentHash() != null && !row.getParentHash().isBlank()) {
+                    blockHashToParentHash.put(row.getBlockHash(), row.getParentHash());
+                }
+            }
+        }
+        // When consensus node is configured, enrich parent hash chain from all nodes' samples
+        if (nodeMonitorService.hasConfiguredReferenceMode()) {
+            for (NodeRegistry.NodeDefinition otherNode : nodeRegistry.getNodes()) {
+                if (otherNode.key().equals(nodeKey)) {
+                    continue;
+                }
+                for (MetricSample sample : store.getRawSamplesSince(otherNode.key(), since)) {
+                    String hash = sample.getBlockHash();
+                    String parent = sample.getParentHash();
+                    if (hash != null && !hash.isBlank() && parent != null && !parent.isBlank()) {
+                        blockHashToParentHash.putIfAbsent(hash, parent);
+                    }
+                }
+            }
+        }
+
+        Map<Long, java.util.Set<String>> safeHashesByNumber = new HashMap<>();
+
+        // Propagate finalized status backwards through parent chain
+        java.util.Set<String> finalized = new java.util.HashSet<>(
+            intermediateRows.stream()
+                .filter(row -> row.isFinalized() && row.getBlockHash() != null && !row.getBlockHash().isBlank())
+                .map(SampleRow::getBlockHash)
+                .collect(Collectors.toSet())
+        );
+        for (SampleRow row : intermediateRows) {
+            if (row.isFinalized() && row.getBlockHash() != null && !row.getBlockHash().isBlank()) {
+                String currentHash = blockHashToParentHash.get(row.getBlockHash());
+                java.util.Set<String> visited = new java.util.HashSet<>();
+                while (currentHash != null && !finalized.contains(currentHash) && !visited.contains(currentHash)) {
+                    visited.add(currentHash);
+                    SampleRow currentRow = rowByHash.get(currentHash);
+                    if (currentRow != null && currentRow.getBlockNumber() != null) {
+                        finalizedHashesByNumber
+                            .computeIfAbsent(currentRow.getBlockNumber(), k -> new java.util.HashSet<>())
+                            .add(currentHash);
+                    }
+                    finalized.add(currentHash);
+                    currentHash = blockHashToParentHash.get(currentHash);
+                }
+            }
+        }
+
+        // Propagate safe status backwards through parent chain
+        java.util.Set<String> safe = new java.util.HashSet<>(
+            intermediateRows.stream()
+                .filter(row -> row.isSafe() && row.getBlockHash() != null && !row.getBlockHash().isBlank())
+                .map(SampleRow::getBlockHash)
+                .collect(Collectors.toSet())
+        );
+        for (SampleRow row : intermediateRows) {
+            if (row.isSafe() && row.getBlockHash() != null && !row.getBlockHash().isBlank()) {
+                String currentHash = blockHashToParentHash.get(row.getBlockHash());
+                java.util.Set<String> visited = new java.util.HashSet<>();
+                while (currentHash != null && !safe.contains(currentHash) && !finalized.contains(currentHash) && !visited.contains(currentHash)) {
+                    visited.add(currentHash);
+                    SampleRow currentRow = rowByHash.get(currentHash);
+                    if (currentRow != null && currentRow.getBlockNumber() != null) {
+                        safeHashesByNumber
+                            .computeIfAbsent(currentRow.getBlockNumber(), k -> new java.util.HashSet<>())
+                            .add(currentHash);
+                    }
+                    safe.add(currentHash);
+                    currentHash = blockHashToParentHash.get(currentHash);
+                }
+            }
+        }
+        
         // Second pass: update rows with explicit tags and conflict/invalid detection
         boolean referenceSelected = nodeMonitorService.getReferenceNodeKey() != null;
         Map<Long, java.util.Set<String>> hashesByNumber = intermediateRows.stream()
@@ -550,8 +629,11 @@ public class DashboardService {
                 .map(row -> {
                     if (row.getBlockNumber() == null) return row;
 
-                    boolean isFinalized = row.isFinalized();
-                    boolean isSafe = row.isSafe() && !isFinalized;
+                    boolean isFinalized = row.isFinalized() 
+                        || (row.getBlockHash() != null && finalizedHashesByNumber.getOrDefault(row.getBlockNumber(), java.util.Set.of()).contains(row.getBlockHash()));
+                    boolean isSafe = (row.isSafe() 
+                        || (row.getBlockHash() != null && safeHashesByNumber.getOrDefault(row.getBlockNumber(), java.util.Set.of()).contains(row.getBlockHash()))) 
+                        && !isFinalized;
                     boolean isInvalid = false;
                     boolean isConflict = false;
 

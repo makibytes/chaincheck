@@ -15,7 +15,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-package de.makibytes.chaincheck.monitor;
+package de.makibytes.chaincheck.reference.block;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -23,39 +23,50 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import de.makibytes.chaincheck.model.AnomalyEvent;
 import de.makibytes.chaincheck.model.AnomalyType;
 import de.makibytes.chaincheck.model.MetricSample;
 import de.makibytes.chaincheck.model.MetricSource;
+import de.makibytes.chaincheck.monitor.AnomalyDetector;
+import de.makibytes.chaincheck.monitor.NodeRegistry;
 import de.makibytes.chaincheck.monitor.NodeRegistry.NodeDefinition;
-import de.makibytes.chaincheck.monitor.ReferenceBlocks.Confidence;
+import de.makibytes.chaincheck.monitor.RpcMonitorService;
+import de.makibytes.chaincheck.reference.block.ReferenceBlocks.Confidence;
+import de.makibytes.chaincheck.reference.node.BlockAgreementTracker;
 import de.makibytes.chaincheck.store.InMemoryMetricsStore;
 
-class ReferenceBlockVoting {
+public class BlockVotingCoordinator {
+
+    private static final Logger logger = LoggerFactory.getLogger(BlockVotingCoordinator.class);
 
     private final NodeRegistry nodeRegistry;
     private final BlockVotingService blockVotingService;
-    private final NodeScorer nodeScorer;
+    private final BlockAgreementTracker blockAgreementTracker;
     private final InMemoryMetricsStore store;
     private final AnomalyDetector detector;
 
-    ReferenceBlockVoting(NodeRegistry nodeRegistry,
+    public BlockVotingCoordinator(NodeRegistry nodeRegistry,
                          BlockVotingService blockVotingService,
-                         NodeScorer nodeScorer,
+                         BlockAgreementTracker blockAgreementTracker,
                          InMemoryMetricsStore store,
                          AnomalyDetector detector) {
         this.nodeRegistry = nodeRegistry;
         this.blockVotingService = blockVotingService;
-        this.nodeScorer = nodeScorer;
+        this.blockAgreementTracker = blockAgreementTracker;
         this.store = store;
         this.detector = detector;
     }
 
-    void collectVotesFromNodes(Map<String, NodeMonitorService.NodeState> nodeStates) {
+    public void collectVotesFromNodes(Map<String, RpcMonitorService.NodeState> nodeStates) {
+        logger.debug("Collecting votes from {} nodes", nodeStates.size());
         blockVotingService.clearVotes();
         for (NodeDefinition node : nodeRegistry.getNodes()) {
-            NodeMonitorService.NodeState state = nodeStates.get(node.key());
+            RpcMonitorService.NodeState state = nodeStates.get(node.key());
             if (state == null) {
+                logger.debug("No NodeState found for node key={}, skipping vote collection", node.key());
                 continue;
             }
 
@@ -74,7 +85,7 @@ class ReferenceBlockVoting {
         }
     }
 
-    Map<Long, Map<Confidence, String>> snapshotOldReferenceBlocks() {
+    public Map<Long, Map<Confidence, String>> snapshotOldReferenceBlocks() {
         Map<Long, Map<Confidence, String>> oldBlocks = new HashMap<>();
         for (Map.Entry<Long, Map<Confidence, String>> entry : blockVotingService.getReferenceBlocks().getBlocks().entrySet()) {
             oldBlocks.put(entry.getKey(), new HashMap<>(entry.getValue()));
@@ -82,18 +93,18 @@ class ReferenceBlockVoting {
         return oldBlocks;
     }
 
-    void performVotingAndScoring(Map<Long, Map<Confidence, String>> oldBlocks,
+    public void performVotingAndScoring(Map<Long, Map<Confidence, String>> oldBlocks,
                                  String currentReferenceNodeKey,
                                  Instant now,
                                  boolean warmupComplete,
-                                 Map<String, NodeMonitorService.NodeState> nodeStates) {
+                                 Map<String, RpcMonitorService.NodeState> nodeStates) {
         blockVotingService.performVoting(currentReferenceNodeKey);
         emitWrongHeadForInvalidatedWsNewHeads(oldBlocks, now, warmupComplete);
-        nodeScorer.penalizeForInvalidBlocks(oldBlocks, blockVotingService.getReferenceBlocks(), blockVotingService.getBlockVotes());
-        nodeScorer.awardPointsForCorrectBlocks(oldBlocks, blockVotingService.getReferenceBlocks(), blockVotingService.getBlockVotes());
+        blockAgreementTracker.penalize(oldBlocks, blockVotingService.getReferenceBlocks(), blockVotingService.getBlockVotes());
+        blockAgreementTracker.awardPoints(oldBlocks, blockVotingService.getReferenceBlocks(), blockVotingService.getBlockVotes());
     }
 
-    ReferenceHead resolveReferenceHead() {
+    public ReferenceHead resolveReferenceHead() {
         long referenceHeadNumber = -1;
         String referenceHeadHash = null;
         for (Map.Entry<Long, Map<Confidence, String>> entry : blockVotingService.getReferenceBlocks().getBlocks().entrySet()) {
@@ -107,6 +118,7 @@ class ReferenceBlockVoting {
         if (referenceHeadNumber == -1) {
             return null;
         }
+        logger.debug("Resolved reference head: number={} hash= {}", referenceHeadNumber, referenceHeadHash);
         return new ReferenceHead(referenceHeadNumber, referenceHeadHash);
     }
 
@@ -201,6 +213,6 @@ class ReferenceBlockVoting {
         return false;
     }
 
-    record ReferenceHead(Long headNumber, String headHash) {
+    public record ReferenceHead(Long headNumber, String headHash) {
     }
 }

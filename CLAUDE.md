@@ -47,11 +47,25 @@ All source lives under `de.makibytes.chaincheck` with five packages:
 
 ### By Configuration
 
-You can configure a specific beacon/consensus node as the reference source for safe/finalized comparisons.
+You can configure a specific consensus node as the reference source for safe/finalized comparisons.
 
 ### By Majority Voting
 
 When not explicitly configured, the reference node is selected via majority voting across all monitored nodes.
+
+## Block Finality Status and Updates
+
+Blocks initially have the status NEW, then SAFE (optionally),
+and finally FINALIZED. NEW blocks are being streamed via WebSocket's newHeads subscription, if available, otherwise via HTTP polling ('latest'). SAFE and FINALZED blocks can also be polled via HTTP, but that's not the preferred method for all chains. On Ethereum you should configure a consensus node as reference and get the SAFE and FINALILZED status from there.
+
+
+When ChainCheck learns about SAFE and FINALIZED blocks the status updates are triggered by the following rules:
+
+ed newHeads are streamed
+- First time we get to know about a FINALIZED block tag this block finalized and go back through the blockchain (block-by-block by the parent hash), tag each of the blocks you go through finalized as well, until you encounter a block that has already been tagged finalized, then stop
+- the first time we get to know about a SAFE block tag this block safe and go back through the blockchain (block-by-block by the parent hash), tag each of the blocks you go through safe as well, until you encounter a block that has already been tagged safe or finalized, then stop
+
+When HTTP polling is used, these rules apply for the current node's samples only. When a consensus node is configured, these rules apply to all nodes' samples.
 
 ## Conflicting and Invalid Blocks
 

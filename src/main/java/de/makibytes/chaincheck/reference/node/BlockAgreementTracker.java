@@ -15,28 +15,29 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-package de.makibytes.chaincheck.monitor;
+package de.makibytes.chaincheck.reference.node;
 
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
+import de.makibytes.chaincheck.reference.block.ReferenceBlocks;
 import org.springframework.stereotype.Service;
 
-import de.makibytes.chaincheck.monitor.ReferenceBlocks.Confidence;
+import de.makibytes.chaincheck.reference.block.ReferenceBlocks.Confidence;
 
 /**
- * Service responsible for scoring nodes based on their agreement with reference blocks.
+ * Tracks node agreement with reference blocks by awarding and penalizing points.
  */
 @Service
-public class NodeScorer {
+public class BlockAgreementTracker {
 
     private final Map<String, Integer> nodePoints = new ConcurrentHashMap<>();
 
     /**
      * Awards points to nodes that correctly reported blocks that became reference blocks.
      */
-    public void awardPointsForCorrectBlocks(Map<Long, Map<Confidence, String>> oldBlocks, ReferenceBlocks referenceBlocks,
+    public void awardPoints(Map<Long, Map<Confidence, String>> oldBlocks, ReferenceBlocks referenceBlocks,
             Map<Long, Map<Confidence, Map<String, Set<String>>>> blockVotes) {
         for (Map.Entry<Long, Map<Confidence, String>> entry : referenceBlocks.getBlocks().entrySet()) {
             long blockNumber = entry.getKey();
@@ -63,7 +64,7 @@ public class NodeScorer {
     /**
      * Penalizes nodes that reported blocks that were invalidated.
      */
-    public void penalizeForInvalidBlocks(Map<Long, Map<Confidence, String>> oldBlocks, ReferenceBlocks referenceBlocks,
+    public void penalize(Map<Long, Map<Confidence, String>> oldBlocks, ReferenceBlocks referenceBlocks,
             Map<Long, Map<Confidence, Map<String, Set<String>>>> blockVotes) {
         for (Map.Entry<Long, Map<Confidence, String>> entry : oldBlocks.entrySet()) {
             long blockNumber = entry.getKey();

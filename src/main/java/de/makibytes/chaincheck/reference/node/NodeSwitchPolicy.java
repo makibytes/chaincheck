@@ -15,36 +15,30 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-package de.makibytes.chaincheck.monitor;
+package de.makibytes.chaincheck.reference.node;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
 
-final class ReferenceSelectionPolicy {
+public class NodeSwitchPolicy {
 
     private final int windowSize;
     private final int switchThreshold;
     private final Deque<String> selections = new ArrayDeque<>();
 
-    ReferenceSelectionPolicy(int windowSize, int switchThreshold) {
+    public NodeSwitchPolicy(int windowSize, int switchThreshold) {
         this.windowSize = Math.max(1, windowSize);
         this.switchThreshold = Math.max(1, switchThreshold);
     }
 
-    void registerSelection(String nodeKey) {
-        if (nodeKey == null) {
-            return;
-        }
+    public void registerSelection(String nodeKey) {
         selections.addLast(nodeKey);
         while (selections.size() > windowSize) {
             selections.removeFirst();
         }
     }
 
-    boolean shouldSwitchTo(String nodeKey) {
-        if (nodeKey == null) {
-            return false;
-        }
+    public boolean shouldSwitchTo(String nodeKey) {
         int count = 0;
         for (String key : selections) {
             if (nodeKey.equals(key)) {
@@ -54,7 +48,7 @@ final class ReferenceSelectionPolicy {
         return count >= switchThreshold;
     }
 
-    void reset() {
+    public void reset() {
         selections.clear();
     }
 }
