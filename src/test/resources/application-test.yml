@@ -8,6 +8,8 @@ spring:
 rpc:
   title: "Mock RPC"
   title-color: "#777777"
+  get-safe-blocks: false
+  get-finalized-blocks: true
   nodes:
     - name: Mock Node
       http: ""
@@ -15,4 +17,3 @@ rpc:
       poll-interval-ms: 60000
       anomaly-detection:
         high-latency: 2000
-      safe-blocks-enabled: false

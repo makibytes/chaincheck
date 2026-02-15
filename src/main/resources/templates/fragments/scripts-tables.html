@@ -103,15 +103,32 @@
     ].join(' ').toLowerCase();
 
     const renderSampleRow = (s) => {
-        let blockDisplay = s.blockNumber ? String(s.blockNumber) : '-';
-        if (s.blockNumber && s.conflict) {
-            blockDisplay += ' <span class="tag tag-conflict">conflict</span>';
-        } else if (s.blockNumber && s.invalid) {
-            blockDisplay += ' <span class="tag tag-invalid">invalid</span>';
-        } else if (s.blockNumber && s.finalized) {
-            blockDisplay += ' <span class="tag tag-finalized">finalized</span>';
-        } else if (s.blockNumber && s.safe) {
-            blockDisplay += ' <span class="tag tag-safe">safe</span>';
+        const lifecycleBadge = s.finalized
+            ? '<span class="tag tag-finalized">finalized</span>'
+            : (s.safe
+                ? '<span class="tag tag-safe">safe</span>'
+                : (s.status === 'NEW' ? '<span class="tag tag-new">new</span>' : ''));
+
+        const resolutionBadge = s.conflict
+            ? '<span class="tag tag-conflict">conflict</span>'
+            : (s.invalid ? '<span class="tag tag-invalid">invalid</span>' : '');
+
+        const statusBadgeFragments = [];
+        if (lifecycleBadge) {
+            statusBadgeFragments.push(lifecycleBadge);
+        }
+        if (resolutionBadge) {
+            statusBadgeFragments.push(resolutionBadge);
+        }
+
+        const blockDisplay = s.blockNumber ? String(s.blockNumber) : '-';
+
+        const statusText = s.status === 'NEW' ? '' : (s.status ?? '-');
+        let statusDisplay = statusText;
+        if (statusBadgeFragments.length > 0) {
+            statusDisplay = statusText
+                ? `${statusText} ${statusBadgeFragments.join(' ')}`
+                : statusBadgeFragments.join(' ');
         }
 
         let sourceDisplay = '';
@@ -129,7 +146,7 @@
         return `
         <td>${s.time ?? '-'}</td>
         <td>${sourceDisplay || '-'}</td>
-        <td>${s.status ?? '-'}</td>
+        <td>${statusDisplay}</td>
         <td>${s.latencyMs !== null && s.latencyMs !== undefined ? s.latencyMs + ' ms' : 'n/a'}</td>
         <td>${blockDisplay}</td>
         <td>${s.transactionCount ?? '-'}</td>

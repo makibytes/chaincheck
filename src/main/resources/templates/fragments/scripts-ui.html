@@ -159,20 +159,35 @@
         if (!sample || !sampleContent) {
             return;
         }
-        const blockBadge = sample.conflict
+        const lifecycleBadge = sample.finalized
+            ? '<span class="tag tag-finalized">finalized</span>'
+            : (sample.safe
+                ? '<span class="tag tag-safe">safe</span>'
+                : (sample.status === 'NEW' ? '<span class="tag tag-new">new</span>' : ''));
+
+        const resolutionBadge = sample.conflict
             ? '<span class="tag tag-conflict">conflict</span>'
-            : (sample.invalid
-                ? '<span class="tag tag-invalid">invalid</span>'
-                : (sample.finalized
-                    ? '<span class="tag tag-finalized">finalized</span>'
-                    : (sample.safe ? '<span class="tag tag-safe">safe</span>' : '')));
-        const blockDisplay = `${sample.blockNumber ?? '-'}${blockBadge ? ' ' + blockBadge : ''}`;
+            : (sample.invalid ? '<span class="tag tag-invalid">invalid</span>' : '');
+
+        const statusBadgeFragments = [];
+        if (lifecycleBadge) {
+            statusBadgeFragments.push(lifecycleBadge);
+        }
+        if (resolutionBadge) {
+            statusBadgeFragments.push(resolutionBadge);
+        }
+        const statusBadgeHtml = statusBadgeFragments.join(' ');
+        const blockDisplay = `${sample.blockNumber ?? '-'}`;
+        const statusText = sample.status === 'NEW' ? '' : (sample.status ?? '-');
+        const statusDisplay = statusBadgeHtml
+            ? (statusText ? `${statusText} ${statusBadgeHtml}` : statusBadgeHtml)
+            : statusText;
         sampleContent.innerHTML = `
             <div class="detail-grid">
                 <div><span class="label">Block</span><span>${blockDisplay}</span></div>
                 <div><span class="label">Block Time</span><span>${sample.blockTime ?? '-'}</span></div>
                 <div><span class="label">Sources</span><span>${(sample.sources || []).join(', ') || '-'}</span></div>
-                <div><span class="label">Status</span><span>${sample.status ?? '-'}</span></div>
+                <div><span class="label">Status</span><span>${statusDisplay}</span></div>
                 <div><span class="label">Latency</span><span>${sample.latencyMs != null ? sample.latencyMs + ' ms' : 'n/a'}</span></div>
                 <div><span class="label">Transactions</span><span>${sample.transactionCount ?? 'n/a'}</span></div>
                 <div><span class="label">Block Hash</span><span class="hash-container">${formatHash(sample.blockHash)} ${copyBtn(sample.blockHash)}</span></div>

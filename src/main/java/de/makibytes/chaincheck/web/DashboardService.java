@@ -39,8 +39,8 @@ import de.makibytes.chaincheck.model.DashboardSummary;
 import de.makibytes.chaincheck.model.MetricSample;
 import de.makibytes.chaincheck.model.MetricSource;
 import de.makibytes.chaincheck.model.TimeRange;
+import de.makibytes.chaincheck.monitor.NodeMonitorService;
 import de.makibytes.chaincheck.monitor.NodeRegistry;
-import de.makibytes.chaincheck.monitor.RpcMonitorService;
 import de.makibytes.chaincheck.monitor.WsConnectionTracker;
 import de.makibytes.chaincheck.store.AnomalyAggregate;
 import de.makibytes.chaincheck.store.InMemoryMetricsStore;
@@ -52,7 +52,7 @@ public class DashboardService {
     private final InMemoryMetricsStore store;
     private final MetricsCache cache;
     private final NodeRegistry nodeRegistry;
-    private final RpcMonitorService rpcMonitorService;
+    private final NodeMonitorService nodeMonitorService;
     private final ChainCheckProperties properties;
     private static final int MAX_SAMPLES = 10000;
     private static final int PAGE_SIZE = 50;
@@ -62,12 +62,12 @@ public class DashboardService {
     public DashboardService(InMemoryMetricsStore store,
                             MetricsCache cache,
                             NodeRegistry nodeRegistry,
-                            RpcMonitorService rpcMonitorService,
+                            NodeMonitorService nodeMonitorService,
                             ChainCheckProperties properties) {
         this.store = store;
         this.cache = cache;
         this.nodeRegistry = nodeRegistry;
-        this.rpcMonitorService = rpcMonitorService;
+        this.nodeMonitorService = nodeMonitorService;
         this.properties = properties;
     }
 
@@ -317,6 +317,24 @@ public class DashboardService {
                 || sample.getSafeDelayCount() > 0
                 || sample.getFinalizedDelayCount() > 0);
 
+        java.util.Set<String> consensusSafeHashes = java.util.Set.of();
+        java.util.Set<String> consensusFinalizedHashes = java.util.Set.of();
+        if (nodeMonitorService.hasConfiguredReferenceMode()) {
+            List<MetricSample> consensusReferenceSamples = nodeMonitorService.getConfiguredReferenceDelaySamplesSince(since);
+            consensusSafeHashes = consensusReferenceSamples.stream()
+                .filter(sample -> sample.getSafeDelayMs() != null)
+                .map(MetricSample::getBlockHash)
+                .filter(hash -> hash != null && !hash.isBlank())
+                .collect(Collectors.toSet());
+            consensusFinalizedHashes = consensusReferenceSamples.stream()
+                .filter(sample -> sample.getFinalizedDelayMs() != null)
+                .map(MetricSample::getBlockHash)
+                .filter(hash -> hash != null && !hash.isBlank())
+                .collect(Collectors.toSet());
+        }
+            final java.util.Set<String> effectiveConsensusSafeHashes = consensusSafeHashes;
+            final java.util.Set<String> effectiveConsensusFinalizedHashes = consensusFinalizedHashes;
+
         // Group samples by blockhash and merge them
         Map<String, List<MetricSample>> samplesByHash = rawSamples.stream()
                 .filter(s -> s.getBlockHash() != null && !s.getBlockHash().isBlank())
@@ -325,7 +343,6 @@ public class DashboardService {
         DateTimeFormatter rowFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.systemDefault());
 
         // First pass: create intermediate rows with block number and initial finalized/safe status
-        Map<Long, BlockTagInfo> blockTags = new HashMap<>();
         Map<Long, java.util.Set<String>> finalizedHashesByNumber = new HashMap<>();
         Map<String, Instant> sampleTimestampByHash = new HashMap<>();
         
@@ -353,16 +370,18 @@ public class DashboardService {
                                 .orElse(-1));
                     }
                     
-                        // Determine if this block was explicitly queried as finalized or safe
-                    boolean hasFinalized = samples.stream().anyMatch(s -> s.getFinalizedDelayMs() != null);
-                    boolean hasSafe = samples.stream().anyMatch(s -> s.getSafeDelayMs() != null);
-                    
                     boolean allSuccess = samples.stream().allMatch(MetricSample::isSuccess);
                         String blockHash = samples.stream()
                             .map(MetricSample::getBlockHash)
                             .filter(hash -> hash != null && !hash.isBlank())
                             .findFirst()
                             .orElse(null);
+                    // Determine if this block is safe/finalized either from node-local queries
+                    // or from configured consensus reference observations.
+                    boolean hasFinalized = samples.stream().anyMatch(s -> s.getFinalizedDelayMs() != null)
+                            || (blockHash != null && effectiveConsensusFinalizedHashes.contains(blockHash));
+                    boolean hasSafe = samples.stream().anyMatch(s -> s.getSafeDelayMs() != null)
+                            || (blockHash != null && effectiveConsensusSafeHashes.contains(blockHash));
                         String parentHash = samples.stream()
                             .map(MetricSample::getParentHash)
                             .filter(hash -> hash != null && !hash.isBlank())
@@ -385,13 +404,11 @@ public class DashboardService {
                             .findFirst()
                             .orElse(null);
                     
-                    // Store tag info for propagation
                     if (blockHash != null && !blockHash.isBlank()) {
                         sampleTimestampByHash.putIfAbsent(blockHash, first.getTimestamp());
                     }
 
                     if (first.getBlockNumber() != null) {
-                        blockTags.put(first.getBlockNumber(), new BlockTagInfo(hasFinalized, hasSafe));
                         if (hasFinalized && blockHash != null && !blockHash.isBlank()) {
                             finalizedHashesByNumber
                                     .computeIfAbsent(first.getBlockNumber(), key -> new java.util.HashSet<>())
@@ -402,7 +419,7 @@ public class DashboardService {
                             return new SampleRow(
                             rowFormatter.format(first.getTimestamp()),
                             sources,
-                            allSuccess ? "OK" : "ERROR",
+                            allSuccess ? "NEW" : "ERROR",
                             avgLatencyForRow,
                             first.getBlockNumber(),
                             blockHash,
@@ -417,53 +434,8 @@ public class DashboardService {
                 })
                 .collect(Collectors.toList());
         
-        // Second pass: propagate tags backwards
-        // Sort block numbers in descending order
-        List<Long> sortedBlockNumbers = blockTags.keySet().stream()
-                .sorted(Comparator.reverseOrder())
-                .toList();
-        
-        for (Long blockNumber : sortedBlockNumbers) {
-            BlockTagInfo info = blockTags.get(blockNumber);
-            
-            // If this block was explicitly marked as finalized, propagate backwards
-            if (info.explicitFinalized) {
-                for (long prevBlock = blockNumber - 1; prevBlock >= 0; prevBlock--) {
-                    BlockTagInfo prevInfo = blockTags.get(prevBlock);
-                    if (prevInfo == null) break; // No data for this block
-                    if (prevInfo.finalized) break; // Already finalized, stop
-                    
-                    // Mark as finalized (remove safe if present)
-                    prevInfo.finalized = true;
-                    prevInfo.safe = false;
-                }
-            }
-            
-            // If this block was explicitly marked as safe (and not finalized), propagate backwards
-            if (info.explicitSafe && !info.finalized) {
-                for (long prevBlock = blockNumber - 1; prevBlock >= 0; prevBlock--) {
-                    BlockTagInfo prevInfo = blockTags.get(prevBlock);
-                    if (prevInfo == null) break; // No data for this block
-                    if (prevInfo.finalized) break; // Hit finalized block, stop
-                    if (prevInfo.safe) break; // Already safe, stop
-                    
-                    // Mark as safe if not already tagged
-                    if (!prevInfo.finalized) {
-                        prevInfo.safe = true;
-                    }
-                }
-            }
-            
-            // Apply final status to this block
-            if (info.explicitFinalized) {
-                info.finalized = true;
-            } else if (info.explicitSafe) {
-                info.safe = true;
-            }
-        }
-        
-        // Third pass: update rows with propagated tags
-        boolean referenceSelected = rpcMonitorService.getReferenceNodeKey() != null;
+        // Second pass: update rows with explicit tags and conflict/invalid detection
+        boolean referenceSelected = nodeMonitorService.getReferenceNodeKey() != null;
         Map<Long, java.util.Set<String>> hashesByNumber = intermediateRows.stream()
                 .filter(row -> row.getBlockNumber() != null && row.getBlockHash() != null && !row.getBlockHash().isBlank())
                 .collect(Collectors.groupingBy(
@@ -578,40 +550,28 @@ public class DashboardService {
                 .map(row -> {
                     if (row.getBlockNumber() == null) return row;
 
-                    BlockTagInfo info = blockTags.get(row.getBlockNumber());
-                    boolean isFinalized = info != null && info.finalized;
-                    boolean isSafe = info != null && info.safe && !isFinalized;
+                    boolean isFinalized = row.isFinalized();
+                    boolean isSafe = row.isSafe() && !isFinalized;
                     boolean isInvalid = false;
                     boolean isConflict = false;
 
                     if (row.getBlockNumber() != null && row.getBlockHash() != null) {
-                        java.util.Set<String> finalizedHashes = finalizedHashesByNumber.get(row.getBlockNumber());
-                        if (finalizedHashes != null && !finalizedHashes.isEmpty()
-                                && finalizedHashes.contains(row.getBlockHash())) {
-                            isFinalized = true;
-                            isSafe = false;
-                        }
-
                         java.util.Set<String> conflicts = conflictHashesByNumber.get(row.getBlockNumber());
                         if (conflicts != null && !conflicts.isEmpty()) {
                             String resolvedHash = resolvedFinalizedHashByNumber.get(row.getBlockNumber());
                             if (resolvedHash != null) {
                                 if (resolvedHash.equals(row.getBlockHash())) {
-                                    isFinalized = true;
-                                    isSafe = false;
                                     isConflict = false;
                                 } else if (resolvedInvalidHashesByNumber.getOrDefault(row.getBlockNumber(), java.util.Set.of())
                                         .contains(row.getBlockHash())) {
                                     isInvalid = true;
-                                    isFinalized = false;
-                                    isSafe = false;
                                 }
                             } else {
                                 isConflict = true;
                             }
                         }
 
-                        if (!isConflict && !isInvalid
+                        if (!isConflict && !isInvalid && !isFinalized && !isSafe
                                 && referenceSelected
                                 && chainTipNumber != null
                                 && chainDepth >= 7
@@ -649,15 +609,22 @@ public class DashboardService {
         int totalSamples = sampleRows.size();
         int totalPages = Math.max(1, Math.min(MAX_PAGES, (int) Math.ceil(totalSamples / (double) PAGE_SIZE)));
 
-        String referenceNodeKey = rpcMonitorService.getReferenceNodeKey();
+        String referenceNodeKey = nodeMonitorService.getReferenceNodeKey();
         boolean isReferenceNode = referenceNodeKey != null && referenceNodeKey.equals(nodeKey);
         List<Long> chartReferenceHeadDelays = List.of();
         List<Long> chartReferenceSafeDelays = List.of();
         List<Long> chartReferenceFinalizedDelays = List.of();
         if (referenceNodeKey != null && !isReferenceNode && !delayChartData.timestamps().isEmpty()) {
-            List<MetricSample> refRawSamples = store.getRawSamplesSince(referenceNodeKey, since);
-            List<SampleAggregate> refAggregateSamples = store.getAggregatedSamplesSince(referenceNodeKey, since).stream()
-                .toList();
+            List<MetricSample> refRawSamples;
+            List<SampleAggregate> refAggregateSamples;
+            if (nodeMonitorService.hasConfiguredReferenceMode()) {
+                refRawSamples = nodeMonitorService.getConfiguredReferenceDelaySamplesSince(since);
+                refAggregateSamples = List.of();
+            } else {
+                refRawSamples = store.getRawSamplesSince(referenceNodeKey, since);
+                refAggregateSamples = store.getAggregatedSamplesSince(referenceNodeKey, since).stream()
+                        .toList();
+            }
             ChartBuilder.DelayChartData refDelayChart = ChartBuilder.buildDelayChartAligned(refRawSamples, refAggregateSamples, delayChartData.timestamps());
             chartReferenceHeadDelays = refDelayChart.headDelays();
             chartReferenceSafeDelays = refDelayChart.safeDelays();
@@ -879,23 +846,9 @@ public class DashboardService {
             return null; // Single node setup - no reference to compare against
         }
 
-        return rpcMonitorService.isReferenceNode(nodeKey)
+        return nodeMonitorService.isReferenceNode(nodeKey)
             .map(isRef -> new ReferenceComparison(Boolean.TRUE.equals(isRef)))
                 .orElse(null);
-    }
-
-    private static class BlockTagInfo {
-        boolean explicitFinalized;
-        boolean explicitSafe;
-        boolean finalized;
-        boolean safe;
-
-        BlockTagInfo(boolean explicitFinalized, boolean explicitSafe) {
-            this.explicitFinalized = explicitFinalized;
-            this.explicitSafe = explicitSafe;
-            this.finalized = false;
-            this.safe = false;
-        }
     }
 
     private ChainSelection selectLatestChain(List<SampleRow> rows,

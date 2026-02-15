@@ -36,14 +36,15 @@ import org.springframework.test.util.ReflectionTestUtils;
 import de.makibytes.chaincheck.config.ChainCheckProperties;
 import de.makibytes.chaincheck.model.AnomalyEvent;
 import de.makibytes.chaincheck.model.AnomalyType;
+import de.makibytes.chaincheck.model.MetricSample;
 import de.makibytes.chaincheck.model.MetricSource;
 import de.makibytes.chaincheck.monitor.NodeRegistry.NodeDefinition;
 import de.makibytes.chaincheck.store.InMemoryMetricsStore;
 
-@DisplayName("RpcMonitorService Tests")
+@DisplayName("NodeMonitorService Tests")
 class RpcMonitorServiceTest {
 
-    private final RpcMonitorService service = new RpcMonitorService(null, null, null);
+    private final NodeMonitorService service = new NodeMonitorService(null, null, null);
 
     @Test
     @DisplayName("areErrorsSame: identical errors should be same")
@@ -116,11 +117,11 @@ class RpcMonitorServiceTest {
     @DisplayName("reference uses majority of available nodes")
     void referenceFollowsMajorityAcrossNodes() {
         NodeRegistry registry = registryWithNodes("alpha", "beta", "gamma");
-        RpcMonitorService svc = new RpcMonitorService(registry, null, null);
-        Map<String, RpcMonitorService.NodeState> states = nodeStates(svc);
+        NodeMonitorService svc = new NodeMonitorService(registry, null, null);
+        Map<String, NodeMonitorService.NodeState> states = nodeStates(svc);
 
         for (NodeDefinition def : registry.getNodes()) {
-            RpcMonitorService.NodeState state = new RpcMonitorService.NodeState();
+            NodeMonitorService.NodeState state = new NodeMonitorService.NodeState();
             if (def.key().contains("gamma")) {
                 state.lastHttpBlockNumber = 99L;
                 state.lastHttpBlockHash = "0xdeadbeef";
@@ -139,15 +140,79 @@ class RpcMonitorServiceTest {
     }
 
     @Test
+    @DisplayName("configured reference node disables automatic reference node selection")
+    void configuredReferenceNodeDisablesAutoSelection() {
+        ChainCheckProperties properties = new ChainCheckProperties();
+        properties.getConsensus().setNodeKey("alpha");
+
+        List<ChainCheckProperties.RpcNodeProperties> nodeProps = new ArrayList<>();
+        ChainCheckProperties.RpcNodeProperties alpha = new ChainCheckProperties.RpcNodeProperties();
+        alpha.setName("alpha");
+        alpha.setHttp("http://alpha.example");
+        nodeProps.add(alpha);
+        ChainCheckProperties.RpcNodeProperties beta = new ChainCheckProperties.RpcNodeProperties();
+        beta.setName("beta");
+        beta.setHttp("http://beta.example");
+        nodeProps.add(beta);
+        properties.setNodes(nodeProps);
+
+        NodeRegistry registry = new NodeRegistry(properties);
+        NodeMonitorService svc = new NodeMonitorService(registry, null, null, properties);
+        Map<String, NodeMonitorService.NodeState> states = nodeStates(svc);
+
+        NodeMonitorService.NodeState alphaState = new NodeMonitorService.NodeState();
+        alphaState.lastHttpBlockNumber = 100L;
+        alphaState.lastHttpBlockHash = "0xaaa";
+        states.put("alpha", alphaState);
+
+        NodeMonitorService.NodeState betaState = new NodeMonitorService.NodeState();
+        betaState.lastHttpBlockNumber = 120L;
+        betaState.lastHttpBlockHash = "0xbbb";
+        states.put("beta", betaState);
+
+        ReflectionTestUtils.invokeMethod(svc, "refreshReferenceFromNodes");
+
+        assertEquals("alpha", svc.getReferenceNodeKey());
+    }
+
+    @Test
+    @DisplayName("configured reference node is excluded from execution HTTP polling")
+    void configuredReferenceNodeExcludedFromExecutionPolling() {
+        ChainCheckProperties properties = new ChainCheckProperties();
+        properties.getConsensus().setNodeKey("alpha");
+
+        List<ChainCheckProperties.RpcNodeProperties> nodeProps = new ArrayList<>();
+        ChainCheckProperties.RpcNodeProperties alpha = new ChainCheckProperties.RpcNodeProperties();
+        alpha.setName("alpha");
+        alpha.setHttp("http://alpha.example");
+        nodeProps.add(alpha);
+
+        ChainCheckProperties.RpcNodeProperties beta = new ChainCheckProperties.RpcNodeProperties();
+        beta.setName("beta");
+        beta.setHttp("http://beta.example");
+        nodeProps.add(beta);
+        properties.setNodes(nodeProps);
+
+        NodeRegistry registry = new NodeRegistry(properties);
+        NodeMonitorService svc = new NodeMonitorService(registry, null, null, properties);
+
+        boolean alphaEligible = (boolean) ReflectionTestUtils.invokeMethod(svc, "shouldPollExecutionHttp", "alpha");
+        boolean betaEligible = (boolean) ReflectionTestUtils.invokeMethod(svc, "shouldPollExecutionHttp", "beta");
+
+        assertFalse(alphaEligible);
+        assertTrue(betaEligible);
+    }
+
+    @Test
     @DisplayName("reference prefers healthy WebSocket nodes when others stall")
     void referencePrefersHealthyWebSocketsWhenOthersStall() {
         NodeRegistry registry = registryWithNodes("a", "b", "c", "d", "e");
-        RpcMonitorService svc = new RpcMonitorService(registry, null, null);
-        Map<String, RpcMonitorService.NodeState> states = nodeStates(svc);
+        NodeMonitorService svc = new NodeMonitorService(registry, null, null);
+        Map<String, NodeMonitorService.NodeState> states = nodeStates(svc);
         Instant now = Instant.now();
 
         for (NodeDefinition def : registry.getNodes()) {
-            RpcMonitorService.NodeState state = new RpcMonitorService.NodeState();
+            NodeMonitorService.NodeState state = new NodeMonitorService.NodeState();
             if (def.key().equals("a") || def.key().equals("b")) {
                 state.lastWsBlockNumber = 120L;
                 state.lastWsBlockHash = "0xhead";
@@ -174,10 +239,11 @@ class RpcMonitorServiceTest {
         properties.getAnomalyDetection().setLongDelayBlockCount(15);
         NodeRegistry registry = registryWithNodes("mock-node", "mock-node-two");
         InMemoryMetricsStore store = new InMemoryMetricsStore(properties);
-        RpcMonitorService svc = new RpcMonitorService(registry, store, new AnomalyDetector(), properties);
+        NodeMonitorService svc = new NodeMonitorService(registry, store, new AnomalyDetector(), properties);
+        ReflectionTestUtils.setField(svc, "warmupComplete", true);
 
-        Map<String, RpcMonitorService.NodeState> states = nodeStates(svc);
-        RpcMonitorService.NodeState referenceState = new RpcMonitorService.NodeState();
+        Map<String, NodeMonitorService.NodeState> states = nodeStates(svc);
+        NodeMonitorService.NodeState referenceState = new NodeMonitorService.NodeState();
         referenceState.lastWsBlockNumber = 100L;
         referenceState.lastWsBlockHash = "0xref";
         referenceState.lastWsEventReceivedAt = Instant.now();
@@ -185,7 +251,7 @@ class RpcMonitorServiceTest {
         referenceState.webSocketRef.set(dummyWebSocket());
         states.put("mock-node-two", referenceState);
 
-        RpcMonitorService.NodeState targetState = new RpcMonitorService.NodeState();
+        NodeMonitorService.NodeState targetState = new NodeMonitorService.NodeState();
         targetState.lastWsBlockNumber = 80L;
         targetState.lastWsBlockHash = "0xtarget";
         targetState.lastWsEventReceivedAt = Instant.now();
@@ -218,10 +284,11 @@ class RpcMonitorServiceTest {
         properties.getAnomalyDetection().setLongDelayBlockCount(15);
         NodeRegistry registry = registryWithNodes("mock-node", "mock-node-two");
         InMemoryMetricsStore store = new InMemoryMetricsStore(properties);
-        RpcMonitorService svc = new RpcMonitorService(registry, store, new AnomalyDetector(), properties);
+        NodeMonitorService svc = new NodeMonitorService(registry, store, new AnomalyDetector(), properties);
+        ReflectionTestUtils.setField(svc, "warmupComplete", true);
 
-        Map<String, RpcMonitorService.NodeState> states = nodeStates(svc);
-        RpcMonitorService.NodeState referenceState = new RpcMonitorService.NodeState();
+        Map<String, NodeMonitorService.NodeState> states = nodeStates(svc);
+        NodeMonitorService.NodeState referenceState = new NodeMonitorService.NodeState();
         referenceState.lastWsBlockNumber = 210L;
         referenceState.lastWsBlockHash = "0xhead";
         referenceState.lastWsEventReceivedAt = Instant.now();
@@ -231,7 +298,7 @@ class RpcMonitorServiceTest {
         referenceState.lastSafeBlockHash = "0xbbb";
         states.put("mock-node-two", referenceState);
 
-        RpcMonitorService.NodeState targetState = new RpcMonitorService.NodeState();
+        NodeMonitorService.NodeState targetState = new NodeMonitorService.NodeState();
         targetState.lastWsBlockNumber = 210L;
         targetState.lastWsBlockHash = "0xhead-target";
         targetState.lastWsEventReceivedAt = Instant.now();
@@ -257,6 +324,73 @@ class RpcMonitorServiceTest {
         assertEquals(200L, anomalies.get(0).getBlockNumber());
     }
 
+    @Test
+    @DisplayName("wrong head anomaly when WS newHead later becomes invalid")
+    void wrongHeadWhenWsNewHeadLaterInvalidated() {
+        ChainCheckProperties properties = new ChainCheckProperties();
+        NodeRegistry registry = registryWithNodes("node-a", "node-b", "node-c");
+        InMemoryMetricsStore store = new InMemoryMetricsStore(properties);
+        NodeMonitorService svc = new NodeMonitorService(registry, store, new AnomalyDetector(), properties);
+        ReflectionTestUtils.setField(svc, "warmupComplete", true);
+
+        Map<String, NodeMonitorService.NodeState> states = nodeStates(svc);
+
+        NodeMonitorService.NodeState stateA = new NodeMonitorService.NodeState();
+        stateA.lastWsBlockNumber = 100L;
+        stateA.lastWsBlockHash = "0xaaa";
+        stateA.lastWsEventReceivedAt = Instant.now();
+        stateA.webSocketRef.set(dummyWebSocket());
+        states.put("node-a", stateA);
+
+        NodeMonitorService.NodeState stateB = new NodeMonitorService.NodeState();
+        stateB.lastWsBlockNumber = 100L;
+        stateB.lastWsBlockHash = "0xaaa";
+        stateB.lastWsEventReceivedAt = Instant.now();
+        stateB.webSocketRef.set(dummyWebSocket());
+        states.put("node-b", stateB);
+
+        NodeMonitorService.NodeState stateC = new NodeMonitorService.NodeState();
+        stateC.lastWsBlockNumber = 100L;
+        stateC.lastWsBlockHash = "0xaaa";
+        stateC.lastWsEventReceivedAt = Instant.now();
+        stateC.webSocketRef.set(dummyWebSocket());
+        states.put("node-c", stateC);
+
+        ReflectionTestUtils.invokeMethod(svc, "refreshReferenceFromNodes");
+
+        store.addSample("node-a", new MetricSample(
+                Instant.now().minusSeconds(5),
+                MetricSource.WS,
+                true,
+                -1,
+                100L,
+                null,
+                "0xaaa",
+                "0xparent",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null));
+
+        stateA.lastWsBlockHash = "0xaaa";
+        stateB.lastWsBlockHash = "0xbbb";
+        stateC.lastWsBlockHash = "0xbbb";
+        ReflectionTestUtils.setField(svc, "currentReferenceNodeKey", "node-b");
+
+        ReflectionTestUtils.invokeMethod(svc, "refreshReferenceFromNodes");
+
+        List<AnomalyEvent> anomaliesA = store.getRawAnomaliesSince("node-a", Instant.EPOCH);
+        assertTrue(anomaliesA.stream().anyMatch(a -> a.getType() == AnomalyType.WRONG_HEAD
+                && a.getSource() == MetricSource.WS
+                && Long.valueOf(100L).equals(a.getBlockNumber())
+                && "0xaaa".equalsIgnoreCase(a.getBlockHash())));
+
+        List<AnomalyEvent> anomaliesB = store.getRawAnomaliesSince("node-b", Instant.EPOCH);
+        assertTrue(anomaliesB.stream().noneMatch(a -> a.getType() == AnomalyType.WRONG_HEAD));
+    }
+
     private NodeRegistry registryWithNodes(String... names) {
         ChainCheckProperties properties = new ChainCheckProperties();
         List<ChainCheckProperties.RpcNodeProperties> nodeProps = new ArrayList<>();
@@ -271,11 +405,11 @@ class RpcMonitorServiceTest {
     }
 
     @SuppressWarnings("unchecked")
-    private Map<String, RpcMonitorService.NodeState> nodeStates(RpcMonitorService svc) {
-        return (Map<String, RpcMonitorService.NodeState>) ReflectionTestUtils.getField(svc, "nodeStates");
+    private Map<String, NodeMonitorService.NodeState> nodeStates(NodeMonitorService svc) {
+        return (Map<String, NodeMonitorService.NodeState>) ReflectionTestUtils.getField(svc, "nodeStates");
     }
 
-    private ReferenceSnapshot reference(RpcMonitorService svc) {
+    private ReferenceSnapshot reference(NodeMonitorService svc) {
         AtomicReference<?> ref = (AtomicReference<?>) ReflectionTestUtils.getField(svc, "referenceState");
         Object value = ref.get();
         if (value == null) {
@@ -296,7 +430,7 @@ class RpcMonitorServiceTest {
     private record ReferenceSnapshot(Long headNumber, String headHash) {
     }
 
-    private void setReferenceState(RpcMonitorService svc, Long headNumber, String headHash) {
+    private void setReferenceState(NodeMonitorService svc, Long headNumber, String headHash) {
         AtomicReference<?> ref = (AtomicReference<?>) ReflectionTestUtils.getField(svc, "referenceState");
         Object state = createReferenceState(headNumber, headHash, Instant.now());
         @SuppressWarnings("rawtypes")
@@ -306,7 +440,7 @@ class RpcMonitorServiceTest {
 
     private Object createReferenceState(Long headNumber, String headHash, Instant fetchedAt) {
         try {
-            Class<?> refClass = Class.forName("de.makibytes.chaincheck.monitor.RpcMonitorService$ReferenceState");
+            Class<?> refClass = Class.forName("de.makibytes.chaincheck.monitor.NodeMonitorService$ReferenceState");
             Constructor<?> ctor = refClass.getDeclaredConstructor(Long.class, String.class, Instant.class);
             ctor.setAccessible(true);
             return ctor.newInstance(headNumber, headHash, fetchedAt);
@@ -322,7 +456,7 @@ class RpcMonitorServiceTest {
                                    Long gasPriceWei,
                                    Instant blockTimestamp) {
         try {
-            Class<?> infoClass = Class.forName("de.makibytes.chaincheck.monitor.RpcMonitorService$BlockInfo");
+            Class<?> infoClass = Class.forName("de.makibytes.chaincheck.monitor.NodeMonitorService$BlockInfo");
             Constructor<?> ctor = infoClass.getDeclaredConstructor(Long.class, String.class, String.class, Integer.class, Long.class, Instant.class);
             ctor.setAccessible(true);
             return ctor.newInstance(blockNumber, blockHash, parentHash, transactionCount, gasPriceWei, blockTimestamp);

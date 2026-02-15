@@ -47,21 +47,21 @@ public class WsMonitorService {
 
     private static final Logger logger = LoggerFactory.getLogger(WsMonitorService.class);
 
-    private final RpcMonitorService monitor;
+    private final NodeMonitorService monitor;
     private final NodeRegistry nodeRegistry;
     private final InMemoryMetricsStore store;
     private final AnomalyDetector detector;
     private final ChainCheckProperties properties;
     private final ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
-    private final Map<String, RpcMonitorService.NodeState> nodeStates;
+    private final Map<String, NodeMonitorService.NodeState> nodeStates;
     private final HttpMonitorService httpMonitorService;
 
-    public WsMonitorService(RpcMonitorService monitor,
+    public WsMonitorService(NodeMonitorService monitor,
                             NodeRegistry nodeRegistry,
                             InMemoryMetricsStore store,
                             AnomalyDetector detector,
                             ChainCheckProperties properties,
-                            Map<String, RpcMonitorService.NodeState> nodeStates,
+                            Map<String, NodeMonitorService.NodeState> nodeStates,
                             HttpMonitorService httpMonitorService) {
         this.monitor = monitor;
         this.nodeRegistry = nodeRegistry;
@@ -82,7 +82,7 @@ public class WsMonitorService {
             if (node.ws() == null || node.ws().isBlank()) {
                 continue;
             }
-            RpcMonitorService.NodeState state = nodeStates.computeIfAbsent(node.key(), key -> new RpcMonitorService.NodeState());
+            NodeMonitorService.NodeState state = nodeStates.computeIfAbsent(node.key(), key -> new NodeMonitorService.NodeState());
             WebSocket existing = state.webSocketRef.get();
             if (existing != null) {
                 checkWsHealth(node, state, existing);
@@ -120,7 +120,7 @@ public class WsMonitorService {
         }
     }
 
-    void checkWsHealth(NodeDefinition node, RpcMonitorService.NodeState state, WebSocket webSocket) {
+    void checkWsHealth(NodeDefinition node, NodeMonitorService.NodeState state, WebSocket webSocket) {
         Instant now = Instant.now();
         Instant lastActivity = state.lastWsMessageReceivedAt != null
                 ? state.lastWsMessageReceivedAt
@@ -133,16 +133,16 @@ public class WsMonitorService {
         if (state.lastWsPingSentAt != null
                 && (state.lastWsPongReceivedAt == null || state.lastWsPongReceivedAt.isBefore(state.lastWsPingSentAt))) {
             long pingAge = Duration.between(state.lastWsPingSentAt, now).toSeconds();
-            if (pingAge > RpcMonitorService.WS_PING_INTERVAL_SECONDS) {
+            if (pingAge > NodeMonitorService.WS_PING_INTERVAL_SECONDS) {
                 monitor.recordFailure(node, MetricSource.WS, "WebSocket ping timeout after " + pingAge + "s");
                 monitor.closeWebSocket(node, state, "ping timeout");
                 return;
             }
         }
 
-        if (idleSeconds >= RpcMonitorService.WS_FRESH_SECONDS) {
+        if (idleSeconds >= NodeMonitorService.WS_FRESH_SECONDS) {
             boolean shouldPing = state.lastWsPingSentAt == null
-                    || Duration.between(state.lastWsPingSentAt, now).toSeconds() >= RpcMonitorService.WS_PING_INTERVAL_SECONDS;
+                || Duration.between(state.lastWsPingSentAt, now).toSeconds() >= NodeMonitorService.WS_PING_INTERVAL_SECONDS;
             if (shouldPing) {
                 try {
                     state.lastWsPingSentAt = now;
@@ -159,9 +159,9 @@ public class WsMonitorService {
 
         private final StringBuilder buffer = new StringBuilder();
         private final NodeDefinition node;
-        private final RpcMonitorService.NodeState state;
+        private final NodeMonitorService.NodeState state;
 
-        private WsListener(NodeDefinition node, RpcMonitorService.NodeState state) {
+        private WsListener(NodeDefinition node, NodeMonitorService.NodeState state) {
             this.node = node;
             this.state = state;
         }
@@ -258,7 +258,10 @@ public class WsMonitorService {
                     state.wsNewHeadCount++;
 
                     Long headDelayMs = null;
-                    if (blockTimestamp != null) {
+                    Instant referenceHeadObservedAt = monitor.getReferenceObservedAt(Confidence.NEW, blockNumber, blockHash);
+                    if (referenceHeadObservedAt != null) {
+                        headDelayMs = Duration.between(referenceHeadObservedAt, now).toMillis();
+                    } else if (blockTimestamp != null) {
                         headDelayMs = Duration.between(blockTimestamp, now).toMillis();
                         state.lastWsBlockTimestamp = blockTimestamp;
                     }
@@ -278,7 +281,9 @@ public class WsMonitorService {
                             headDelayMs,
                             null,
                             null);
-                    store.addSample(node.key(), sample);
+                    if (monitor.isWarmupComplete()) {
+                        store.addSample(node.key(), sample);
+                    }
                     monitor.resetWsBackoff(state);
 
                     WsConnectionTracker tracker = nodeRegistry.getWsTracker(node.key());
@@ -286,19 +291,21 @@ public class WsMonitorService {
                         tracker.clearLastError();
                     }
 
-                    List<AnomalyEvent> anomalies = detector.detect(
-                            node.key(),
-                            sample,
-                            node.anomalyDelayMs(),
-                            state.lastWsBlockNumber,
-                            state.lastWsBlockHash,
-                            state.lastHttpBlockNumber);
-                    for (AnomalyEvent anomaly : anomalies) {
-                        store.addAnomaly(node.key(), anomaly);
-                        // Track block height decreased anomalies for auto-closing
-                        if (anomaly.getType() == AnomalyType.REORG && "Block height decreased".equals(anomaly.getMessage())) {
-                            state.hasOpenBlockHeightDecreasedAnomaly = true;
-                            state.consecutiveIncreasingBlocksAfterDecrease = 0;
+                    if (monitor.isWarmupComplete()) {
+                        List<AnomalyEvent> anomalies = detector.detect(
+                                node.key(),
+                                sample,
+                                node.anomalyDelayMs(),
+                                state.lastWsBlockNumber,
+                                state.lastWsBlockHash,
+                                state.lastHttpBlockNumber);
+                        for (AnomalyEvent anomaly : anomalies) {
+                            store.addAnomaly(node.key(), anomaly);
+                            // Track block height decreased anomalies for auto-closing
+                            if (anomaly.getType() == AnomalyType.REORG && "Block height decreased".equals(anomaly.getMessage())) {
+                                state.hasOpenBlockHeightDecreasedAnomaly = true;
+                                state.consecutiveIncreasingBlocksAfterDecrease = 0;
+                            }
                         }
                     }
 

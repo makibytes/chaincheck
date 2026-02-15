@@ -43,6 +43,22 @@ All source lives under `de.makibytes.chaincheck` with five packages:
 4. `ReferenceNodeSelector` establishes consensus head via majority voting
 5. Dashboard queries the store and renders via Thymeleaf + Chart.js
 
+## Reference Node
+
+### By Configuration
+
+You can configure a specific beacon/consensus node as the reference source for safe/finalized comparisons.
+
+### By Majority Voting
+
+When not explicitly configured, the reference node is selected via majority voting across all monitored nodes.
+
+## Conflicting and Invalid Blocks
+
+- Only one status of new/safe/finalized is allowed. New blocks are new, status=safe replaces status=new and status=finalized replaces both, status=new and status=safe
+- Only one additional status of conflic/invalid is allowed. Conflict means there's at least one other block with the same block number and we don't know which one is the "real" one and which ones are the invalid ones.
+- For a conflict when we get to know which one is the real one and which ones are the invalid ones, we remove the conflict from the real one (so it only has a status of new/safe/finalized) and we put conflict to all other conflict blocks (i.e. blocks with the same block number but a different block hash)
+
 ## Configuration
 
 All config is in `src/main/resources/application.yml` under the `rpc` prefix, bound to `ChainCheckProperties`. The mock profile (`application-mock.yml`) provides fake RPC responses for local development.

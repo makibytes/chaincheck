@@ -39,10 +39,13 @@
     const hasOlderAggregates = /*[[${view.hasOlderAggregates}]]*/ false;
     const rangeKey = /*[[${range.key}]]*/ null;
     const viewEndEpochMs = /*[[${endEpochMs}]]*/ null;
+    const hasHeadDelaySeries = headDelayData.some(value => value != null) || referenceHeadDelayData.some(value => value != null);
+    const hasSafeDelaySeries = safeDelayData.some(value => value != null) || referenceSafeDelayData.some(value => value != null);
+    const hasFinalizedDelaySeries = finalizedDelayData.some(value => value != null) || referenceFinalizedDelayData.some(value => value != null);
     const delayChartsAvailable = wsConfigured
-        || headDelayData.some(value => value != null)
-        || safeDelayData.some(value => value != null)
-        || finalizedDelayData.some(value => value != null);
+        || hasHeadDelaySeries
+        || hasSafeDelaySeries
+        || hasFinalizedDelaySeries;
 
     const cssVars = getComputedStyle(document.documentElement);
     const getVar = (name, fallback) => {

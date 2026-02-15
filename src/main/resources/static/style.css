@@ -392,9 +392,15 @@ body {
 }
 
 .tag-safe {
-    background: rgba(var(--color-warning-rgb), 0.15);
-    color: var(--color-warning);
-    border: 1px solid rgba(var(--color-warning-rgb), 0.35);
+    background: rgba(var(--color-safe-delay-rgb), 0.15);
+    color: var(--color-safe-delay);
+    border: 1px solid rgba(var(--color-safe-delay-rgb), 0.35);
+}
+
+.tag-new {
+    background: rgba(var(--color-head-delay-rgb), 0.15);
+    color: var(--color-head-delay);
+    border: 1px solid rgba(var(--color-head-delay-rgb), 0.35);
 }
 
 .tag-finalized {

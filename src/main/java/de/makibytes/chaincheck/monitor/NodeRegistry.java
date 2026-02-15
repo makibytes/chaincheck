@@ -66,9 +66,8 @@ public class NodeRegistry {
                 long anomalyDelayMs = nodeHighLatencyMs > 0
                     ? nodeHighLatencyMs
                     : properties.getAnomalyDetection().getHighLatencyMs();
-            boolean safeBlocksEnabled = node.getSafeBlocksEnabled() != null
-                    ? node.getSafeBlocksEnabled()
-                    : properties.isSafeBlocksEnabled();
+            boolean safeBlocksEnabled = properties.isGetSafeBlocks();
+            boolean finalizedBlocksEnabled = properties.isGetFinalizedBlocks();
             String nodeName = node.getName() == null || node.getName().isBlank()
                     ? "Node " + index
                     : node.getName();
@@ -80,6 +79,7 @@ public class NodeRegistry {
                     node.getPollIntervalMs(),
                     anomalyDelayMs,
                     safeBlocksEnabled,
+                    finalizedBlocksEnabled,
                     connectTimeoutMs,
                     readTimeoutMs,
                     maxRetries,
@@ -128,6 +128,7 @@ public class NodeRegistry {
                                  long pollIntervalMs,
                                  long anomalyDelayMs,
                                  boolean safeBlocksEnabled,
+                                 boolean finalizedBlocksEnabled,
                                  long connectTimeoutMs,
                                  long readTimeoutMs,
                                  int maxRetries,

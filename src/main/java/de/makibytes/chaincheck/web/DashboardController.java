@@ -30,9 +30,9 @@ import org.springframework.web.bind.annotation.ResponseBody;
 import de.makibytes.chaincheck.config.ChainCheckProperties;
 import de.makibytes.chaincheck.model.AnomalyEvent;
 import de.makibytes.chaincheck.model.TimeRange;
+import de.makibytes.chaincheck.monitor.NodeMonitorService;
 import de.makibytes.chaincheck.monitor.NodeRegistry;
 import de.makibytes.chaincheck.monitor.NodeRegistry.NodeDefinition;
-import de.makibytes.chaincheck.monitor.RpcMonitorService;
 
 @Controller
 public class DashboardController {
@@ -40,18 +40,18 @@ public class DashboardController {
     private final DashboardService dashboardService;
     private final NodeRegistry nodeRegistry;
     private final ChainCheckProperties properties;
-    private final RpcMonitorService rpcMonitorService;
+    private final NodeMonitorService nodeMonitorService;
     private final AppVersionProvider appVersionProvider;
 
     public DashboardController(DashboardService dashboardService,
                                NodeRegistry nodeRegistry,
                                ChainCheckProperties properties,
-                               RpcMonitorService rpcMonitorService,
+                               NodeMonitorService nodeMonitorService,
                                AppVersionProvider appVersionProvider) {
         this.dashboardService = dashboardService;
         this.nodeRegistry = nodeRegistry;
         this.properties = properties;
-        this.rpcMonitorService = rpcMonitorService;
+        this.nodeMonitorService = nodeMonitorService;
         this.appVersionProvider = appVersionProvider;
     }
 
@@ -87,7 +87,7 @@ public class DashboardController {
         model.addAttribute("nodeName", selectedNode == null ? "Node" : selectedNode.name());
         model.addAttribute("nodeKey", selectedKey);
         model.addAttribute("nodes", nodeRegistry.getNodes());
-        model.addAttribute("referenceNodeKey", rpcMonitorService.getReferenceNodeKey());
+        model.addAttribute("referenceNodeKey", nodeMonitorService.getReferenceNodeKey());
         model.addAttribute("range", range);
         model.addAttribute("ranges", TimeRange.values());
         model.addAttribute("endParam", endEpochMs);

@@ -1,0 +1,43 @@
+rpc:
+  title: "Ethereum Mainnet"
+  title-color: "#ff0000"
+  get-safe-blocks: false
+  get-finalized-blocks: false
+  consensus:
+    # When configured, ChainCheck uses this consensus/beacon endpoint as reference source
+    # and disables internal auto-reference voting/selection.
+    name: nibbler-nimbus
+    http: http://nibbler:5052
+    safe-poll-interval-ms: 1000
+    finalized-poll-interval-ms: 1000
+    timeout-ms: 2000
+  nodes:
+    - name: nibbler
+      http: http://nibbler:8545
+      ws: ws://nibbler:8546
+      poll-interval-ms: 10000
+
+    - name: PublicNode
+      http: https://ethereum-rpc.publicnode.com
+      ws: wss://ethereum-rpc.publicnode.com
+      poll-interval-ms: 10000
+
+    - name: LlamaNodes
+      http: https://eth.llamarpc.com
+      ws: wss://eth.llamarpc.com
+      poll-interval-ms: 10000
+
+    - name: Ankr
+      http: https://rpc.ankr.com/eth/276087160888bd72c2dc6d4366109344d7c8f5ed3bce41be8d205b093abadb11
+      ws: wss://rpc.ankr.com/eth/276087160888bd72c2dc6d4366109344d7c8f5ed3bce41be8d205b093abadb11
+      poll-interval-ms: 10000
+
+    - name: DRPC
+      http: https://eth.drpc.org
+      ws: wss://eth.drpc.org
+      poll-interval-ms: 10000
+
+    - name: 1RPC
+      http: https://1rpc.io/eth
+      ws: wss://1rpc.io/eth
+      poll-interval-ms: 10000

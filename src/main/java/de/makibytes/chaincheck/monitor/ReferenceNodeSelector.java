@@ -44,7 +44,7 @@ public class ReferenceNodeSelector {
      * Selects the best reference node from the available nodes based on comprehensive scoring.
      * Uses the selection policy to ensure stability.
      */
-    public String selectReferenceNode(Map<String, RpcMonitorService.NodeState> nodeStates, ReferenceBlocks referenceBlocks, InMemoryMetricsStore store, Instant now, NodeScorer nodeScorer, String currentReferenceNodeKey) {
+    public String selectReferenceNode(Map<String, NodeMonitorService.NodeState> nodeStates, ReferenceBlocks referenceBlocks, InMemoryMetricsStore store, Instant now, NodeScorer nodeScorer, String currentReferenceNodeKey) {
         String bestNode = null;
         double bestScore = -1;
         for (String nodeKey : nodeStates.keySet()) {
@@ -63,9 +63,9 @@ public class ReferenceNodeSelector {
         return null;
     }
 
-    private double computeNodeScore(String nodeKey, NodeScorer scorer, Map<String, RpcMonitorService.NodeState> nodeStates,
+    private double computeNodeScore(String nodeKey, NodeScorer scorer, Map<String, NodeMonitorService.NodeState> nodeStates,
             ReferenceBlocks referenceBlocks, InMemoryMetricsStore store, Instant now) {
-        RpcMonitorService.NodeState state = nodeStates.get(nodeKey);
+        NodeMonitorService.NodeState state = nodeStates.get(nodeKey);
         if (state == null) {
             return 0;
         }
@@ -115,7 +115,7 @@ public class ReferenceNodeSelector {
         return wsScore + latencyScore + headDelayScore + safeDelayScore + finalizedDelayScore + matchingScore;
     }
 
-    private boolean isWsHealthy(RpcMonitorService.NodeState state, Instant now) {
+    private boolean isWsHealthy(NodeMonitorService.NodeState state, Instant now) {
         return state.webSocketRef.get() != null
                 && state.lastWsEventReceivedAt != null
                 && state.lastWsEventReceivedAt.isAfter(now.minusSeconds(30)); // fresh within 30s

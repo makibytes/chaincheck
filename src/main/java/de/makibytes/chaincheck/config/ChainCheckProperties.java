@@ -27,10 +27,11 @@ public class ChainCheckProperties {
 
     private String title = "";
     private String titleColor = "white";
-    private boolean safeBlocksEnabled = false;
+    private boolean getSafeBlocks = false;
+    private boolean getFinalizedBlocks = false;
     private int scaleChangeMs = 500;
     private int scaleMaxMs = 30000;
-    private ReferenceNode reference = new ReferenceNode();
+    private Consensus consensus = new Consensus();
     private Defaults defaults = new Defaults();
     private Persistence persistence = new Persistence();
     private AnomalyDetection anomalyDetection = new AnomalyDetection();
@@ -52,12 +53,20 @@ public class ChainCheckProperties {
         this.titleColor = titleColor;
     }
 
-    public boolean isSafeBlocksEnabled() {
-        return safeBlocksEnabled;
+    public boolean isGetSafeBlocks() {
+        return getSafeBlocks;
     }
 
-    public void setSafeBlocksEnabled(boolean safeBlocksEnabled) {
-        this.safeBlocksEnabled = safeBlocksEnabled;
+    public void setGetSafeBlocks(boolean getSafeBlocks) {
+        this.getSafeBlocks = getSafeBlocks;
+    }
+
+    public boolean isGetFinalizedBlocks() {
+        return getFinalizedBlocks;
+    }
+
+    public void setGetFinalizedBlocks(boolean getFinalizedBlocks) {
+        this.getFinalizedBlocks = getFinalizedBlocks;
     }
 
     public int getScaleChangeMs() {
@@ -76,12 +85,12 @@ public class ChainCheckProperties {
         this.scaleMaxMs = scaleMaxMs;
     }
 
-    public ReferenceNode getReference() {
-        return reference;
+    public Consensus getConsensus() {
+        return consensus;
     }
 
-    public void setReference(ReferenceNode reference) {
-        this.reference = reference;
+    public void setConsensus(Consensus consensus) {
+        this.consensus = consensus;
     }
 
     public Defaults getDefaults() {
@@ -123,7 +132,6 @@ public class ChainCheckProperties {
         private String ws;
         private long pollIntervalMs = 3000;
         private AnomalyDetection anomalyDetection = new AnomalyDetection();
-        private Boolean safeBlocksEnabled;
         private long connectTimeoutMs = -1;
         private long readTimeoutMs = -1;
         private int maxRetries = -1;
@@ -168,14 +176,6 @@ public class ChainCheckProperties {
 
         public void setAnomalyDetection(AnomalyDetection anomalyDetection) {
             this.anomalyDetection = anomalyDetection;
-        }
-
-        public Boolean getSafeBlocksEnabled() {
-            return safeBlocksEnabled;
-        }
-
-        public void setSafeBlocksEnabled(Boolean safeBlocksEnabled) {
-            this.safeBlocksEnabled = safeBlocksEnabled;
         }
 
         public long getConnectTimeoutMs() {
@@ -267,9 +267,13 @@ public class ChainCheckProperties {
         }
     }
 
-    public static class ReferenceNode {
+    public static class Consensus {
         private String nodeKey;
         private String http;
+        private String eventsPath = "/eth/v1/events?topics=head&topics=finalized_checkpoint";
+        private String finalityCheckpointsPath = "/eth/v1/beacon/states/head/finality_checkpoints";
+        private Long safePollIntervalMs;
+        private Long finalizedPollIntervalMs;
         private long timeoutMs = 2000;
 
         public String getNodeKey() {
@@ -288,12 +292,49 @@ public class ChainCheckProperties {
             this.http = http;
         }
 
+        public String getEventsPath() {
+            return eventsPath;
+        }
+
+        public void setEventsPath(String eventsPath) {
+            this.eventsPath = eventsPath;
+        }
+
+        public String getFinalityCheckpointsPath() {
+            return finalityCheckpointsPath;
+        }
+
+        public void setFinalityCheckpointsPath(String finalityCheckpointsPath) {
+            this.finalityCheckpointsPath = finalityCheckpointsPath;
+        }
+
+        public Long getSafePollIntervalMs() {
+            return safePollIntervalMs;
+        }
+
+        public void setSafePollIntervalMs(Long safePollIntervalMs) {
+            this.safePollIntervalMs = safePollIntervalMs;
+        }
+
+        public Long getFinalizedPollIntervalMs() {
+            return finalizedPollIntervalMs;
+        }
+
+        public void setFinalizedPollIntervalMs(Long finalizedPollIntervalMs) {
+            this.finalizedPollIntervalMs = finalizedPollIntervalMs;
+        }
+
         public long getTimeoutMs() {
             return timeoutMs;
         }
 
         public void setTimeoutMs(long timeoutMs) {
             this.timeoutMs = timeoutMs;
+        }
+
+        public boolean hasConfiguredReferenceNode() {
+            return (nodeKey != null && !nodeKey.isBlank())
+                    || (http != null && !http.isBlank());
         }
     }
 
