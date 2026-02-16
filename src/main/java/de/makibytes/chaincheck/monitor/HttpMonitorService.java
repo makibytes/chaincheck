@@ -316,6 +316,11 @@ public class HttpMonitorService {
         return fetchBlockByTag(node.http(), node.readTimeoutMs(), node.headers(), node.maxRetries(), node.retryBackoffMs(), node.connectTimeoutMs(), blockTag);
     }
 
+    RpcMonitorService.BlockInfo fetchBlockByNumber(NodeDefinition node, long blockNumber) throws IOException, InterruptedException {
+        String hex = formatBlockNumberHex(blockNumber);
+        return fetchBlockByTag(node.http(), node.readTimeoutMs(), node.headers(), node.maxRetries(), node.retryBackoffMs(), node.connectTimeoutMs(), hex);
+    }
+
     private void checkWebSocketHealth(NodeDefinition node, RpcMonitorService.NodeState state, Long blockNumber) {
         if (node.ws() == null || node.ws().isBlank()) {
             return;
@@ -381,6 +386,10 @@ public class HttpMonitorService {
             txCount = transactions.size();
         }
         return new RpcMonitorService.BlockInfo(blockNumber, blockHash, parentHash, txCount, gasPriceWei, blockTimestamp);
+    }
+
+    private String formatBlockNumberHex(long blockNumber) {
+        return "0x" + Long.toHexString(blockNumber);
     }
 
     private JsonNode sendRpcWithRetry(String httpUrl,

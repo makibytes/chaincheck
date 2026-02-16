@@ -336,10 +336,14 @@ public class DashboardService {
             final java.util.Set<String> effectiveConsensusSafeHashes = consensusSafeHashes;
             final java.util.Set<String> effectiveConsensusFinalizedHashes = consensusFinalizedHashes;
 
-        Map<Long, AttestationConfidence> attestationConfidences = nodeMonitorService.getRecentAttestationConfidences();
+        Map<String, AttestationConfidence> attestationConfidences = nodeMonitorService.getRecentAttestationConfidences();
 
-        // Group samples by blockhash and merge them
-        Map<String, List<MetricSample>> samplesByHash = rawSamples.stream()
+        List<MetricSample> allExecutionNodeSamples = new java.util.ArrayList<>();
+        for (NodeRegistry.NodeDefinition node : nodeRegistry.getNodes()) {
+            allExecutionNodeSamples.addAll(store.getRawSamplesSince(node.key(), since));
+        }
+
+        Map<String, List<MetricSample>> samplesByHash = allExecutionNodeSamples.stream()
                 .filter(s -> s.getBlockHash() != null && !s.getBlockHash().isBlank())
                 .collect(Collectors.groupingBy(MetricSample::getBlockHash));
 
@@ -420,10 +424,12 @@ public class DashboardService {
                     }
                     
                     Double attConf = null;
-                    if (first.getBlockNumber() != null) {
-                        AttestationConfidence ac = attestationConfidences.get(first.getBlockNumber());
+                    Integer attRound = null;
+                    if (blockHash != null && !blockHash.isBlank()) {
+                        AttestationConfidence ac = attestationConfidences.get(blockHash);
                         if (ac != null) {
                             attConf = ac.getConfidencePercent();
+                            attRound = ac.getAttestationRound();
                         }
                     }
 
@@ -442,7 +448,8 @@ public class DashboardService {
                                         false,
                             transactionCount,
                             gasPriceWei,
-                            attConf);
+                            attConf,
+                            attRound != null ? attRound.longValue() : null);
                 })
                 .collect(Collectors.toList());
         
@@ -450,10 +457,10 @@ public class DashboardService {
         Map<String, String> blockHashToParentHash = new HashMap<>();
         Map<String, SampleRow> rowByHash = new HashMap<>();
         for (SampleRow row : intermediateRows) {
-            if (row.getBlockHash() != null && !row.getBlockHash().isBlank()) {
-                rowByHash.put(row.getBlockHash(), row);
-                if (row.getParentHash() != null && !row.getParentHash().isBlank()) {
-                    blockHashToParentHash.put(row.getBlockHash(), row.getParentHash());
+            if (row.blockHash() != null && !row.blockHash().isBlank()) {
+                rowByHash.put(row.blockHash(), row);
+                if (row.parentHash() != null && !row.parentHash().isBlank()) {
+                    blockHashToParentHash.put(row.blockHash(), row.parentHash());
                 }
             }
         }
@@ -478,20 +485,20 @@ public class DashboardService {
         // Propagate finalized status backwards through parent chain
         java.util.Set<String> finalized = new java.util.HashSet<>(
             intermediateRows.stream()
-                .filter(row -> row.isFinalized() && row.getBlockHash() != null && !row.getBlockHash().isBlank())
-                .map(SampleRow::getBlockHash)
+                .filter(row -> row.finalized() && row.blockHash() != null && !row.blockHash().isBlank())
+                .map(SampleRow::blockHash)
                 .collect(Collectors.toSet())
         );
         for (SampleRow row : intermediateRows) {
-            if (row.isFinalized() && row.getBlockHash() != null && !row.getBlockHash().isBlank()) {
-                String currentHash = blockHashToParentHash.get(row.getBlockHash());
+            if (row.finalized() && row.blockHash() != null && !row.blockHash().isBlank()) {
+                String currentHash = blockHashToParentHash.get(row.blockHash());
                 java.util.Set<String> visited = new java.util.HashSet<>();
                 while (currentHash != null && !finalized.contains(currentHash) && !visited.contains(currentHash)) {
                     visited.add(currentHash);
                     SampleRow currentRow = rowByHash.get(currentHash);
-                    if (currentRow != null && currentRow.getBlockNumber() != null) {
+                    if (currentRow != null && currentRow.blockNumber() != null) {
                         finalizedHashesByNumber
-                            .computeIfAbsent(currentRow.getBlockNumber(), k -> new java.util.HashSet<>())
+                            .computeIfAbsent(currentRow.blockNumber(), k -> new java.util.HashSet<>())
                             .add(currentHash);
                     }
                     finalized.add(currentHash);
@@ -503,20 +510,20 @@ public class DashboardService {
         // Propagate safe status backwards through parent chain
         java.util.Set<String> safe = new java.util.HashSet<>(
             intermediateRows.stream()
-                .filter(row -> row.isSafe() && row.getBlockHash() != null && !row.getBlockHash().isBlank())
-                .map(SampleRow::getBlockHash)
+                .filter(row -> row.safe() && row.blockHash() != null && !row.blockHash().isBlank())
+                .map(SampleRow::blockHash)
                 .collect(Collectors.toSet())
         );
         for (SampleRow row : intermediateRows) {
-            if (row.isSafe() && row.getBlockHash() != null && !row.getBlockHash().isBlank()) {
-                String currentHash = blockHashToParentHash.get(row.getBlockHash());
+            if (row.safe() && row.blockHash() != null && !row.blockHash().isBlank()) {
+                String currentHash = blockHashToParentHash.get(row.blockHash());
                 java.util.Set<String> visited = new java.util.HashSet<>();
                 while (currentHash != null && !safe.contains(currentHash) && !finalized.contains(currentHash) && !visited.contains(currentHash)) {
                     visited.add(currentHash);
                     SampleRow currentRow = rowByHash.get(currentHash);
-                    if (currentRow != null && currentRow.getBlockNumber() != null) {
+                    if (currentRow != null && currentRow.blockNumber() != null) {
                         safeHashesByNumber
-                            .computeIfAbsent(currentRow.getBlockNumber(), k -> new java.util.HashSet<>())
+                            .computeIfAbsent(currentRow.blockNumber(), k -> new java.util.HashSet<>())
                             .add(currentHash);
                     }
                     safe.add(currentHash);
@@ -528,24 +535,24 @@ public class DashboardService {
         // Second pass: update rows with explicit tags and conflict/invalid detection
         boolean referenceSelected = nodeMonitorService.getReferenceNodeKey() != null;
         Map<Long, java.util.Set<String>> hashesByNumber = intermediateRows.stream()
-                .filter(row -> row.getBlockNumber() != null && row.getBlockHash() != null && !row.getBlockHash().isBlank())
+                .filter(row -> row.blockNumber() != null && row.blockHash() != null && !row.blockHash().isBlank())
                 .collect(Collectors.groupingBy(
-                        SampleRow::getBlockNumber,
-                        Collectors.mapping(SampleRow::getBlockHash, Collectors.toSet())));
+                        SampleRow::blockNumber,
+                        Collectors.mapping(SampleRow::blockHash, Collectors.toSet())));
         Map<Long, java.util.Set<String>> conflictHashesByNumber = hashesByNumber.entrySet().stream()
                 .filter(entry -> entry.getValue().size() > 1)
                 .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
         Map<String, Long> blockNumberByHash = new HashMap<>();
         for (SampleRow row : intermediateRows) {
-            if (row.getBlockHash() != null && row.getBlockNumber() != null) {
-                blockNumberByHash.put(row.getBlockHash(), row.getBlockNumber());
+            if (row.blockHash() != null && row.blockNumber() != null) {
+                blockNumberByHash.put(row.blockHash(), row.blockNumber());
             }
         }
 
         Map<Long, String> resolvedFinalizedHashByNumber = new HashMap<>();
         Map<Long, java.util.Set<String>> resolvedInvalidHashesByNumber = new HashMap<>();
         Map<Long, Instant> resolvedAtByNumber = new HashMap<>();
-        for (MetricSample sample : rawSamples) {
+        for (MetricSample sample : allExecutionNodeSamples) {
             if (sample.getHeadDelayMs() == null || sample.getParentHash() == null) {
                 continue;
             }
@@ -639,25 +646,25 @@ public class DashboardService {
 
         List<SampleRow> sampleRows = intermediateRows.stream()
                 .map(row -> {
-                    if (row.getBlockNumber() == null) return row;
+                    if (row.blockNumber() == null) return row;
 
-                    boolean isFinalized = row.isFinalized() 
-                        || (row.getBlockHash() != null && finalizedHashesByNumber.getOrDefault(row.getBlockNumber(), java.util.Set.of()).contains(row.getBlockHash()));
-                    boolean isSafe = (row.isSafe() 
-                        || (row.getBlockHash() != null && safeHashesByNumber.getOrDefault(row.getBlockNumber(), java.util.Set.of()).contains(row.getBlockHash()))) 
+                    boolean isFinalized = row.finalized() 
+                        || (row.blockHash() != null && finalizedHashesByNumber.getOrDefault(row.blockNumber(), java.util.Set.of()).contains(row.blockHash()));
+                    boolean isSafe = (row.safe() 
+                        || (row.blockHash() != null && safeHashesByNumber.getOrDefault(row.blockNumber(), java.util.Set.of()).contains(row.blockHash()))) 
                         && !isFinalized;
                     boolean isInvalid = false;
                     boolean isConflict = false;
 
-                    if (row.getBlockNumber() != null && row.getBlockHash() != null) {
-                        java.util.Set<String> conflicts = conflictHashesByNumber.get(row.getBlockNumber());
+                    if (row.blockNumber() != null && row.blockHash() != null) {
+                        java.util.Set<String> conflicts = conflictHashesByNumber.get(row.blockNumber());
                         if (conflicts != null && !conflicts.isEmpty()) {
-                            String resolvedHash = resolvedFinalizedHashByNumber.get(row.getBlockNumber());
+                            String resolvedHash = resolvedFinalizedHashByNumber.get(row.blockNumber());
                             if (resolvedHash != null) {
-                                if (resolvedHash.equals(row.getBlockHash())) {
+                                if (resolvedHash.equals(row.blockHash())) {
                                     isConflict = false;
-                                } else if (resolvedInvalidHashesByNumber.getOrDefault(row.getBlockNumber(), java.util.Set.of())
-                                        .contains(row.getBlockHash())) {
+                                } else if (resolvedInvalidHashesByNumber.getOrDefault(row.blockNumber(), java.util.Set.of())
+                                        .contains(row.blockHash())) {
                                     isInvalid = true;
                                 }
                             } else {
@@ -671,7 +678,7 @@ public class DashboardService {
                                 && chainDepth >= 7
                                 && latestFinalizedNumber != null
                                 && chainTipNumber >= latestFinalizedNumber + 3) {
-                            if (chainNumbers.contains(row.getBlockNumber()) && !chainHashes.contains(row.getBlockHash())) {
+                            if (chainNumbers.contains(row.blockNumber()) && !chainHashes.contains(row.blockHash())) {
                                 isInvalid = true;
                                 isFinalized = false;
                                 isSafe = false;
@@ -680,24 +687,25 @@ public class DashboardService {
                     }
 
                     return new SampleRow(
-                            row.getTime(),
-                            row.getSources(),
-                            row.getStatus(),
-                            row.getLatencyMs(),
-                            row.getBlockNumber(),
-                            row.getBlockHash(),
-                            row.getParentHash(),
-                            row.getBlockTime(),
+                            row.time(),
+                            row.sources(),
+                            row.status(),
+                            row.latencyMs(),
+                            row.blockNumber(),
+                            row.blockHash(),
+                            row.parentHash(),
+                            row.blockTime(),
                             isSafe,
                             isFinalized,
                             isInvalid,
                             isConflict,
-                            row.getTransactionCount(),
-                            row.getGasPriceWei(),
-                            row.getAttestationConfidence());
+                            row.transactionCount(),
+                            row.gasPriceWei(),
+                            row.attestationConfidence(),
+                            row.attestationSlot());
                 })
-                .sorted(Comparator.comparing(SampleRow::getTime).reversed()
-                        .thenComparing(SampleRow::getBlockNumber, Comparator.nullsLast(Comparator.reverseOrder())))
+                .sorted(Comparator.comparing(SampleRow::time).reversed()
+                        .thenComparing(SampleRow::blockNumber, Comparator.nullsLast(Comparator.reverseOrder())))
                 .limit(MAX_SAMPLES)
                 .toList();
 
@@ -953,10 +961,10 @@ public class DashboardService {
                 .flatMap(java.util.Set::stream)
                 .collect(Collectors.toSet());
         for (SampleRow row : rows) {
-            if (row.getBlockHash() == null || row.getParentHash() == null || row.getBlockNumber() == null) {
+            if (row.blockHash() == null || row.parentHash() == null || row.blockNumber() == null) {
                 continue;
             }
-            nodes.putIfAbsent(row.getBlockHash(), new ChainNode(row.getBlockHash(), row.getParentHash(), row.getBlockNumber()));
+            nodes.putIfAbsent(row.blockHash(), new ChainNode(row.blockHash(), row.parentHash(), row.blockNumber()));
         }
         if (nodes.isEmpty()) {
             return null;

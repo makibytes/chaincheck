@@ -3,19 +3,25 @@ rpc:
   title-color: "#ff0000"
   get-safe-blocks: false
   get-finalized-blocks: false
+  defaults:
+    ws-gap-recovery-enabled: true
+    ws-gap-recovery-max-blocks: 5
   consensus:
     # When configured, ChainCheck uses this consensus endpoint as reference source
     # and disables internal auto-reference voting/selection.
     name: nibbler-nimbus
     http: http://nibbler:5052
-    safe-poll-interval-ms: 1000
-    finalized-poll-interval-ms: 1000
+    safe-poll-interval-ms: 30000
+    finalized-poll-interval-ms: 30000
     timeout-ms: 2000
     attestations-enabled: true
+    committees-path: /eth/v1/beacon/states/head/committees
+    attestation-tracking-interval-ms: 3000
+    attestation-tracking-max-attempts: 100
   nodes:
     - name: nibbler
       http: http://nibbler:8545
-      ws: ws://nibbler:8546
+      ws: ws://nibbler:8545
       poll-interval-ms: 10000
 
     - name: PublicNode

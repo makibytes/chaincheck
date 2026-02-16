@@ -549,7 +549,7 @@ public class RpcMonitorService {
         return configuredSource.getAttestationConfidence(blockNumber);
     }
 
-    public java.util.Map<Long, AttestationConfidence> getRecentAttestationConfidences() {
+    public java.util.Map<String, AttestationConfidence> getRecentAttestationConfidences() {
         if (!isConfiguredReferenceMode()) {
             return java.util.Map.of();
         }

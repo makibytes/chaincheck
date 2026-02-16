@@ -137,6 +137,8 @@ public class ChainCheckProperties {
         private int maxRetries = -1;
         private long retryBackoffMs = -1;
         private java.util.Map<String, String> headers = new java.util.HashMap<>();
+        private Boolean wsGapRecoveryEnabled;
+        private Integer wsGapRecoveryMaxBlocks;
 
         public String getName() {
             return name;
@@ -217,6 +219,22 @@ public class ChainCheckProperties {
         public void setHeaders(java.util.Map<String, String> headers) {
             this.headers = headers;
         }
+
+        public Boolean getWsGapRecoveryEnabled() {
+            return wsGapRecoveryEnabled;
+        }
+
+        public void setWsGapRecoveryEnabled(Boolean wsGapRecoveryEnabled) {
+            this.wsGapRecoveryEnabled = wsGapRecoveryEnabled;
+        }
+
+        public Integer getWsGapRecoveryMaxBlocks() {
+            return wsGapRecoveryMaxBlocks;
+        }
+
+        public void setWsGapRecoveryMaxBlocks(Integer wsGapRecoveryMaxBlocks) {
+            this.wsGapRecoveryMaxBlocks = wsGapRecoveryMaxBlocks;
+        }
     }
 
     public static class Defaults {
@@ -225,6 +243,8 @@ public class ChainCheckProperties {
         private int maxRetries = 1;
         private long retryBackoffMs = 200;
         private java.util.Map<String, String> headers = new java.util.HashMap<>();
+        private boolean wsGapRecoveryEnabled = false;
+        private int wsGapRecoveryMaxBlocks = 5;
 
         public long getConnectTimeoutMs() {
             return connectTimeoutMs;
@@ -265,6 +285,22 @@ public class ChainCheckProperties {
         public void setHeaders(java.util.Map<String, String> headers) {
             this.headers = headers;
         }
+
+        public boolean isWsGapRecoveryEnabled() {
+            return wsGapRecoveryEnabled;
+        }
+
+        public void setWsGapRecoveryEnabled(boolean wsGapRecoveryEnabled) {
+            this.wsGapRecoveryEnabled = wsGapRecoveryEnabled;
+        }
+
+        public int getWsGapRecoveryMaxBlocks() {
+            return wsGapRecoveryMaxBlocks;
+        }
+
+        public void setWsGapRecoveryMaxBlocks(int wsGapRecoveryMaxBlocks) {
+            this.wsGapRecoveryMaxBlocks = wsGapRecoveryMaxBlocks;
+        }
     }
 
     public static class Consensus {
@@ -279,6 +315,8 @@ public class ChainCheckProperties {
         private boolean attestationsEnabled = false;
         private String attestationsPath = "/eth/v1/beacon/blocks/{slot}/attestations";
         private String committeesPath = "/eth/v1/beacon/states/head/committees";
+        private long attestationTrackingIntervalMs = 3000;
+        private int attestationTrackingMaxAttempts = 100;
 
         public String getNodeKey() {
             return nodeKey;
@@ -366,6 +404,22 @@ public class ChainCheckProperties {
 
         public void setCommitteesPath(String committeesPath) {
             this.committeesPath = committeesPath;
+        }
+
+        public long getAttestationTrackingIntervalMs() {
+            return attestationTrackingIntervalMs;
+        }
+
+        public void setAttestationTrackingIntervalMs(long attestationTrackingIntervalMs) {
+            this.attestationTrackingIntervalMs = attestationTrackingIntervalMs;
+        }
+
+        public int getAttestationTrackingMaxAttempts() {
+            return attestationTrackingMaxAttempts;
+        }
+
+        public void setAttestationTrackingMaxAttempts(int attestationTrackingMaxAttempts) {
+            this.attestationTrackingMaxAttempts = attestationTrackingMaxAttempts;
         }
 
         public boolean hasConfiguredReferenceNode() {

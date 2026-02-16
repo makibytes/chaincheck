@@ -183,7 +183,7 @@
             ? (statusText ? `${statusText} ${statusBadgeHtml}` : statusBadgeHtml)
             : statusText;
         const attestationDisplay = sample.attestationConfidence != null
-            ? `${sample.attestationConfidence.toFixed(1)}%`
+            ? `${sample.attestationSlot ?? 0}/3 rounds (${sample.attestationConfidence.toFixed(1)}%)`
             : 'n/a';
         sampleContent.innerHTML = `
             <div class="detail-grid">

@@ -416,9 +416,9 @@ body {
 }
 
 .tag-attestation {
-    background: rgba(var(--color-primary-rgb), 0.12);
-    color: var(--color-primary);
-    border: 1px solid rgba(var(--color-primary-rgb), 0.3);
+    background: rgba(var(--color-head-delay-rgb), 0.15);
+    color: var(--color-head-delay);
+    border: 1px solid rgba(var(--color-head-delay-rgb), 0.35);
 }
 
 .tag-conflict {
@@ -437,6 +437,25 @@ body {
     background: rgba(var(--color-purple-rgb), 0.15);
     color: var(--color-purple);
     border: 1px solid rgba(var(--color-purple-rgb), 0.35);
+}
+
+.tag-attestation-round-1,
+.tag-attestation-round-2,
+.tag-attestation-round-3 {
+    background: rgba(var(--color-head-delay-rgb), 0.15);
+    color: var(--color-head-delay);
+    border: 1px solid rgba(var(--color-head-delay-rgb), 0.35);
+    border-radius: 50%;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    font-weight: 600;
+    margin-left: 2px;
+    vertical-align: middle;
 }
 
 table {

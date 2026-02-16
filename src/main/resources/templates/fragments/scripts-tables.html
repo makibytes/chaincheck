@@ -103,11 +103,20 @@
     ].join(' ').toLowerCase();
 
     const renderSampleRow = (s) => {
+        let attestationRoundBadges = '';
+        if (s.attestationSlot != null && s.status === 'NEW' && !s.safe && !s.finalized) {
+            const round = s.attestationSlot;
+            const maxRound = Math.min(round, 3);
+            for (let i = 1; i <= maxRound; i++) {
+                attestationRoundBadges += `<span class="tag tag-attestation-round-${i}" title="Attestation tracking round ${i}/3">${i}</span>`;
+            }
+        }
+
         const lifecycleBadge = s.finalized
             ? '<span class="tag tag-finalized">finalized</span>'
             : (s.safe
                 ? '<span class="tag tag-safe">safe</span>'
-                : (s.status === 'NEW' ? '<span class="tag tag-new">new</span>' : ''));
+                : (s.status === 'NEW' ? `<span class="tag tag-new">new</span>${attestationRoundBadges}` : ''));
 
         const resolutionBadge = s.conflict
             ? '<span class="tag tag-conflict">conflict</span>'
@@ -115,7 +124,7 @@
 
         const confidenceBadge = s.attestationConfidence != null
             ? `<span class="tag tag-attestation" style="opacity:${Math.max(0.4, s.attestationConfidence/100)}"
-                    title="Attestation confidence: ${s.attestationConfidence.toFixed(1)}%"
+                title="Attestation tracking progress: ${(s.attestationSlot ?? 0)}/3 rounds (${s.attestationConfidence.toFixed(1)}%)"
                >${s.attestationConfidence.toFixed(0)}%</span>`
             : '';
 

@@ -17,25 +17,20 @@
  */
 package de.makibytes.chaincheck.reference.attestation;
 
+import java.time.Instant;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 
 import de.makibytes.chaincheck.model.AttestationConfidence;
 
 class AttestationTrackerTest {
 
     private AttestationTracker tracker;
-    private final ObjectMapper mapper = new ObjectMapper();
 
     @BeforeEach
     void setUp() {
@@ -141,178 +136,47 @@ class AttestationTrackerTest {
         assertEquals(0, AttestationTracker.bitlistLength("0xf"));
     }
 
-    // --- Confidence computation tests ---
+    // --- Tracking update tests ---
 
     @Test
-    @DisplayName("Process attestations computes correct confidence")
-    void processAttestationsCorrectConfidence() throws Exception {
-        // Simulate attestations JSON for a block at slot 100, attesting for slot 99
-        // Committee of 4, all attesting: aggregation_bits = 0x1f
-        String json = """
-                {
-                    "data": [
-                        {
-                            "aggregation_bits": "0x1f",
-                            "data": {
-                                "slot": "99",
-                                "index": "0",
-                                "beacon_block_root": "0xabc",
-                                "source": {"epoch": "10", "root": "0x111"},
-                                "target": {"epoch": "10", "root": "0x222"}
-                            }
-                        }
-                    ]
-                }
-                """;
-        JsonNode attestationsJson = mapper.readTree(json);
+    @DisplayName("Tracking update stores confidence by block number and hash")
+    void trackingUpdateStoresByBlockAndHash() {
+        Instant now = Instant.now();
+        tracker.updateTrackingResult(1000L, "0xhash1000", 99L, 2, now);
 
-        Map<Long, AttestationTracker.SlotBlock> slotCache = Map.of(
-                99L, new AttestationTracker.SlotBlock(1000L, "0xblockhash99"));
+        AttestationConfidence byNumber = tracker.getConfidence(1000L);
+        AttestationConfidence byHash = tracker.getConfidenceByHash("0xhash1000");
 
-        tracker.processBlockAttestations(100, attestationsJson, slotCache);
+        assertNotNull(byNumber);
+        assertNotNull(byHash);
+        assertEquals(1000L, byNumber.getExecutionBlockNumber());
+        assertEquals("0xhash1000", byNumber.getExecutionBlockHash());
+        assertEquals(99L, byNumber.getSlot());
+        assertEquals(2, byNumber.getAttestingValidators());
+        assertEquals(3, byNumber.getExpectedValidators());
+        assertEquals(66.666, byNumber.getConfidencePercent(), 0.01);
+        assertEquals(2, byNumber.getAttestationRound());
+    }
 
+    @Test
+    @DisplayName("Tracking update clamps round to 3")
+    void trackingUpdateClampsRound() {
+        tracker.updateTrackingResult(1000L, "0xhash1000", 99L, 7, Instant.now());
         AttestationConfidence confidence = tracker.getConfidence(1000L);
         assertNotNull(confidence);
-        assertEquals(1000L, confidence.getExecutionBlockNumber());
-        assertEquals("0xblockhash99", confidence.getExecutionBlockHash());
-        assertEquals(99L, confidence.getSlot());
-        assertEquals(4, confidence.getAttestingValidators());
-        assertEquals(4, confidence.getExpectedValidators());
+        assertEquals(3, confidence.getAttestationRound());
         assertEquals(100.0, confidence.getConfidencePercent(), 0.001);
     }
 
     @Test
-    @DisplayName("Multiple attestations for same slot are aggregated")
-    void multipleAttestationsAggregated() throws Exception {
-        // Two committees attesting for slot 99
-        String json = """
-                {
-                    "data": [
-                        {
-                            "aggregation_bits": "0x15",
-                            "data": {"slot": "99", "index": "0", "beacon_block_root": "0xabc",
-                                     "source": {"epoch": "10", "root": "0x1"}, "target": {"epoch": "10", "root": "0x2"}}
-                        },
-                        {
-                            "aggregation_bits": "0x1f",
-                            "data": {"slot": "99", "index": "1", "beacon_block_root": "0xabc",
-                                     "source": {"epoch": "10", "root": "0x1"}, "target": {"epoch": "10", "root": "0x2"}}
-                        }
-                    ]
-                }
-                """;
-        JsonNode attestationsJson = mapper.readTree(json);
+    @DisplayName("getRecentConfidencesByHash returns all tracked hashes")
+    void recentConfidencesByHashReturnsAll() {
+        tracker.updateTrackingResult(999L, "0xhash999", 98L, 1, Instant.now());
+        tracker.updateTrackingResult(1000L, "0xhash1000", 99L, 2, Instant.now());
 
-        Map<Long, AttestationTracker.SlotBlock> slotCache = Map.of(
-                99L, new AttestationTracker.SlotBlock(1000L, "0xhash99"));
-
-        tracker.processBlockAttestations(100, attestationsJson, slotCache);
-
-        AttestationConfidence confidence = tracker.getConfidence(1000L);
-        assertNotNull(confidence);
-        // First attestation: 2 of 4, Second: 4 of 4 → total: 6 of 8
-        assertEquals(6, confidence.getAttestingValidators());
-        assertEquals(8, confidence.getExpectedValidators());
-        assertEquals(75.0, confidence.getConfidencePercent(), 0.001);
-    }
-
-    @Test
-    @DisplayName("Attestations for slots without block mapping are ignored")
-    void missingSlotMappingIgnored() throws Exception {
-        String json = """
-                {
-                    "data": [
-                        {
-                            "aggregation_bits": "0x1f",
-                            "data": {"slot": "99", "index": "0", "beacon_block_root": "0xabc",
-                                     "source": {"epoch": "10", "root": "0x1"}, "target": {"epoch": "10", "root": "0x2"}}
-                        }
-                    ]
-                }
-                """;
-        JsonNode attestationsJson = mapper.readTree(json);
-
-        // No slot cache entry for slot 99
-        Map<Long, AttestationTracker.SlotBlock> slotCache = Map.of();
-
-        tracker.processBlockAttestations(100, attestationsJson, slotCache);
-
-        assertNull(tracker.getConfidence(1000L));
-        assertTrue(tracker.getRecentConfidences().isEmpty());
-    }
-
-    @Test
-    @DisplayName("Higher attesting count updates existing confidence")
-    void higherCountUpdates() throws Exception {
-        String json1 = """
-                {
-                    "data": [
-                        {
-                            "aggregation_bits": "0x15",
-                            "data": {"slot": "99", "index": "0", "beacon_block_root": "0xabc",
-                                     "source": {"epoch": "10", "root": "0x1"}, "target": {"epoch": "10", "root": "0x2"}}
-                        }
-                    ]
-                }
-                """;
-        String json2 = """
-                {
-                    "data": [
-                        {
-                            "aggregation_bits": "0x1f",
-                            "data": {"slot": "99", "index": "0", "beacon_block_root": "0xabc",
-                                     "source": {"epoch": "10", "root": "0x1"}, "target": {"epoch": "10", "root": "0x2"}}
-                        }
-                    ]
-                }
-                """;
-
-        Map<Long, AttestationTracker.SlotBlock> slotCache = Map.of(
-                99L, new AttestationTracker.SlotBlock(1000L, "0xhash99"));
-
-        tracker.processBlockAttestations(100, mapper.readTree(json1), slotCache);
-        assertEquals(2, tracker.getConfidence(1000L).getAttestingValidators());
-
-        tracker.processBlockAttestations(101, mapper.readTree(json2), slotCache);
-        assertEquals(4, tracker.getConfidence(1000L).getAttestingValidators());
-    }
-
-    @Test
-    @DisplayName("Null or empty attestations array is handled gracefully")
-    void nullAttestationsHandled() {
-        tracker.processBlockAttestations(100, null, Map.of());
-        assertTrue(tracker.getRecentConfidences().isEmpty());
-    }
-
-    @Test
-    @DisplayName("getRecentConfidences returns all tracked blocks")
-    void recentConfidencesReturnsAll() throws Exception {
-        String json = """
-                {
-                    "data": [
-                        {
-                            "aggregation_bits": "0x1f",
-                            "data": {"slot": "98", "index": "0", "beacon_block_root": "0xabc",
-                                     "source": {"epoch": "10", "root": "0x1"}, "target": {"epoch": "10", "root": "0x2"}}
-                        },
-                        {
-                            "aggregation_bits": "0x1f",
-                            "data": {"slot": "99", "index": "0", "beacon_block_root": "0xabc",
-                                     "source": {"epoch": "10", "root": "0x1"}, "target": {"epoch": "10", "root": "0x2"}}
-                        }
-                    ]
-                }
-                """;
-
-        Map<Long, AttestationTracker.SlotBlock> slotCache = Map.of(
-                98L, new AttestationTracker.SlotBlock(999L, "0xhash98"),
-                99L, new AttestationTracker.SlotBlock(1000L, "0xhash99"));
-
-        tracker.processBlockAttestations(100, mapper.readTree(json), slotCache);
-
-        Map<Long, AttestationConfidence> recent = tracker.getRecentConfidences();
+        Map<String, AttestationConfidence> recent = tracker.getRecentConfidencesByHash();
         assertEquals(2, recent.size());
-        assertNotNull(recent.get(999L));
-        assertNotNull(recent.get(1000L));
+        assertNotNull(recent.get("0xhash999"));
+        assertNotNull(recent.get("0xhash1000"));
     }
 }

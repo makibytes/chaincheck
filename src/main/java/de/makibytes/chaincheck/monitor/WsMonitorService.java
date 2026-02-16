@@ -27,6 +27,8 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletionStage;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -55,6 +57,7 @@ public class WsMonitorService {
     private final ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
     private final Map<String, RpcMonitorService.NodeState> nodeStates;
     private final HttpMonitorService httpMonitorService;
+    private final ExecutorService recoveryExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
     public WsMonitorService(RpcMonitorService monitor,
                             NodeRegistry nodeRegistry,
@@ -324,6 +327,10 @@ public class WsMonitorService {
                         }
                     }
 
+                    if (blockNumber != null && state.lastWsBlockNumber != null) {
+                        scheduleMissingBlockRecovery(node, state.lastWsBlockNumber, blockNumber);
+                    }
+
                     state.lastWsBlockNumber = blockNumber;
                     if (blockHash != null) {
                         state.lastWsBlockHash = blockHash;
@@ -337,6 +344,79 @@ public class WsMonitorService {
                 logger.error("WebSocket message handling failure ({}): {}", node.name(), ex.getMessage(), ex);
                 monitor.recordFailure(node, MetricSource.WS, ex.getMessage());
             }
+        }
+    }
+
+    private void scheduleMissingBlockRecovery(NodeDefinition node, long previousBlockNumber, long currentBlockNumber) {
+        if (!node.wsGapRecoveryEnabled()) {
+            return;
+        }
+        if (node.http() == null || node.http().isBlank()) {
+            return;
+        }
+        if (!monitor.isWarmupComplete()) {
+            return;
+        }
+        long gap = currentBlockNumber - previousBlockNumber - 1;
+        if (gap <= 0) {
+            return;
+        }
+        int maxBlocks = node.wsGapRecoveryMaxBlocks();
+        long start = previousBlockNumber + 1;
+        long end = currentBlockNumber - 1;
+        if (maxBlocks > 0 && gap > maxBlocks) {
+            long cappedStart = currentBlockNumber - maxBlocks;
+            start = Math.max(start, cappedStart);
+            gap = end - start + 1;
+            logger.warn("WS gap recovery capped ({}): previous={} current={} cappedStart={} maxBlocks={}",
+                    node.name(), previousBlockNumber, currentBlockNumber, start, maxBlocks);
+        }
+        for (long number = start; number <= end; number++) {
+            long recoveryNumber = number;
+            recoveryExecutor.submit(() -> recoverMissingBlock(node, recoveryNumber));
+        }
+    }
+
+    private void recoverMissingBlock(NodeDefinition node, long blockNumber) {
+        long startNanos = System.nanoTime();
+        try {
+            RpcMonitorService.BlockInfo block = httpMonitorService.fetchBlockByNumber(node, blockNumber);
+            if (block == null || block.blockNumber() == null || block.blockHash() == null) {
+                logger.warn("WS gap recovery failed ({}): block {} not found", node.name(), blockNumber);
+                return;
+            }
+            long latencyMs = (System.nanoTime() - startNanos) / 1_000_000;
+            Instant now = Instant.now();
+            Long headDelayMs = null;
+            if (block.blockTimestamp() != null) {
+                long delay = Duration.between(block.blockTimestamp(), now).toMillis();
+                if (delay >= 0) {
+                    headDelayMs = delay;
+                }
+            }
+            MetricSample sample = new MetricSample(
+                    now,
+                    MetricSource.HTTP,
+                    true,
+                    latencyMs,
+                    block.blockNumber(),
+                    block.blockTimestamp(),
+                    block.blockHash(),
+                    block.parentHash(),
+                    block.transactionCount(),
+                    block.gasPriceWei(),
+                    null,
+                    headDelayMs,
+                    null,
+                    null);
+            if (monitor.isWarmupComplete()) {
+                store.addSample(node.key(), sample);
+            }
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            logger.warn("WS gap recovery interrupted ({}): {}", node.name(), ex.getMessage());
+        } catch (IOException | RuntimeException ex) {
+            logger.warn("WS gap recovery failed ({}): {}", node.name(), ex.getMessage());
         }
     }
 

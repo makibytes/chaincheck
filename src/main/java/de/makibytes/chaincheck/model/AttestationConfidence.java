@@ -28,6 +28,7 @@ public class AttestationConfidence {
     private final int expectedValidators;
     private final double confidencePercent;
     private final Instant computedAt;
+    private final int attestationRound;
 
     public AttestationConfidence(long executionBlockNumber,
                                  String executionBlockHash,
@@ -36,6 +37,18 @@ public class AttestationConfidence {
                                  int expectedValidators,
                                  double confidencePercent,
                                  Instant computedAt) {
+        this(executionBlockNumber, executionBlockHash, slot, attestingValidators,
+             expectedValidators, confidencePercent, computedAt, 1);
+    }
+
+    public AttestationConfidence(long executionBlockNumber,
+                                 String executionBlockHash,
+                                 long slot,
+                                 int attestingValidators,
+                                 int expectedValidators,
+                                 double confidencePercent,
+                                 Instant computedAt,
+                                 int attestationRound) {
         this.executionBlockNumber = executionBlockNumber;
         this.executionBlockHash = executionBlockHash;
         this.slot = slot;
@@ -43,6 +56,7 @@ public class AttestationConfidence {
         this.expectedValidators = expectedValidators;
         this.confidencePercent = confidencePercent;
         this.computedAt = computedAt;
+        this.attestationRound = attestationRound;
     }
 
     public long getExecutionBlockNumber() {
@@ -71,5 +85,9 @@ public class AttestationConfidence {
 
     public Instant getComputedAt() {
         return computedAt;
+    }
+
+    public int getAttestationRound() {
+        return attestationRound;
     }
 }

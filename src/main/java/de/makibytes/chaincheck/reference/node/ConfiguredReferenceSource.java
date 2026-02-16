@@ -92,7 +92,7 @@ public class ConfiguredReferenceSource {
         return consensusNode.getAttestationConfidence(blockNumber);
     }
 
-    public Map<Long, AttestationConfidence> getRecentAttestationConfidences() {
+    public Map<String, AttestationConfidence> getRecentAttestationConfidences() {
         return consensusNode.getRecentAttestationConfidences();
     }
 

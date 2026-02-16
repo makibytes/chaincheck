@@ -60,6 +60,12 @@ public class NodeRegistry {
             long retryBackoffMs = node.getRetryBackoffMs() > 0 ? node.getRetryBackoffMs() : defaults.getRetryBackoffMs();
             Map<String, String> headers = new HashMap<>(defaults.getHeaders());
             headers.putAll(node.getHeaders());
+            boolean wsGapRecoveryEnabled = node.getWsGapRecoveryEnabled() != null
+                    ? node.getWsGapRecoveryEnabled()
+                    : defaults.isWsGapRecoveryEnabled();
+            int wsGapRecoveryMaxBlocks = node.getWsGapRecoveryMaxBlocks() != null
+                    ? node.getWsGapRecoveryMaxBlocks()
+                    : defaults.getWsGapRecoveryMaxBlocks();
                 long nodeHighLatencyMs = node.getAnomalyDetection() != null
                     ? node.getAnomalyDetection().getHighLatencyMs()
                     : -1;
@@ -84,7 +90,9 @@ public class NodeRegistry {
                     readTimeoutMs,
                     maxRetries,
                     retryBackoffMs,
-                    Map.copyOf(headers));
+                    Map.copyOf(headers),
+                    wsGapRecoveryEnabled,
+                    wsGapRecoveryMaxBlocks);
             temp.add(definition);
             byKey.put(key, definition);
             if (node.getWs() != null && !node.getWs().isBlank()) {
@@ -133,6 +141,8 @@ public class NodeRegistry {
                                  long readTimeoutMs,
                                  int maxRetries,
                                  long retryBackoffMs,
-                                 Map<String, String> headers) {
+                                 Map<String, String> headers,
+                                 boolean wsGapRecoveryEnabled,
+                                 int wsGapRecoveryMaxBlocks) {
     }
 }

@@ -58,7 +58,9 @@ public class ConsensusNodeClient {
     private final String baseUrl;
     private final String eventsPath;
     private final String finalityCheckpointsPath;
-    private final String attestationsPath;
+    private final String committeesPath;
+    private final long attestationTrackingIntervalMs;
+    private final int attestationTrackingMaxAttempts;
     private final Long safePollIntervalMs;
     private final Long finalizedPollIntervalMs;
     private final HttpClient httpClient;
@@ -68,6 +70,8 @@ public class ConsensusNodeClient {
     private final Map<String, ExecutionBlock> executionBlockCache = new ConcurrentHashMap<>();
     private final Map<Long, ExecutionBlock> executionBlockBySlot = new ConcurrentHashMap<>();
     private final AttestationTracker attestationTracker;
+    private final Deque<AttestationTracking> attestationQueue = new ConcurrentLinkedDeque<>();
+    private final Map<Long, AttestationTracking> attestationTrackingBySlot = new ConcurrentHashMap<>();
 
     private final AtomicReference<ReferenceObservation> head = new AtomicReference<>();
     private final AtomicReference<ReferenceObservation> safe = new AtomicReference<>();
@@ -87,7 +91,9 @@ public class ConsensusNodeClient {
         this.baseUrl = trimTrailingSlash(referenceNode == null ? null : referenceNode.getHttp());
         this.eventsPath = sanitizePath(referenceNode == null ? null : referenceNode.getEventsPath(), null);
         this.finalityCheckpointsPath = sanitizePath(referenceNode == null ? null : referenceNode.getFinalityCheckpointsPath(), null);
-        this.attestationsPath = referenceNode == null ? null : referenceNode.getAttestationsPath();
+        this.committeesPath = sanitizePath(referenceNode == null ? null : referenceNode.getCommitteesPath(), "/eth/v1/beacon/states/head/committees");
+        this.attestationTrackingIntervalMs = normalizeTrackingInterval(referenceNode == null ? null : referenceNode.getAttestationTrackingIntervalMs());
+        this.attestationTrackingMaxAttempts = normalizeTrackingAttempts(referenceNode == null ? null : referenceNode.getAttestationTrackingMaxAttempts());
         this.safePollIntervalMs = normalizePollInterval(referenceNode == null ? null : referenceNode.getSafePollIntervalMs());
         this.finalizedPollIntervalMs = normalizePollInterval(referenceNode == null ? null : referenceNode.getFinalizedPollIntervalMs());
         this.attestationTracker = attestationTracker;
@@ -128,6 +134,9 @@ public class ConsensusNodeClient {
             return;
         }
         executor.submit(this::runEventLoop);
+        if (attestationTracker != null) {
+            executor.submit(this::runAttestationLoop);
+        }
     }
 
     boolean refreshCheckpoints(boolean refreshSafe, boolean refreshFinalized) {
@@ -219,32 +228,102 @@ public class ConsensusNodeClient {
         return attestationTracker != null ? attestationTracker.getConfidence(blockNumber) : null;
     }
 
-    Map<Long, AttestationConfidence> getRecentAttestationConfidences() {
-        return attestationTracker != null ? attestationTracker.getRecentConfidences() : Map.of();
+    Map<String, AttestationConfidence> getRecentAttestationConfidences() {
+        return attestationTracker != null ? attestationTracker.getRecentConfidencesByHash() : Map.of();
     }
 
-    private void fetchAndProcessAttestations(long slot) {
-        if (attestationsPath == null || attestationsPath.isBlank()) {
+    private void registerAttestationTracking(long slot, ExecutionBlock executionBlock) {
+        if (attestationTracker == null || executionBlock == null
+                || executionBlock.blockHash() == null || executionBlock.blockHash().isBlank()
+                || executionBlock.blockNumber() == null) {
             return;
         }
-        try {
-            String path = attestationsPath.replace("{slot}", String.valueOf(slot));
-            if (!path.startsWith("/")) {
-                path = "/" + path;
-            }
-            JsonNode response = sendGet(path, "application/json");
-
-            // Build slot→block mapping for the tracker
-            Map<Long, AttestationTracker.SlotBlock> slotBlockMap = new java.util.HashMap<>();
-            for (Map.Entry<Long, ExecutionBlock> entry : executionBlockBySlot.entrySet()) {
-                ExecutionBlock eb = entry.getValue();
-                slotBlockMap.put(entry.getKey(), new AttestationTracker.SlotBlock(eb.blockNumber(), eb.blockHash()));
-            }
-
-            attestationTracker.processBlockAttestations(slot, response, slotBlockMap);
-        } catch (IOException | InterruptedException ex) {
-            logger.debug("Failed to fetch attestations for slot {}: {}", slot, ex.getMessage());
+        AttestationTracking next = new AttestationTracking(slot, executionBlock.blockNumber(), executionBlock.blockHash(), 0, 0);
+        AttestationTracking current = attestationTrackingBySlot.put(slot, next);
+        if (current == null || !current.blockHash().equalsIgnoreCase(next.blockHash())) {
+            attestationQueue.addLast(next);
         }
+    }
+
+    private void runAttestationLoop() {
+        try {
+            while (streamRunning.get()) {
+                processAttestationTracking();
+                Thread.sleep(attestationTrackingIntervalMs);
+            }
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    private void processAttestationTracking() {
+        AttestationTracking tracking = attestationQueue.pollFirst();
+        if (tracking == null) {
+            return;
+        }
+        AttestationTracking latest = attestationTrackingBySlot.get(tracking.slot());
+        if (latest != tracking) {
+            return;
+        }
+
+        int observedAttestations = tracking.observedAttestations();
+        try {
+            CommitteeStats stats = fetchCommitteeStats(tracking.slot());
+            if (stats.hasData()) {
+                observedAttestations = Math.min(3, observedAttestations + 1);
+            }
+            attestationTracker.updateTrackingResult(
+                    tracking.blockNumber(),
+                    tracking.blockHash(),
+                    tracking.slot(),
+                    observedAttestations,
+                    Instant.now());
+        } catch (IOException | InterruptedException ex) {
+            if (ex instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+            logger.debug("Committee fetch failed for slot {}: {}", tracking.slot(), ex.getMessage());
+        }
+
+        if (observedAttestations >= 3) {
+            attestationTrackingBySlot.remove(tracking.slot(), tracking);
+            return;
+        }
+
+        int nextAttempts = tracking.attempts() + 1;
+        if (nextAttempts >= attestationTrackingMaxAttempts) {
+            attestationTrackingBySlot.remove(tracking.slot(), tracking);
+            return;
+        }
+
+        AttestationTracking next = new AttestationTracking(
+                tracking.slot(),
+                tracking.blockNumber(),
+                tracking.blockHash(),
+                nextAttempts,
+                observedAttestations);
+        attestationTrackingBySlot.put(tracking.slot(), next);
+        attestationQueue.addLast(next);
+    }
+
+    private CommitteeStats fetchCommitteeStats(long slot) throws IOException, InterruptedException {
+        String separator = committeesPath.contains("?") ? "&" : "?";
+        String path = committeesPath + separator + "slot=" + slot;
+        JsonNode response = sendGet(path, "application/json");
+        JsonNode data = response.path("data");
+        if (!data.isArray() || data.isEmpty()) {
+            return new CommitteeStats(0, 0);
+        }
+        int committeeCount = data.size();
+        int validatorCount = 0;
+        for (JsonNode committee : data) {
+            JsonNode validators = committee.path("validators");
+            if (validators.isArray()) {
+                validatorCount += validators.size();
+            }
+        }
+        return new CommitteeStats(committeeCount, validatorCount);
     }
 
     private void pruneSlotCache() {
@@ -337,6 +416,7 @@ public class ConsensusNodeClient {
                 long headSlot = payload.path("slot").asLong(-1);
                 if (headSlot >= 0) {
                     executionBlockBySlot.put(headSlot, executionBlock);
+                        registerAttestationTracking(headSlot, executionBlock);
                     pruneSlotCache();
                 }
                 Instant knowledgeAt = executionBlock.blockTimestamp() != null ? executionBlock.blockTimestamp() : observedAt;
@@ -348,9 +428,6 @@ public class ConsensusNodeClient {
                         observedAt,
                         knowledgeAt,
                         delayMs));
-                if (headSlot >= 0 && attestationTracker != null) {
-                    executor.submit(() -> fetchAndProcessAttestations(headSlot));
-                }
             } else if ("finalized_checkpoint".equals(eventType)) {
                 Instant knowledgeAt = resolveKnowledgeTimestamp(observedAt);
                 Long delayMs = computeDelayMs(executionBlock.blockTimestamp(), knowledgeAt);
@@ -487,6 +564,20 @@ public class ConsensusNodeClient {
         return Math.max(250L, value);
     }
 
+    private static long normalizeTrackingInterval(long value) {
+        if (value <= 0) {
+            return 3000L;
+        }
+        return Math.max(250L, value);
+    }
+
+    private static int normalizeTrackingAttempts(int value) {
+        if (value <= 0) {
+            return 100;
+        }
+        return value;
+    }
+
     private static boolean isZeroRoot(String root) {
         if (root == null) {
             return true;
@@ -541,5 +632,18 @@ public class ConsensusNodeClient {
     }
 
     private record ExecutionBlock(Long blockNumber, String blockHash, Instant blockTimestamp) {
+    }
+
+    private record AttestationTracking(long slot,
+                                       long blockNumber,
+                                       String blockHash,
+                                       int attempts,
+                                       int observedAttestations) {
+    }
+
+    private record CommitteeStats(int committeeCount, int validatorCount) {
+        boolean hasData() {
+            return committeeCount > 0 || validatorCount > 0;
+        }
     }
 }

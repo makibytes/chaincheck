@@ -19,15 +19,11 @@ package de.makibytes.chaincheck.reference.attestation;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentSkipListMap;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import com.fasterxml.jackson.databind.JsonNode;
 
 import de.makibytes.chaincheck.model.AttestationConfidence;
 
@@ -36,73 +32,32 @@ public class AttestationTracker {
     private static final Logger logger = LoggerFactory.getLogger(AttestationTracker.class);
     private static final Duration RETENTION = Duration.ofHours(2);
 
-    private final ConcurrentSkipListMap<Long, AttestationConfidence> confidenceBySlot = new ConcurrentSkipListMap<>();
+    private final ConcurrentHashMap<String, AttestationConfidence> confidenceByHash = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Long, AttestationConfidence> confidenceByBlock = new ConcurrentHashMap<>();
 
-    public void processBlockAttestations(long headSlot,
-                                         JsonNode attestationsResponse,
-                                         Map<Long, SlotBlock> slotBlockCache) {
-        if (attestationsResponse == null) {
+    public void updateTrackingResult(long blockNumber,
+                                     String blockHash,
+                                     long slot,
+                                     int attestationRound,
+                                     Instant computedAt) {
+        if (blockHash == null || blockHash.isBlank()) {
             return;
         }
-
-        // The response may be wrapped in a "data" field or be the array directly
-        JsonNode attestations = attestationsResponse.has("data") ? attestationsResponse.get("data") : attestationsResponse;
-        if (!attestations.isArray() || attestations.isEmpty()) {
-            return;
-        }
-
-        // Group attestations by target slot, accumulating attesting and expected counts
-        Map<Long, int[]> countsBySlot = new HashMap<>(); // [attesting, expected]
-
-        for (JsonNode attestation : attestations) {
-            JsonNode data = attestation.path("data");
-            long targetSlot = data.path("slot").asLong(-1);
-            if (targetSlot < 0) {
-                continue;
-            }
-            String aggregationBits = attestation.path("aggregation_bits").asText(null);
-            if (aggregationBits == null || aggregationBits.isBlank()) {
-                continue;
-            }
-
-            int attesting = countSetBits(aggregationBits);
-            int total = bitlistLength(aggregationBits);
-            if (total <= 0) {
-                continue;
-            }
-
-            countsBySlot.merge(targetSlot, new int[]{attesting, total},
-                    (existing, incoming) -> new int[]{existing[0] + incoming[0], existing[1] + incoming[1]});
-        }
-
-        Instant now = Instant.now();
-        for (Map.Entry<Long, int[]> entry : countsBySlot.entrySet()) {
-            long targetSlot = entry.getKey();
-            int[] counts = entry.getValue();
-            int attesting = counts[0];
-            int expected = counts[1];
-
-            SlotBlock slotBlock = slotBlockCache.get(targetSlot);
-            long blockNumber = slotBlock != null ? slotBlock.blockNumber() : -1;
-            String blockHash = slotBlock != null ? slotBlock.blockHash() : null;
-
-            double confidence = expected > 0 ? (attesting * 100.0) / expected : 0.0;
-
-            AttestationConfidence ac = new AttestationConfidence(
-                    blockNumber, blockHash, targetSlot,
-                    attesting, expected, confidence, now);
-
-            // Only store if we have a valid block mapping
-            if (blockNumber >= 0) {
-                AttestationConfidence existing = confidenceBySlot.get(targetSlot);
-                if (existing == null || ac.getAttestingValidators() > existing.getAttestingValidators()) {
-                    confidenceBySlot.put(targetSlot, ac);
-                    confidenceByBlock.put(blockNumber, ac);
-                }
-            }
-        }
-
+        int boundedRound = Math.max(0, Math.min(3, attestationRound));
+        double confidence = (boundedRound / 3.0) * 100.0;
+        AttestationConfidence value = new AttestationConfidence(
+                blockNumber,
+                blockHash,
+                slot,
+                boundedRound,
+                3,
+                confidence,
+                computedAt == null ? Instant.now() : computedAt,
+                boundedRound);
+        confidenceByHash.put(blockHash, value);
+        confidenceByBlock.put(blockNumber, value);
+        logger.debug("Updated attestation tracking for block {} slot {}: round {}/3",
+                blockNumber, slot, boundedRound);
         prune();
     }
 
@@ -110,13 +65,24 @@ public class AttestationTracker {
         return confidenceByBlock.get(executionBlockNumber);
     }
 
+    public AttestationConfidence getConfidenceByHash(String blockHash) {
+        if (blockHash == null || blockHash.isBlank()) {
+            return null;
+        }
+        return confidenceByHash.get(blockHash);
+    }
+
     public Map<Long, AttestationConfidence> getRecentConfidences() {
         return Map.copyOf(confidenceByBlock);
     }
 
+    public Map<String, AttestationConfidence> getRecentConfidencesByHash() {
+        return Map.copyOf(confidenceByHash);
+    }
+
     private void prune() {
         Instant cutoff = Instant.now().minus(RETENTION);
-        confidenceBySlot.entrySet().removeIf(entry -> entry.getValue().getComputedAt().isBefore(cutoff));
+        confidenceByHash.entrySet().removeIf(entry -> entry.getValue().getComputedAt().isBefore(cutoff));
         confidenceByBlock.entrySet().removeIf(entry -> entry.getValue().getComputedAt().isBefore(cutoff));
     }
 
@@ -191,6 +157,4 @@ public class AttestationTracker {
         return bytes;
     }
 
-    public record SlotBlock(long blockNumber, String blockHash) {
-    }
 }
