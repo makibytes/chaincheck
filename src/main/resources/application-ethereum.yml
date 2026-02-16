@@ -11,6 +11,7 @@ rpc:
     safe-poll-interval-ms: 1000
     finalized-poll-interval-ms: 1000
     timeout-ms: 2000
+    attestations-enabled: true
   nodes:
     - name: nibbler
       http: http://nibbler:8545

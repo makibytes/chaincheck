@@ -21,7 +21,7 @@ Integration tests use the `IT` suffix (e.g., `LargeDataStoreIntegrationTestIT`) 
 
 ## Architecture
 
-All source lives under `de.makibytes.chaincheck` with seven packages:
+All source lives under `de.makibytes.chaincheck` with eight packages:
 
 - **config** — `ChainCheckProperties` binds the `rpc.*` YAML namespace. Per-node overrides (timeouts, retries, headers, anomaly thresholds) fall back to `rpc.defaults.*`.
 - **model** — Value types: `MetricSample` (raw metrics per poll/event), `AnomalyEvent` (with `AnomalyType` enum: ERROR, RATE_LIMIT, TIMEOUT, DELAY, BLOCK_GAP, CONFLICT, REORG, WRONG_HEAD), `MetricSource` (HTTP vs WS), `TimeRange`.

@@ -26,7 +26,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import de.makibytes.chaincheck.config.ChainCheckProperties;
+import de.makibytes.chaincheck.model.AttestationConfidence;
 import de.makibytes.chaincheck.model.MetricSample;
+import de.makibytes.chaincheck.reference.attestation.AttestationTracker;
 import de.makibytes.chaincheck.model.MetricSource;
 import de.makibytes.chaincheck.monitor.NodeRegistry;
 import de.makibytes.chaincheck.monitor.RpcMonitorService;
@@ -53,7 +55,12 @@ public class ConfiguredReferenceSource {
         this.blockVotingService = blockVotingService;
         this.nodeStates = nodeStates;
         this.configuredReferenceNodeKey = configuredReferenceNodeKey;
-        this.consensusNode = new ConsensusNodeClient(properties.getConsensus());
+        AttestationTracker tracker = null;
+        if (properties.getConsensus() != null && properties.getConsensus().isAttestationsEnabled()) {
+            tracker = new AttestationTracker();
+            logger.info("Attestation confidence tracking enabled");
+        }
+        this.consensusNode = new ConsensusNodeClient(properties.getConsensus(), tracker);
         this.consensusNodeDisplayName = properties.getConsensus() != null ? properties.getConsensus().getDisplayName() : "consensus";
     }
 
@@ -79,6 +86,14 @@ public class ConfiguredReferenceSource {
 
     ReferenceObservation getConsensusObservation(Confidence confidence) {
         return consensusNode.getObservation(confidence);
+    }
+
+    public AttestationConfidence getAttestationConfidence(long blockNumber) {
+        return consensusNode.getAttestationConfidence(blockNumber);
+    }
+
+    public Map<Long, AttestationConfidence> getRecentAttestationConfidences() {
+        return consensusNode.getRecentAttestationConfidences();
     }
 
     public void ensureEventStream() {

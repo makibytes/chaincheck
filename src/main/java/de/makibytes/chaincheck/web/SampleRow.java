@@ -35,6 +35,7 @@ public class SampleRow {
     private final boolean conflict;
     private final Integer transactionCount;
     private final Long gasPriceWei;
+    private final Double attestationConfidence;
 
     public SampleRow(String time,
                      List<String> sources,
@@ -50,6 +51,25 @@ public class SampleRow {
                      boolean conflict,
                      Integer transactionCount,
                      Long gasPriceWei) {
+        this(time, sources, status, latencyMs, blockNumber, blockHash, parentHash,
+             blockTime, safe, finalized, invalid, conflict, transactionCount, gasPriceWei, null);
+    }
+
+    public SampleRow(String time,
+                     List<String> sources,
+                     String status,
+                     Long latencyMs,
+                     Long blockNumber,
+                     String blockHash,
+                     String parentHash,
+                     String blockTime,
+                     boolean safe,
+                     boolean finalized,
+                     boolean invalid,
+                     boolean conflict,
+                     Integer transactionCount,
+                     Long gasPriceWei,
+                     Double attestationConfidence) {
         this.time = time;
         this.sources = sources;
         this.status = status;
@@ -64,6 +84,7 @@ public class SampleRow {
         this.conflict = conflict;
         this.transactionCount = transactionCount;
         this.gasPriceWei = gasPriceWei;
+        this.attestationConfidence = attestationConfidence;
     }
 
     public String getTime() {
@@ -120,5 +141,9 @@ public class SampleRow {
 
     public Long getGasPriceWei() {
         return gasPriceWei;
+    }
+
+    public Double getAttestationConfidence() {
+        return attestationConfidence;
     }
 }

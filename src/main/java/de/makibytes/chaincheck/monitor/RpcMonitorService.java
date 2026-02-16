@@ -36,6 +36,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import de.makibytes.chaincheck.config.ChainCheckProperties;
+import de.makibytes.chaincheck.model.AttestationConfidence;
 import de.makibytes.chaincheck.model.AnomalyEvent;
 import de.makibytes.chaincheck.model.MetricSample;
 import de.makibytes.chaincheck.model.MetricSource;
@@ -539,6 +540,20 @@ public class RpcMonitorService {
             return List.of();
         }
         return configuredSource.getDelaySamplesSince(since);
+    }
+
+    public AttestationConfidence getAttestationConfidence(long blockNumber) {
+        if (!isConfiguredReferenceMode()) {
+            return null;
+        }
+        return configuredSource.getAttestationConfidence(blockNumber);
+    }
+
+    public java.util.Map<Long, AttestationConfidence> getRecentAttestationConfidences() {
+        if (!isConfiguredReferenceMode()) {
+            return java.util.Map.of();
+        }
+        return configuredSource.getRecentAttestationConfidences();
     }
 
     private void logWarmupStart() {

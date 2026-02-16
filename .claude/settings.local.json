@@ -5,7 +5,9 @@
       "Bash(mvn compile:*)",
       "Bash(mvn test:*)",
       "Bash(mvn clean test:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "WebSearch",
+      "WebFetch(domain:ethereum.github.io)"
     ]
   }
 }

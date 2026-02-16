@@ -47,6 +47,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import de.makibytes.chaincheck.config.ChainCheckProperties;
+import de.makibytes.chaincheck.model.AttestationConfidence;
+import de.makibytes.chaincheck.reference.attestation.AttestationTracker;
 import de.makibytes.chaincheck.reference.block.ReferenceBlocks.Confidence;
 
 public class ConsensusNodeClient {
@@ -56,6 +58,7 @@ public class ConsensusNodeClient {
     private final String baseUrl;
     private final String eventsPath;
     private final String finalityCheckpointsPath;
+    private final String attestationsPath;
     private final Long safePollIntervalMs;
     private final Long finalizedPollIntervalMs;
     private final HttpClient httpClient;
@@ -63,6 +66,8 @@ public class ConsensusNodeClient {
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
     private final AtomicBoolean streamRunning = new AtomicBoolean(false);
     private final Map<String, ExecutionBlock> executionBlockCache = new ConcurrentHashMap<>();
+    private final Map<Long, ExecutionBlock> executionBlockBySlot = new ConcurrentHashMap<>();
+    private final AttestationTracker attestationTracker;
 
     private final AtomicReference<ReferenceObservation> head = new AtomicReference<>();
     private final AtomicReference<ReferenceObservation> safe = new AtomicReference<>();
@@ -75,11 +80,17 @@ public class ConsensusNodeClient {
     private final AtomicReference<Instant> finalizedFirstRequestAt = new AtomicReference<>();
 
     ConsensusNodeClient(ChainCheckProperties.Consensus referenceNode) {
+        this(referenceNode, null);
+    }
+
+    ConsensusNodeClient(ChainCheckProperties.Consensus referenceNode, AttestationTracker attestationTracker) {
         this.baseUrl = trimTrailingSlash(referenceNode == null ? null : referenceNode.getHttp());
         this.eventsPath = sanitizePath(referenceNode == null ? null : referenceNode.getEventsPath(), null);
         this.finalityCheckpointsPath = sanitizePath(referenceNode == null ? null : referenceNode.getFinalityCheckpointsPath(), null);
+        this.attestationsPath = referenceNode == null ? null : referenceNode.getAttestationsPath();
         this.safePollIntervalMs = normalizePollInterval(referenceNode == null ? null : referenceNode.getSafePollIntervalMs());
         this.finalizedPollIntervalMs = normalizePollInterval(referenceNode == null ? null : referenceNode.getFinalizedPollIntervalMs());
+        this.attestationTracker = attestationTracker;
         long timeoutMs = Math.max(500, referenceNode == null ? 2000 : referenceNode.getTimeoutMs());
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofMillis(timeoutMs))
@@ -204,6 +215,49 @@ public class ConsensusNodeClient {
         return result;
     }
 
+    AttestationConfidence getAttestationConfidence(long blockNumber) {
+        return attestationTracker != null ? attestationTracker.getConfidence(blockNumber) : null;
+    }
+
+    Map<Long, AttestationConfidence> getRecentAttestationConfidences() {
+        return attestationTracker != null ? attestationTracker.getRecentConfidences() : Map.of();
+    }
+
+    private void fetchAndProcessAttestations(long slot) {
+        if (attestationsPath == null || attestationsPath.isBlank()) {
+            return;
+        }
+        try {
+            String path = attestationsPath.replace("{slot}", String.valueOf(slot));
+            if (!path.startsWith("/")) {
+                path = "/" + path;
+            }
+            JsonNode response = sendGet(path, "application/json");
+
+            // Build slot→block mapping for the tracker
+            Map<Long, AttestationTracker.SlotBlock> slotBlockMap = new java.util.HashMap<>();
+            for (Map.Entry<Long, ExecutionBlock> entry : executionBlockBySlot.entrySet()) {
+                ExecutionBlock eb = entry.getValue();
+                slotBlockMap.put(entry.getKey(), new AttestationTracker.SlotBlock(eb.blockNumber(), eb.blockHash()));
+            }
+
+            attestationTracker.processBlockAttestations(slot, response, slotBlockMap);
+        } catch (IOException | InterruptedException ex) {
+            logger.debug("Failed to fetch attestations for slot {}: {}", slot, ex.getMessage());
+        }
+    }
+
+    private void pruneSlotCache() {
+        if (executionBlockBySlot.size() > 256) {
+            long minSlot = executionBlockBySlot.keySet().stream()
+                    .mapToLong(Long::longValue)
+                    .min()
+                    .orElse(0);
+            long cutoff = minSlot + (executionBlockBySlot.size() - 256);
+            executionBlockBySlot.entrySet().removeIf(entry -> entry.getKey() < cutoff);
+        }
+    }
+
     private void runEventLoop() {
         try {
             while (true) {
@@ -280,6 +334,11 @@ public class ConsensusNodeClient {
             }
             Instant observedAt = Instant.now();
             if ("head".equals(eventType)) {
+                long headSlot = payload.path("slot").asLong(-1);
+                if (headSlot >= 0) {
+                    executionBlockBySlot.put(headSlot, executionBlock);
+                    pruneSlotCache();
+                }
                 Instant knowledgeAt = executionBlock.blockTimestamp() != null ? executionBlock.blockTimestamp() : observedAt;
                 Long delayMs = computeDelayMs(executionBlock.blockTimestamp(), knowledgeAt);
                 updateObservation(Confidence.NEW, head, new ReferenceObservation(
@@ -289,6 +348,9 @@ public class ConsensusNodeClient {
                         observedAt,
                         knowledgeAt,
                         delayMs));
+                if (headSlot >= 0 && attestationTracker != null) {
+                    executor.submit(() -> fetchAndProcessAttestations(headSlot));
+                }
             } else if ("finalized_checkpoint".equals(eventType)) {
                 Instant knowledgeAt = resolveKnowledgeTimestamp(observedAt);
                 Long delayMs = computeDelayMs(executionBlock.blockTimestamp(), knowledgeAt);

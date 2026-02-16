@@ -415,6 +415,12 @@ body {
     border: 1px solid rgba(var(--color-danger-rgb), 0.4);
 }
 
+.tag-attestation {
+    background: rgba(var(--color-primary-rgb), 0.12);
+    color: var(--color-primary);
+    border: 1px solid rgba(var(--color-primary-rgb), 0.3);
+}
+
 .tag-conflict {
     background: rgba(var(--color-purple-rgb), 0.16);
     color: var(--color-purple);

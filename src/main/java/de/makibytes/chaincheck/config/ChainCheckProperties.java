@@ -276,6 +276,9 @@ public class ChainCheckProperties {
         private Long safePollIntervalMs;
         private Long finalizedPollIntervalMs;
         private long timeoutMs = 2000;
+        private boolean attestationsEnabled = false;
+        private String attestationsPath = "/eth/v1/beacon/blocks/{slot}/attestations";
+        private String committeesPath = "/eth/v1/beacon/states/head/committees";
 
         public String getNodeKey() {
             return nodeKey;
@@ -339,6 +342,30 @@ public class ChainCheckProperties {
 
         public void setTimeoutMs(long timeoutMs) {
             this.timeoutMs = timeoutMs;
+        }
+
+        public boolean isAttestationsEnabled() {
+            return attestationsEnabled;
+        }
+
+        public void setAttestationsEnabled(boolean attestationsEnabled) {
+            this.attestationsEnabled = attestationsEnabled;
+        }
+
+        public String getAttestationsPath() {
+            return attestationsPath;
+        }
+
+        public void setAttestationsPath(String attestationsPath) {
+            this.attestationsPath = attestationsPath;
+        }
+
+        public String getCommitteesPath() {
+            return committeesPath;
+        }
+
+        public void setCommitteesPath(String committeesPath) {
+            this.committeesPath = committeesPath;
         }
 
         public boolean hasConfiguredReferenceNode() {

@@ -33,6 +33,7 @@ import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 
 import de.makibytes.chaincheck.config.ChainCheckProperties;
+import de.makibytes.chaincheck.model.AttestationConfidence;
 import de.makibytes.chaincheck.model.AnomalyEvent;
 import de.makibytes.chaincheck.model.AnomalyType;
 import de.makibytes.chaincheck.model.DashboardSummary;
@@ -335,6 +336,8 @@ public class DashboardService {
             final java.util.Set<String> effectiveConsensusSafeHashes = consensusSafeHashes;
             final java.util.Set<String> effectiveConsensusFinalizedHashes = consensusFinalizedHashes;
 
+        Map<Long, AttestationConfidence> attestationConfidences = nodeMonitorService.getRecentAttestationConfidences();
+
         // Group samples by blockhash and merge them
         Map<String, List<MetricSample>> samplesByHash = rawSamples.stream()
                 .filter(s -> s.getBlockHash() != null && !s.getBlockHash().isBlank())
@@ -416,6 +419,14 @@ public class DashboardService {
                         }
                     }
                     
+                    Double attConf = null;
+                    if (first.getBlockNumber() != null) {
+                        AttestationConfidence ac = attestationConfidences.get(first.getBlockNumber());
+                        if (ac != null) {
+                            attConf = ac.getConfidencePercent();
+                        }
+                    }
+
                             return new SampleRow(
                             rowFormatter.format(first.getTimestamp()),
                             sources,
@@ -430,7 +441,8 @@ public class DashboardService {
                                         false,
                                         false,
                             transactionCount,
-                            gasPriceWei);
+                            gasPriceWei,
+                            attConf);
                 })
                 .collect(Collectors.toList());
         
@@ -681,7 +693,8 @@ public class DashboardService {
                             isInvalid,
                             isConflict,
                             row.getTransactionCount(),
-                            row.getGasPriceWei());
+                            row.getGasPriceWei(),
+                            row.getAttestationConfidence());
                 })
                 .sorted(Comparator.comparing(SampleRow::getTime).reversed()
                         .thenComparing(SampleRow::getBlockNumber, Comparator.nullsLast(Comparator.reverseOrder())))

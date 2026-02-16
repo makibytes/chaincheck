@@ -182,6 +182,9 @@
         const statusDisplay = statusBadgeHtml
             ? (statusText ? `${statusText} ${statusBadgeHtml}` : statusBadgeHtml)
             : statusText;
+        const attestationDisplay = sample.attestationConfidence != null
+            ? `${sample.attestationConfidence.toFixed(1)}%`
+            : 'n/a';
         sampleContent.innerHTML = `
             <div class="detail-grid">
                 <div><span class="label">Block</span><span>${blockDisplay}</span></div>
@@ -189,6 +192,7 @@
                 <div><span class="label">Sources</span><span>${(sample.sources || []).join(', ') || '-'}</span></div>
                 <div><span class="label">Status</span><span>${statusDisplay}</span></div>
                 <div><span class="label">Latency</span><span>${sample.latencyMs != null ? sample.latencyMs + ' ms' : 'n/a'}</span></div>
+                <div><span class="label">Attestation</span><span>${attestationDisplay}</span></div>
                 <div><span class="label">Transactions</span><span>${sample.transactionCount ?? 'n/a'}</span></div>
                 <div><span class="label">Block Hash</span><span class="hash-container">${formatHash(sample.blockHash)} ${copyBtn(sample.blockHash)}</span></div>
                 <div><span class="label">Parent Hash</span><span class="hash-container">${formatHash(sample.parentHash)} ${copyBtn(sample.parentHash)}</span></div>

@@ -113,9 +113,18 @@
             ? '<span class="tag tag-conflict">conflict</span>'
             : (s.invalid ? '<span class="tag tag-invalid">invalid</span>' : '');
 
+        const confidenceBadge = s.attestationConfidence != null
+            ? `<span class="tag tag-attestation" style="opacity:${Math.max(0.4, s.attestationConfidence/100)}"
+                    title="Attestation confidence: ${s.attestationConfidence.toFixed(1)}%"
+               >${s.attestationConfidence.toFixed(0)}%</span>`
+            : '';
+
         const statusBadgeFragments = [];
         if (lifecycleBadge) {
             statusBadgeFragments.push(lifecycleBadge);
+        }
+        if (confidenceBadge) {
+            statusBadgeFragments.push(confidenceBadge);
         }
         if (resolutionBadge) {
             statusBadgeFragments.push(resolutionBadge);
