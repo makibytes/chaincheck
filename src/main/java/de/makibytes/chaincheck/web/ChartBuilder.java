@@ -285,7 +285,7 @@ class ChartBuilder {
                     break;
                 }
 
-                if (sample.getHeadDelayMs() != null) {
+                if (sample.getSource() == MetricSource.WS && sample.getHeadDelayMs() != null) {
                     headDelaySum += sample.getHeadDelayMs();
                     headDelayCount++;
                     headDelayMin = Math.min(headDelayMin, sample.getHeadDelayMs());
@@ -413,7 +413,7 @@ class ChartBuilder {
                 if (!ts.isBefore(bucketEnd)) {
                     break;
                 }
-                if (sample.getHeadDelayMs() != null) {
+                if (sample.getSource() == MetricSource.WS && sample.getHeadDelayMs() != null) {
                     headDelaySum += sample.getHeadDelayMs();
                     headDelayCount++;
                     headDelayMin = Math.min(headDelayMin, sample.getHeadDelayMs());

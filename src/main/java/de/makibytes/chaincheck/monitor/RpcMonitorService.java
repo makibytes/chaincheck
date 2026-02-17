@@ -241,44 +241,56 @@ public class RpcMonitorService {
 
     @Scheduled(fixedDelay = 250, initialDelay = 500)
     public void pollNodes() {
-        httpMonitorService.pollNodes();
+        try {
+            httpMonitorService.pollNodes();
+        } catch (RuntimeException ex) {
+            logger.error("Scheduled task pollNodes failed: {}", ex.getMessage());
+        }
     }
 
     @Scheduled(fixedDelayString = "#{${rpc.consensus.finalized-poll-interval-ms:999999999}}",
             initialDelayString = "#{${rpc.consensus.finalized-poll-interval-ms:999999999}}")
     public void pollConfiguredFinalizedBlock() {
-        if (!isConfiguredReferenceMode()) {
-            return;
-        }
-        if (!configuredSource.isConsensusNodeEnabled()) {
-            return;
-        }
-        Long finalizedPollIntervalMs = configuredSource.getFinalizedPollIntervalMs();
-        if (finalizedPollIntervalMs == null) {
-            return;
-        }
-        configuredSource.ensureEventStream();
-        if (configuredSource.refreshCheckpoints(false, true)) {
-            refreshReferenceFromNodes();
+        try {
+            if (!isConfiguredReferenceMode()) {
+                return;
+            }
+            if (!configuredSource.isConsensusNodeEnabled()) {
+                return;
+            }
+            Long finalizedPollIntervalMs = configuredSource.getFinalizedPollIntervalMs();
+            if (finalizedPollIntervalMs == null) {
+                return;
+            }
+            configuredSource.ensureEventStream();
+            if (configuredSource.refreshCheckpoints(false, true)) {
+                refreshReferenceFromNodes();
+            }
+        } catch (RuntimeException ex) {
+            logger.error("Scheduled task pollConfiguredFinalizedBlock failed: {}", ex.getMessage());
         }
     }
 
     @Scheduled(fixedDelayString = "#{${rpc.consensus.safe-poll-interval-ms:999999999}}",
             initialDelayString = "#{${rpc.consensus.safe-poll-interval-ms:999999999} / 2}")
     public void pollConfiguredSafeBlock() {
-        if (!isConfiguredReferenceMode()) {
-            return;
-        }
-        if (!configuredSource.isConsensusNodeEnabled()) {
-            return;
-        }
-        Long safePollIntervalMs = configuredSource.getSafePollIntervalMs();
-        if (safePollIntervalMs == null) {
-            return;
-        }
-        configuredSource.ensureEventStream();
-        if (configuredSource.refreshCheckpoints(true, false)) {
-            refreshReferenceFromNodes();
+        try {
+            if (!isConfiguredReferenceMode()) {
+                return;
+            }
+            if (!configuredSource.isConsensusNodeEnabled()) {
+                return;
+            }
+            Long safePollIntervalMs = configuredSource.getSafePollIntervalMs();
+            if (safePollIntervalMs == null) {
+                return;
+            }
+            configuredSource.ensureEventStream();
+            if (configuredSource.refreshCheckpoints(true, false)) {
+                refreshReferenceFromNodes();
+            }
+        } catch (RuntimeException ex) {
+            logger.error("Scheduled task pollConfiguredSafeBlock failed: {}", ex.getMessage());
         }
     }
 
@@ -686,47 +698,8 @@ public class RpcMonitorService {
         return source == MetricSource.HTTP ? state.lastHttpBlockHash : state.lastWsBlockHash;
     }
 
-    static class BlockInfo {
-        private final Long blockNumber;
-        private final String blockHash;
-        private final String parentHash;
-        private final Integer transactionCount;
-        private final Long gasPriceWei;
-        private final Instant blockTimestamp;
-
-        BlockInfo(Long blockNumber, String blockHash, String parentHash, Integer transactionCount,
-                Long gasPriceWei, Instant blockTimestamp) {
-            this.blockNumber = blockNumber;
-            this.blockHash = blockHash;
-            this.parentHash = parentHash;
-            this.transactionCount = transactionCount;
-            this.gasPriceWei = gasPriceWei;
-            this.blockTimestamp = blockTimestamp;
-        }
-
-        Long blockNumber() {
-            return blockNumber;
-        }
-
-        String blockHash() {
-            return blockHash;
-        }
-
-        String parentHash() {
-            return parentHash;
-        }
-
-        Integer transactionCount() {
-            return transactionCount;
-        }
-
-        Long gasPriceWei() {
-            return gasPriceWei;
-        }
-
-        Instant blockTimestamp() {
-            return blockTimestamp;
-        }
+    record BlockInfo(Long blockNumber, String blockHash, String parentHash,
+                     Integer transactionCount, Long gasPriceWei, Instant blockTimestamp) {
     }
 
     public static class NodeState {

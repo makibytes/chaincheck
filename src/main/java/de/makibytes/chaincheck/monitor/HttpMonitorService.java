@@ -18,11 +18,11 @@
 package de.makibytes.chaincheck.monitor;
 
 import java.io.IOException;
-import java.math.BigInteger;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.net.http.HttpTimeoutException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -49,6 +49,7 @@ import de.makibytes.chaincheck.store.InMemoryMetricsStore;
 public class HttpMonitorService {
 
     private static final String JSONRPC_VERSION = "2.0";
+    private static final String CONNECT_ERROR_HOST_DOWN = "Connect error: Host is down";
     private static final Logger logger = LoggerFactory.getLogger(HttpMonitorService.class);
 
     private final RpcMonitorService monitor;
@@ -250,35 +251,34 @@ public class HttpMonitorService {
                         node.name(), safeDelayMs, finalizedDelayMs,
                         (safeBlock != null ? safeBlock.blockHash() : (finalizedBlock != null ? finalizedBlock.blockHash() : null)));
             }
-                RpcMonitorService.BlockInfo metadataBlock = finalizedBlock != null
+            RpcMonitorService.BlockInfo metadataBlock = finalizedBlock != null
                     ? finalizedBlock
                     : (safeBlock != null ? safeBlock : latestBlock);
             state.lastHttpBlockNumber = blockNumber;
-                state.lastHttpBlockHash = metadataBlock == null ? null : metadataBlock.blockHash();
+            state.lastHttpBlockHash = metadataBlock == null ? null : metadataBlock.blockHash();
 
-                if (monitor.isWarmupComplete()) {
-                MetricSample sample = new MetricSample(
-                    timestamp,
-                    MetricSource.HTTP,
-                    true,
-                    latencyMs,
-                    blockNumber,
-                    metadataBlock == null ? null : metadataBlock.blockTimestamp(),
-                    metadataBlock == null ? null : metadataBlock.blockHash(),
-                    metadataBlock == null ? null : metadataBlock.parentHash(),
-                    metadataBlock == null ? null : metadataBlock.transactionCount(),
-                    metadataBlock == null ? null : metadataBlock.gasPriceWei(),
-                    null,
-                    headDelayMs,
-                    safeDelayMs,
-                    finalizedDelayMs);
-                store.addSample(node.key(), sample);
+            if (monitor.isWarmupComplete()) {
+                MetricSample.Builder sampleBuilder = MetricSample.builder(timestamp, MetricSource.HTTP)
+                        .success(true)
+                        .latencyMs(latencyMs)
+                        .blockNumber(blockNumber)
+                        .headDelayMs(headDelayMs)
+                        .safeDelayMs(safeDelayMs)
+                        .finalizedDelayMs(finalizedDelayMs);
+                if (metadataBlock != null) {
+                    sampleBuilder.blockTimestamp(metadataBlock.blockTimestamp())
+                            .blockHash(metadataBlock.blockHash())
+                            .parentHash(metadataBlock.parentHash())
+                            .transactionCount(metadataBlock.transactionCount())
+                            .gasPriceWei(metadataBlock.gasPriceWei());
                 }
+                store.addSample(node.key(), sampleBuilder.build());
+            }
         } catch (HttpStatusException ex) {
             logger.error("HTTP RPC failure ({} / http): status {} ({})", node.name(), ex.getStatusCode(), ex.getMessage());
             monitor.recordFailure(node, MetricSource.HTTP, monitor.classifyError(ex));
         } catch (IOException | InterruptedException ex) {
-            monitor.recordFailure(node, MetricSource.HTTP, monitor.classifyError(ex));
+            monitor.recordFailure(node, MetricSource.HTTP, classifyHttpErrorForNode(state, ex));
         } catch (RuntimeException ex) {
             logger.error("HTTP RPC failure ({}): {}", node.name(), ex.getMessage());
             monitor.recordFailure(node, MetricSource.HTTP, ex.getMessage());
@@ -309,7 +309,7 @@ public class HttpMonitorService {
         if (result == null || result.isNull()) {
             return null;
         }
-        return parseHexLong(result.asText());
+        return EthHex.parseLong(result.asText());
     }
 
     private RpcMonitorService.BlockInfo fetchBlockByTag(NodeDefinition node, String blockTag) throws IOException, InterruptedException {
@@ -360,32 +360,7 @@ public class HttpMonitorService {
         if (response.has("error")) {
             throw new IOException(response.get("error").toString());
         }
-        JsonNode result = response.get("result");
-        if (result == null || result.isNull()) {
-            return null;
-        }
-        Long blockNumber = parseHexLong(result.path("number").asText(null));
-        String blockHash = result.path("hash").asText(null);
-        String parentHash = result.path("parentHash").asText(null);
-        Instant blockTimestamp = null;
-        String timestampHex = result.path("timestamp").asText(null);
-        if (timestampHex != null && !timestampHex.isBlank()) {
-            Long timestampSeconds = parseHexLong(timestampHex);
-            if (timestampSeconds != null) {
-                blockTimestamp = Instant.ofEpochSecond(timestampSeconds);
-            }
-        }
-        Long gasPriceWei = null;
-        String baseFeeHex = result.path("baseFeePerGas").asText(null);
-        if (baseFeeHex != null && !baseFeeHex.isBlank()) {
-            gasPriceWei = parseHexLong(baseFeeHex);
-        }
-        Integer txCount = null;
-        JsonNode transactions = result.path("transactions");
-        if (transactions.isArray()) {
-            txCount = transactions.size();
-        }
-        return new RpcMonitorService.BlockInfo(blockNumber, blockHash, parentHash, txCount, gasPriceWei, blockTimestamp);
+        return EthHex.parseBlockFields(response.get("result"));
     }
 
     private String formatBlockNumberHex(long blockNumber) {
@@ -411,6 +386,9 @@ public class HttpMonitorService {
                 }
                 sleepBackoff(retryBackoffMs, attempt);
             } catch (IOException | InterruptedException ioEx) {
+                if (isHostDownConnectError(ioEx)) {
+                    throw ioEx;
+                }
                 lastIo = ioEx instanceof IOException ? (IOException) ioEx : new IOException(ioEx);
                 if (attempt == attempts) {
                     throw ioEx;
@@ -462,15 +440,40 @@ public class HttpMonitorService {
         return mapper.readTree(response.body());
     }
 
-    private Long parseHexLong(String hex) {
-        if (hex == null) {
-            return null;
+    private String classifyHttpErrorForNode(RpcMonitorService.NodeState state, Throwable error) {
+        if (isHostDownConnectError(error)) {
+            return CONNECT_ERROR_HOST_DOWN;
         }
-        String normalized = hex.startsWith("0x") ? hex.substring(2) : hex;
-        if (normalized.isBlank()) {
-            return null;
+        if (isTimeoutError(error) && isHostDownMessage(state != null ? state.lastHttpError : null)) {
+            return CONNECT_ERROR_HOST_DOWN;
         }
-        return new BigInteger(normalized, 16).longValue();
+        return monitor.classifyError(error);
+    }
+
+    private boolean isHostDownConnectError(Throwable error) {
+        return error != null && isHostDownMessage(error.getMessage());
+    }
+
+    private boolean isTimeoutError(Throwable error) {
+        if (error == null) {
+            return false;
+        }
+        if (error instanceof HttpTimeoutException) {
+            return true;
+        }
+        String message = error.getMessage();
+        if (message == null) {
+            return false;
+        }
+        String lower = message.toLowerCase();
+        return lower.contains("timeout") || lower.contains("timed out");
+    }
+
+    private boolean isHostDownMessage(String message) {
+        if (message == null) {
+            return false;
+        }
+        return message.toLowerCase().contains("host is down");
     }
 
     private void handleLatestBlock(NodeDefinition node, RpcMonitorService.NodeState state, RpcMonitorService.BlockInfo latestBlock) {
@@ -488,21 +491,16 @@ public class HttpMonitorService {
             state.lastWsBlockTimestamp = latestBlock.blockTimestamp();
         }
 
-        MetricSample sample = new MetricSample(
-                now,
-                MetricSource.HTTP,
-                true,
-                -1,
-                latestBlock.blockNumber(),
-                latestBlock.blockTimestamp(),
-                latestBlock.blockHash(),
-                latestBlock.parentHash(),
-                latestBlock.transactionCount(),
-                latestBlock.gasPriceWei(),
-                null,
-                headDelayMs,
-                null,
-                null);
+        MetricSample sample = MetricSample.builder(now, MetricSource.HTTP)
+                .success(true)
+                .blockNumber(latestBlock.blockNumber())
+                .blockTimestamp(latestBlock.blockTimestamp())
+                .blockHash(latestBlock.blockHash())
+                .parentHash(latestBlock.parentHash())
+                .transactionCount(latestBlock.transactionCount())
+                .gasPriceWei(latestBlock.gasPriceWei())
+                .headDelayMs(headDelayMs)
+                .build();
         if (monitor.isWarmupComplete()) {
             store.addSample(node.key(), sample);
         }
@@ -543,21 +541,16 @@ public class HttpMonitorService {
             return;
         }
 
-        MetricSample sample = new MetricSample(
-                timestamp,
-                MetricSource.HTTP,
-                true,
-                0,
-                currentNumber,
-                finalizedBlock.blockTimestamp(),
-                currentHash,
-                finalizedBlock.parentHash(),
-                finalizedBlock.transactionCount(),
-                finalizedBlock.gasPriceWei(),
-                null,
-                null,
-                null,
-                null);
+        MetricSample sample = MetricSample.builder(timestamp, MetricSource.HTTP)
+                .success(true)
+                .latencyMs(0)
+                .blockNumber(currentNumber)
+                .blockTimestamp(finalizedBlock.blockTimestamp())
+                .blockHash(currentHash)
+                .parentHash(finalizedBlock.parentHash())
+                .transactionCount(finalizedBlock.transactionCount())
+                .gasPriceWei(finalizedBlock.gasPriceWei())
+                .build();
         if (monitor.isWarmupComplete()) {
             List<AnomalyEvent> anomalies = detector.detect(
                     node.key(),

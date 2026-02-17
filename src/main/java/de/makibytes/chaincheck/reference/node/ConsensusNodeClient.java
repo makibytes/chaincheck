@@ -197,7 +197,7 @@ public class ConsensusNodeClient {
             String errorMsg = String.format(
                     "Consensus finality checkpoint fetch failed for %s%s: %s: %s",
                     baseUrl, finalityCheckpointsPath, ex.getClass().getSimpleName(), ex.getMessage());
-            logger.error(errorMsg, ex);
+            logger.error(errorMsg);
         }
         return changed;
     }

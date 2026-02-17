@@ -3,9 +3,7 @@ rpc:
   title-color: "#ff0000"
   get-safe-blocks: false
   get-finalized-blocks: false
-  defaults:
-    ws-gap-recovery-enabled: true
-    ws-gap-recovery-max-blocks: 5
+  scale-max-ms: 60000
   consensus:
     # When configured, ChainCheck uses this consensus endpoint as reference source
     # and disables internal auto-reference voting/selection.

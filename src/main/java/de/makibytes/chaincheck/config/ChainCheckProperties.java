@@ -29,6 +29,8 @@ public class ChainCheckProperties {
     private String titleColor = "white";
     private boolean getSafeBlocks = false;
     private boolean getFinalizedBlocks = false;
+    private boolean wsGapRecoveryEnabled = false;
+    private int wsGapRecoveryMaxBlocks = 5;
     private int scaleChangeMs = 500;
     private int scaleMaxMs = 30000;
     private Consensus consensus = new Consensus();
@@ -67,6 +69,22 @@ public class ChainCheckProperties {
 
     public void setGetFinalizedBlocks(boolean getFinalizedBlocks) {
         this.getFinalizedBlocks = getFinalizedBlocks;
+    }
+
+    public boolean isWsGapRecoveryEnabled() {
+        return wsGapRecoveryEnabled;
+    }
+
+    public void setWsGapRecoveryEnabled(boolean wsGapRecoveryEnabled) {
+        this.wsGapRecoveryEnabled = wsGapRecoveryEnabled;
+    }
+
+    public int getWsGapRecoveryMaxBlocks() {
+        return wsGapRecoveryMaxBlocks;
+    }
+
+    public void setWsGapRecoveryMaxBlocks(int wsGapRecoveryMaxBlocks) {
+        this.wsGapRecoveryMaxBlocks = wsGapRecoveryMaxBlocks;
     }
 
     public int getScaleChangeMs() {
@@ -243,8 +261,6 @@ public class ChainCheckProperties {
         private int maxRetries = 1;
         private long retryBackoffMs = 200;
         private java.util.Map<String, String> headers = new java.util.HashMap<>();
-        private boolean wsGapRecoveryEnabled = false;
-        private int wsGapRecoveryMaxBlocks = 5;
 
         public long getConnectTimeoutMs() {
             return connectTimeoutMs;
@@ -284,22 +300,6 @@ public class ChainCheckProperties {
 
         public void setHeaders(java.util.Map<String, String> headers) {
             this.headers = headers;
-        }
-
-        public boolean isWsGapRecoveryEnabled() {
-            return wsGapRecoveryEnabled;
-        }
-
-        public void setWsGapRecoveryEnabled(boolean wsGapRecoveryEnabled) {
-            this.wsGapRecoveryEnabled = wsGapRecoveryEnabled;
-        }
-
-        public int getWsGapRecoveryMaxBlocks() {
-            return wsGapRecoveryMaxBlocks;
-        }
-
-        public void setWsGapRecoveryMaxBlocks(int wsGapRecoveryMaxBlocks) {
-            this.wsGapRecoveryMaxBlocks = wsGapRecoveryMaxBlocks;
         }
     }
 

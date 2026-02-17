@@ -62,10 +62,10 @@ public class NodeRegistry {
             headers.putAll(node.getHeaders());
             boolean wsGapRecoveryEnabled = node.getWsGapRecoveryEnabled() != null
                     ? node.getWsGapRecoveryEnabled()
-                    : defaults.isWsGapRecoveryEnabled();
+                    : properties.isWsGapRecoveryEnabled();
             int wsGapRecoveryMaxBlocks = node.getWsGapRecoveryMaxBlocks() != null
                     ? node.getWsGapRecoveryMaxBlocks()
-                    : defaults.getWsGapRecoveryMaxBlocks();
+                    : properties.getWsGapRecoveryMaxBlocks();
                 long nodeHighLatencyMs = node.getAnomalyDetection() != null
                     ? node.getAnomalyDetection().getHighLatencyMs()
                     : -1;

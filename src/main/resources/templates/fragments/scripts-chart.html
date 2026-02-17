@@ -90,15 +90,17 @@
                     }
                     
                     if (ongoing) {
-                        let lastErrorIndex = -1;
-                        for (let i = errorMask.length - 1; i >= 0; i -= 1) {
-                            if (errorMask[i]) {
-                                lastErrorIndex = i;
+                        let lastKnownIndex = -1;
+                        for (let i = series.length - 1; i >= 0; i -= 1) {
+                            if (series[i] != null) {
+                                lastKnownIndex = i;
                                 break;
                             }
                         }
-                        if (lastErrorIndex >= 0) {
-                            for (let i = lastErrorIndex; i < errorMask.length; i += 1) {
+
+                        const latestKnownIsError = lastKnownIndex >= 0 && series[lastKnownIndex] > 0;
+                        if (latestKnownIsError) {
+                            for (let i = lastKnownIndex + 1; i < errorMask.length; i += 1) {
                                 errorMask[i] = true;
                             }
                         }
