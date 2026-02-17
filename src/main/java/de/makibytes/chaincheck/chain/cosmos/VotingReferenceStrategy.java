@@ -15,19 +15,22 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-package de.makibytes.chaincheck.reference.node;
+package de.makibytes.chaincheck.chain.cosmos;
 
 import java.time.Instant;
 import java.util.Map;
 
+import de.makibytes.chaincheck.chain.shared.BlockAgreementTracker;
+import de.makibytes.chaincheck.chain.shared.ReferenceStrategy;
 import de.makibytes.chaincheck.config.ChainCheckProperties;
-import de.makibytes.chaincheck.reference.block.BlockVotingCoordinator;
-import de.makibytes.chaincheck.reference.block.BlockVotingService;
 import de.makibytes.chaincheck.monitor.NodeRegistry;
-import de.makibytes.chaincheck.reference.block.ReferenceBlocks.Confidence;
 import de.makibytes.chaincheck.monitor.RpcMonitorService;
 import de.makibytes.chaincheck.store.InMemoryMetricsStore;
 
+/**
+ * Reference strategy that determines reference state via majority voting across monitored nodes.
+ * Used in Cosmos mode where no consensus node is configured.
+ */
 public class VotingReferenceStrategy implements ReferenceStrategy {
 
     private final NodeRegistry nodeRegistry;
@@ -67,12 +70,12 @@ public class VotingReferenceStrategy implements ReferenceStrategy {
     public void refresh(Map<String, RpcMonitorService.NodeState> nodeStates, Instant now, boolean warmupComplete, String inputReferenceNodeKey) {
         if (nodeRegistry.getNodes().isEmpty()) {
             currentReference = null;
-            blockVotingService.getReferenceBlocks().clear();
+            blockVotingService.getBlockConfidenceTracker().clear();
             return;
         }
 
         blockVotingCoordinator.collectVotesFromNodes(nodeStates);
-        Map<Long, Map<Confidence, String>> oldBlocks = blockVotingCoordinator.snapshotOldReferenceBlocks();
+        Map<Long, Map<de.makibytes.chaincheck.chain.shared.Confidence, String>> oldBlocks = blockVotingCoordinator.snapshotOldReferenceBlocks();
         blockVotingCoordinator.performVotingAndScoring(oldBlocks, inputReferenceNodeKey, now, warmupComplete, nodeStates);
 
         BlockVotingCoordinator.ReferenceHead referenceHead = blockVotingCoordinator.resolveReferenceHead();
@@ -84,7 +87,7 @@ public class VotingReferenceStrategy implements ReferenceStrategy {
         currentReference = new RpcMonitorService.ReferenceState(referenceHead.headNumber(), referenceHead.headHash(), now);
         currentReferenceNodeKey = referenceNodeSelector.select(
                 nodeStates,
-                blockVotingService.getReferenceBlocks(),
+                blockVotingService.getBlockConfidenceTracker(),
                 store,
                 now,
                 blockAgreementTracker,

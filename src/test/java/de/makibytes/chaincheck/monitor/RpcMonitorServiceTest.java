@@ -26,8 +26,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
-import de.makibytes.chaincheck.reference.block.BlockVotingService;
-import de.makibytes.chaincheck.reference.block.ReferenceBlocks;
+import de.makibytes.chaincheck.chain.cosmos.BlockVotingService;
+import de.makibytes.chaincheck.chain.shared.BlockConfidenceTracker;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -145,6 +145,7 @@ class RpcMonitorServiceTest {
     @DisplayName("configured reference node disables automatic reference node selection")
     void configuredReferenceNodeDisablesAutoSelection() {
         ChainCheckProperties properties = new ChainCheckProperties();
+        properties.setMode(ChainCheckProperties.Mode.ETHEREUM);
         properties.getConsensus().setNodeKey("alpha");
 
         List<ChainCheckProperties.RpcNodeProperties> nodeProps = new ArrayList<>();
@@ -181,6 +182,7 @@ class RpcMonitorServiceTest {
     @DisplayName("configured reference node is excluded from execution HTTP polling")
     void configuredReferenceNodeExcludedFromExecutionPolling() {
         ChainCheckProperties properties = new ChainCheckProperties();
+        properties.setMode(ChainCheckProperties.Mode.ETHEREUM);
         properties.getConsensus().setNodeKey("alpha");
 
         List<ChainCheckProperties.RpcNodeProperties> nodeProps = new ArrayList<>();
@@ -264,10 +266,10 @@ class RpcMonitorServiceTest {
         setReferenceState(svc, 100L, "0xref");
 
         // Establish reference blocks
-        ReferenceBlocks refBlocks = new ReferenceBlocks();
-        refBlocks.setHash(70L, ReferenceBlocks.Confidence.FINALIZED, "0xsafe");
+        BlockConfidenceTracker refBlocks = new BlockConfidenceTracker();
+        refBlocks.setHash(70L, de.makibytes.chaincheck.chain.shared.Confidence.FINALIZED, "0xsafe");
         BlockVotingService votingService = (BlockVotingService) ReflectionTestUtils.getField(svc, "blockVotingService");
-        ReflectionTestUtils.setField(votingService, "referenceBlocks", refBlocks);
+        ReflectionTestUtils.setField(votingService, "blockConfidenceTracker", refBlocks);
 
         Object checkpoint = createBlockInfo(70L, "0xsafe", "0xparent", 10, 1_000L, Instant.now());
         ReflectionTestUtils.invokeMethod(svc, "maybeCompareToReference", registry.getNode("mock-node"), "finalized", checkpoint);
@@ -311,10 +313,10 @@ class RpcMonitorServiceTest {
 
 
         // Establish reference blocks
-        ReferenceBlocks refBlocks = new ReferenceBlocks();
-        refBlocks.setHash(200L, ReferenceBlocks.Confidence.SAFE, "0xbbb");
+        BlockConfidenceTracker refBlocks = new BlockConfidenceTracker();
+        refBlocks.setHash(200L, de.makibytes.chaincheck.chain.shared.Confidence.SAFE, "0xbbb");
         BlockVotingService votingService = (BlockVotingService) ReflectionTestUtils.getField(svc, "blockVotingService");
-        ReflectionTestUtils.setField(votingService, "referenceBlocks", refBlocks);
+        ReflectionTestUtils.setField(votingService, "blockConfidenceTracker", refBlocks);
 
         Object checkpoint = createBlockInfo(200L, "0xaaa", "0xparent", 12, 1_000L, Instant.now());
         ReflectionTestUtils.invokeMethod(svc, "maybeCompareToReference", registry.getNode("mock-node"), "safe", checkpoint);

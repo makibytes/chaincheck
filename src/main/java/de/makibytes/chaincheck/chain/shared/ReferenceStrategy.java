@@ -15,7 +15,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-package de.makibytes.chaincheck.reference.node;
+package de.makibytes.chaincheck.chain.shared;
 
 import java.time.Instant;
 import java.util.Map;
@@ -23,6 +23,9 @@ import java.util.Map;
 import de.makibytes.chaincheck.config.ChainCheckProperties;
 import de.makibytes.chaincheck.monitor.RpcMonitorService;
 
+/**
+ * Strategy interface for determining reference state.
+ */
 public interface ReferenceStrategy {
 
     RpcMonitorService.ReferenceState getReference();

@@ -1,4 +1,5 @@
 rpc:
+  mode: ethereum
   title: "Ethereum Mainnet"
   title-color: "#ff0000"
   get-safe-blocks: false

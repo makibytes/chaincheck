@@ -15,16 +15,34 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-package de.makibytes.chaincheck.reference.node;
+package de.makibytes.chaincheck.chain.shared;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
 
+/**
+ * Policy for managing reference node switches with hysteresis.
+ * Prevents rapid switching between nodes.
+ */
 public class NodeSwitchPolicy {
+
+    /**
+     * Default window size for tracking recent selections.
+     */
+    public static final int DEFAULT_WINDOW_SIZE = 20;
+
+    /**
+     * Default threshold for allowing a node switch.
+     */
+    public static final int DEFAULT_SWITCH_THRESHOLD = 15;
 
     private final int windowSize;
     private final int switchThreshold;
     private final Deque<String> selections = new ArrayDeque<>();
+
+    public NodeSwitchPolicy() {
+        this(DEFAULT_WINDOW_SIZE, DEFAULT_SWITCH_THRESHOLD);
+    }
 
     public NodeSwitchPolicy(int windowSize, int switchThreshold) {
         this.windowSize = Math.max(1, windowSize);
@@ -50,5 +68,19 @@ public class NodeSwitchPolicy {
 
     public void reset() {
         selections.clear();
+    }
+
+    /**
+     * Gets the current window size.
+     */
+    public int getWindowSize() {
+        return windowSize;
+    }
+
+    /**
+     * Gets the current switch threshold.
+     */
+    public int getSwitchThreshold() {
+        return switchThreshold;
     }
 }

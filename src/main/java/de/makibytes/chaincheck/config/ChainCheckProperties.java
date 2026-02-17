@@ -25,8 +25,14 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "rpc")
 public class ChainCheckProperties {
 
+    public enum Mode {
+        ETHEREUM,
+        COSMOS
+    }
+
     private String title = "";
     private String titleColor = "white";
+    private Mode mode = Mode.COSMOS;
     private boolean getSafeBlocks = false;
     private boolean getFinalizedBlocks = false;
     private boolean wsGapRecoveryEnabled = false;
@@ -38,6 +44,14 @@ public class ChainCheckProperties {
     private Persistence persistence = new Persistence();
     private AnomalyDetection anomalyDetection = new AnomalyDetection();
     private List<RpcNodeProperties> nodes = new ArrayList<>();
+
+    public Mode getMode() {
+        return mode;
+    }
+
+    public void setMode(Mode mode) {
+        this.mode = mode;
+    }
 
     public String getTitle() {
         return title;

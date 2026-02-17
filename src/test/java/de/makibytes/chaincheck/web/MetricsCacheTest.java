@@ -41,7 +41,7 @@ class MetricsCacheTest {
                 TimeRange.HOURS_2, summary, List.of(), List.of(), List.of(),
                 ChartBuilder.ChartData.empty(), ChartBuilder.DelayChartData.empty(),
                 List.of(), List.of(), List.of(),
-                false, false, false, false, false, false, false,
+                false, false, false, false, false, false, false, false,
                 false, false, null, null, null,
                 1, 50, 0, 1, 50, 0,
                 500, 30000, false,

@@ -37,13 +37,13 @@ import org.slf4j.LoggerFactory;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import de.makibytes.chaincheck.chain.shared.Confidence;
 import de.makibytes.chaincheck.config.ChainCheckProperties;
 import de.makibytes.chaincheck.model.AnomalyEvent;
 import de.makibytes.chaincheck.model.AnomalyType;
 import de.makibytes.chaincheck.model.MetricSample;
 import de.makibytes.chaincheck.model.MetricSource;
 import de.makibytes.chaincheck.monitor.NodeRegistry.NodeDefinition;
-import de.makibytes.chaincheck.reference.block.ReferenceBlocks.Confidence;
 import de.makibytes.chaincheck.store.InMemoryMetricsStore;
 
 public class HttpMonitorService {
@@ -319,6 +319,18 @@ public class HttpMonitorService {
     RpcMonitorService.BlockInfo fetchBlockByNumber(NodeDefinition node, long blockNumber) throws IOException, InterruptedException {
         String hex = formatBlockNumberHex(blockNumber);
         return fetchBlockByTag(node.http(), node.readTimeoutMs(), node.headers(), node.maxRetries(), node.retryBackoffMs(), node.connectTimeoutMs(), hex);
+    }
+
+    RpcMonitorService.BlockInfo fetchBlockByHash(NodeDefinition node, String blockHash) throws IOException, InterruptedException {
+        JsonNode params = mapper.createArrayNode()
+                .add(blockHash)
+                .add(false);
+        JsonNode response = sendRpcWithRetry(node.http(), node.headers(), node.readTimeoutMs(), 
+                node.maxRetries(), node.retryBackoffMs(), node.connectTimeoutMs(), "eth_getBlockByHash", params);
+        if (response.has("error")) {
+            throw new IOException(response.get("error").toString());
+        }
+        return EthHex.parseBlockFields(response.get("result"));
     }
 
     private void checkWebSocketHealth(NodeDefinition node, RpcMonitorService.NodeState state, Long blockNumber) {

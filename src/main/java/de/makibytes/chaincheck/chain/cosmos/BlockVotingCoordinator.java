@@ -15,7 +15,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-package de.makibytes.chaincheck.reference.block;
+package de.makibytes.chaincheck.chain.cosmos;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -25,7 +25,11 @@ import java.util.Map;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
 
+import de.makibytes.chaincheck.chain.shared.BlockAgreementTracker;
+import de.makibytes.chaincheck.chain.shared.BlockConfidenceTracker;
+import de.makibytes.chaincheck.chain.shared.Confidence;
 import de.makibytes.chaincheck.model.AnomalyEvent;
 import de.makibytes.chaincheck.model.AnomalyType;
 import de.makibytes.chaincheck.model.MetricSample;
@@ -34,10 +38,12 @@ import de.makibytes.chaincheck.monitor.AnomalyDetector;
 import de.makibytes.chaincheck.monitor.NodeRegistry;
 import de.makibytes.chaincheck.monitor.NodeRegistry.NodeDefinition;
 import de.makibytes.chaincheck.monitor.RpcMonitorService;
-import de.makibytes.chaincheck.reference.block.ReferenceBlocks.Confidence;
-import de.makibytes.chaincheck.reference.node.BlockAgreementTracker;
 import de.makibytes.chaincheck.store.InMemoryMetricsStore;
 
+/**
+ * Coordinates block voting across all nodes.
+ */
+@Service
 public class BlockVotingCoordinator {
 
     private static final Logger logger = LoggerFactory.getLogger(BlockVotingCoordinator.class);
@@ -49,10 +55,10 @@ public class BlockVotingCoordinator {
     private final AnomalyDetector detector;
 
     public BlockVotingCoordinator(NodeRegistry nodeRegistry,
-                         BlockVotingService blockVotingService,
-                         BlockAgreementTracker blockAgreementTracker,
-                         InMemoryMetricsStore store,
-                         AnomalyDetector detector) {
+                          BlockVotingService blockVotingService,
+                          BlockAgreementTracker blockAgreementTracker,
+                          InMemoryMetricsStore store,
+                          AnomalyDetector detector) {
         this.nodeRegistry = nodeRegistry;
         this.blockVotingService = blockVotingService;
         this.blockAgreementTracker = blockAgreementTracker;
@@ -87,7 +93,7 @@ public class BlockVotingCoordinator {
 
     public Map<Long, Map<Confidence, String>> snapshotOldReferenceBlocks() {
         Map<Long, Map<Confidence, String>> oldBlocks = new HashMap<>();
-        for (Map.Entry<Long, Map<Confidence, String>> entry : blockVotingService.getReferenceBlocks().getBlocks().entrySet()) {
+        for (Map.Entry<Long, Map<Confidence, String>> entry : blockVotingService.getBlockConfidenceTracker().getBlocks().entrySet()) {
             oldBlocks.put(entry.getKey(), new HashMap<>(entry.getValue()));
         }
         return oldBlocks;
@@ -100,14 +106,14 @@ public class BlockVotingCoordinator {
                                  Map<String, RpcMonitorService.NodeState> nodeStates) {
         blockVotingService.performVoting(currentReferenceNodeKey);
         emitWrongHeadForInvalidatedWsNewHeads(oldBlocks, now, warmupComplete);
-        blockAgreementTracker.penalize(oldBlocks, blockVotingService.getReferenceBlocks(), blockVotingService.getBlockVotes());
-        blockAgreementTracker.awardPoints(oldBlocks, blockVotingService.getReferenceBlocks(), blockVotingService.getBlockVotes());
+        blockAgreementTracker.penalize(oldBlocks, blockVotingService.getBlockConfidenceTracker(), blockVotingService.getBlockVotes());
+        blockAgreementTracker.awardPoints(oldBlocks, blockVotingService.getBlockConfidenceTracker(), blockVotingService.getBlockVotes());
     }
 
     public ReferenceHead resolveReferenceHead() {
         long referenceHeadNumber = -1;
         String referenceHeadHash = null;
-        for (Map.Entry<Long, Map<Confidence, String>> entry : blockVotingService.getReferenceBlocks().getBlocks().entrySet()) {
+        for (Map.Entry<Long, Map<Confidence, String>> entry : blockVotingService.getBlockConfidenceTracker().getBlocks().entrySet()) {
             long num = entry.getKey();
             String hash = entry.getValue().get(Confidence.NEW);
             if (hash != null && num > referenceHeadNumber) {
@@ -129,7 +135,7 @@ public class BlockVotingCoordinator {
             return;
         }
 
-        Map<Long, Map<Confidence, String>> newBlocks = blockVotingService.getReferenceBlocks().getBlocks();
+        Map<Long, Map<Confidence, String>> newBlocks = blockVotingService.getBlockConfidenceTracker().getBlocks();
         Instant lookback = now.minus(Duration.ofHours(2));
 
         for (Map.Entry<Long, Map<Confidence, String>> entry : oldBlocks.entrySet()) {

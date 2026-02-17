@@ -15,16 +15,13 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-package de.makibytes.chaincheck.reference.node;
+package de.makibytes.chaincheck.chain.shared;
 
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
-import de.makibytes.chaincheck.reference.block.ReferenceBlocks;
 import org.springframework.stereotype.Service;
-
-import de.makibytes.chaincheck.reference.block.ReferenceBlocks.Confidence;
 
 /**
  * Tracks node agreement with reference blocks by awarding and penalizing points.
@@ -32,14 +29,24 @@ import de.makibytes.chaincheck.reference.block.ReferenceBlocks.Confidence;
 @Service
 public class BlockAgreementTracker {
 
+    /**
+     * Penalty for a NEW block being invalidated.
+     */
+    private static final int NEW_BLOCK_PENALTY = 7;
+
+    /**
+     * Penalty for a SAFE block being invalidated.
+     */
+    private static final int SAFE_BLOCK_PENALTY = 50;
+
     private final Map<String, Integer> nodePoints = new ConcurrentHashMap<>();
 
     /**
      * Awards points to nodes that correctly reported blocks that became reference blocks.
      */
-    public void awardPoints(Map<Long, Map<Confidence, String>> oldBlocks, ReferenceBlocks referenceBlocks,
+    public void awardPoints(Map<Long, Map<Confidence, String>> oldBlocks, BlockConfidenceTracker blockConfidenceTracker,
             Map<Long, Map<Confidence, Map<String, Set<String>>>> blockVotes) {
-        for (Map.Entry<Long, Map<Confidence, String>> entry : referenceBlocks.getBlocks().entrySet()) {
+        for (Map.Entry<Long, Map<Confidence, String>> entry : blockConfidenceTracker.getBlocks().entrySet()) {
             long blockNumber = entry.getKey();
             for (Map.Entry<Confidence, String> confEntry : entry.getValue().entrySet()) {
                 Confidence confidence = confEntry.getKey();
@@ -64,14 +71,14 @@ public class BlockAgreementTracker {
     /**
      * Penalizes nodes that reported blocks that were invalidated.
      */
-    public void penalize(Map<Long, Map<Confidence, String>> oldBlocks, ReferenceBlocks referenceBlocks,
+    public void penalize(Map<Long, Map<Confidence, String>> oldBlocks, BlockConfidenceTracker blockConfidenceTracker,
             Map<Long, Map<Confidence, Map<String, Set<String>>>> blockVotes) {
         for (Map.Entry<Long, Map<Confidence, String>> entry : oldBlocks.entrySet()) {
             long blockNumber = entry.getKey();
             for (Map.Entry<Confidence, String> confEntry : entry.getValue().entrySet()) {
                 Confidence confidence = confEntry.getKey();
                 String oldHash = confEntry.getValue();
-                String newHash = referenceBlocks.getBlocks().getOrDefault(blockNumber, Map.of()).get(confidence);
+                String newHash = blockConfidenceTracker.getBlocks().getOrDefault(blockNumber, Map.of()).get(confidence);
                 if (newHash == null || !newHash.equals(oldHash)) {
                     // Invalidated block
                     Set<String> nodes = blockVotes.getOrDefault(blockNumber, Map.of())
@@ -79,8 +86,8 @@ public class BlockAgreementTracker {
                             .get(oldHash);
                     if (nodes != null) {
                         int penalty = switch (confidence) {
-                            case NEW -> 7;
-                            case SAFE -> 50;
+                            case NEW -> NEW_BLOCK_PENALTY;
+                            case SAFE -> SAFE_BLOCK_PENALTY;
                             case FINALIZED -> Integer.MAX_VALUE; // all points
                         };
                         for (String nodeKey : nodes) {

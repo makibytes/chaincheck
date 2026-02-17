@@ -15,7 +15,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-package de.makibytes.chaincheck.reference.attestation;
+package de.makibytes.chaincheck.chain.ethereum.attestation;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -27,10 +27,23 @@ import org.slf4j.LoggerFactory;
 
 import de.makibytes.chaincheck.model.AttestationConfidence;
 
+/**
+ * Tracks attestation confidence for blocks based on committee data.
+ * Computes confidence percentages based on observed attestation rounds.
+ */
 public class AttestationTracker {
 
     private static final Logger logger = LoggerFactory.getLogger(AttestationTracker.class);
+    
+    /**
+     * Default retention period for attestation data.
+     */
     private static final Duration RETENTION = Duration.ofHours(2);
+    
+    /**
+     * Maximum number of attestation rounds to track per block.
+     */
+    private static final int MAX_ATTESTATION_ROUNDS = 3;
 
     private final ConcurrentHashMap<String, AttestationConfidence> confidenceByHash = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Long, AttestationConfidence> confidenceByBlock = new ConcurrentHashMap<>();
@@ -43,21 +56,21 @@ public class AttestationTracker {
         if (blockHash == null || blockHash.isBlank()) {
             return;
         }
-        int boundedRound = Math.max(0, Math.min(3, attestationRound));
-        double confidence = (boundedRound / 3.0) * 100.0;
+        int boundedRound = Math.max(0, Math.min(MAX_ATTESTATION_ROUNDS, attestationRound));
+        double confidence = (boundedRound / (double) MAX_ATTESTATION_ROUNDS) * 100.0;
         AttestationConfidence value = new AttestationConfidence(
                 blockNumber,
                 blockHash,
                 slot,
                 boundedRound,
-                3,
+                MAX_ATTESTATION_ROUNDS,
                 confidence,
                 computedAt == null ? Instant.now() : computedAt,
                 boundedRound);
         confidenceByHash.put(blockHash, value);
         confidenceByBlock.put(blockNumber, value);
-        logger.debug("Updated attestation tracking for block {} slot {}: round {}/3",
-                blockNumber, slot, boundedRound);
+        logger.debug("Updated attestation tracking for block {} slot {}: round {}/{}",
+                blockNumber, slot, boundedRound, MAX_ATTESTATION_ROUNDS);
         prune();
     }
 

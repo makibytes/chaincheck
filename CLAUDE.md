@@ -55,15 +55,137 @@ All source lives under `de.makibytes.chaincheck` with eight packages:
 5. When attestation tracking is enabled, `ConsensusNodeClient` polls committee data on each new head and `AttestationTracker` computes per-block confidence
 6. Dashboard queries the store and renders via Thymeleaf + Chart.js; `DashboardService` enriches `SampleRow` records with attestation confidence data
 
-## Reference Node
+## Mode
 
-### By Configuration
+### Ethereum / Beacon Chain
 
 You can configure a specific consensus node as the reference source for safe/finalized comparisons.
 
-### By Majority Voting
+Ethereum newHeads Processing — Architecture Rules (MUST FOLLOW)
+1. Core Principles
+eth_subscribe("newHeads") is NOT a sequential block stream.
+WebSocket subscriptions are best-effort notifications, not a source of truth.
+Blocks are uniquely identified by block hash, NOT by block number.
+Multiple valid blocks with the same block number may exist (reorgs).
+Execution block numbers are part of the hashed header and never change.
+Block numbers are only meaningful within a single canonical branch.
+2. Assumptions that MUST NOT be made
+The implementation MUST NEVER assume:
+block numbers are strictly increasing
+each new head equals previous number + 1
+every intermediate head event is delivered
+websocket events arrive in order
+websocket events are unique
+websocket events are complete
+3. Source of Truth
+The canonical source of truth is:
+eth_getBlockByHash
+eth_getBlockByNumber
+WebSocket newHeads events MUST be treated only as:
+wake-up signals indicating that the chain head may have changed.
+4. Event Processing Model
+4.1 Serialization (MANDATORY)
+All newHeads processing MUST be single-threaded and strictly serialized.
+Required architecture:
+WebSocket callback
+    -> thread-safe queue
+    -> single chain-processing thread
+The system MUST NOT process newHeads in parallel.
+4.2 Hash-first identity
+Internal block identity MUST use:
+blockHash as primary key
+Block numbers MUST NOT be used as unique identifiers.
+5. Handling newHeads Events
+Upon receiving a newHeads event:
+Fetch full block via:
+eth_getBlockByHash(event.hash)
+Store block by hash.
+Verify parent linkage using parentHash.
+If parent is unknown:
+recursively fetch missing parents until a known block is reached.
+Detect reorgs by parentHash mismatch against current canonical head.
+6. Reorg Handling (REQUIRED)
+A reorg occurs when:
+newHead.parentHash != currentCanonicalHead.hash
+Required behavior:
+Walk backwards via parentHash.
+Find common ancestor with canonical chain.
+Roll back old branch.
+Apply new branch.
+Never rely on block number continuity to detect reorgs.
+7. Handling Missing Events (CRITICAL)
+Implementation MUST tolerate dropped websocket events.
+If a gap is detected:
+fetch missing blocks via parent traversal
+reconstruct chain from hashes
+No error should be raised solely because of block number gaps.
+8. Confirmation Model (RECOMMENDED)
+Blocks should be tracked with confirmation depth:
+head (0 confirmations)
+unsafe
+safe
+finalized
+Canonical persistence SHOULD only occur after configurable confirmations.
+9. Validation Rules
+The following MUST be validated:
+child.parentHash == parent.hash
+block hash integrity via RPC
+chain connectivity via hashes
+The following MUST NOT be used as correctness criteria:
+numeric adjacency alone
+duplicate block numbers
+10. WebSocket Reliability Rules
+Implementation MUST assume:
+events may be delayed
+events may be coalesced
+events may be dropped
+events may arrive after newer heads
+System MUST remain correct under all these conditions.
+11. Recommended Internal Data Model
+BlockNode {
+    hash
+    parentHash
+    number
+    timestamp
+}
+Storage:
+Map<Hash, BlockNode> knownBlocks
+CanonicalChain = linked via parentHash
+12. Golden Rule (IMPORTANT)
+Never derive chain state from websocket event order.
+Always derive chain state from block hashes and parent links.
+13. Common Anti-Patterns (FORBIDDEN)
+Treating newHeads as an append-only stream
+Assuming one event per block
+Using block number as unique key
+Parallel processing of WS events
+Raising errors on duplicate heights
+14. Intended Behavior
+System MUST remain correct under:
+short reorgs
+deep reorgs
+skipped websocket events
+duplicate heights
+reordered events
+temporary node lag
 
-When not explicitly configured, the reference node is selected via majority voting across all monitored nodes.
+Mode `ethereum` has these settings:
+
+- consensus node is configured and polled for
+  - attestations
+  - safe and finalized blocks
+- execution nodes are subscribed for newHeads
+
+### Cosmos (e.g. Polygon) / Majority Voting
+
+When mode `cosmos` is set, the reference node is selected via majority voting across all monitored nodes. Mode cosmos has these settings:
+
+- no attestations
+- no consensus node
+- no safe blocks
+- all execution nodes are...
+ .- are subscribed for newHeads
+  - polled (http) for finalized blocks
 
 ## Block Finality Status and Updates
 

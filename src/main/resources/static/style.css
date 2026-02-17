@@ -512,24 +512,41 @@ table td {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
+    align-items: center;
 }
 
-.pagination a {
+.pagination a,
+.pagination .page-btn {
     color: var(--color-primary);
     text-decoration: none;
     padding: 6px 10px;
     border-radius: 8px;
     border: 1px solid var(--color-border-strong);
+    background: transparent;
+    cursor: pointer;
+    font: inherit;
 }
 
-.pagination a:hover {
+.pagination a:hover,
+.pagination .page-btn:hover:not(:disabled) {
     background: var(--color-surface-2);
 }
 
-.pagination a.active {
+.pagination a.active,
+.pagination .page-btn.active {
     background: var(--color-primary);
     color: var(--color-primary-contrast, #fff);
     border-color: var(--color-primary);
+}
+
+.pagination .page-btn:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+
+.pagination .page-ellipsis {
+    color: var(--color-text-subtle);
+    padding: 0 2px;
 }
 
 .detail-grid {

@@ -396,6 +396,22 @@ public class DashboardService {
                 .collect(Collectors.groupingBy(
                         SampleRow::blockNumber,
                         Collectors.mapping(SampleRow::blockHash, Collectors.toSet())));
+        
+        // Log any samples with the same hash but potentially different block numbers
+        Map<String, List<Long>> blockNumbersByHash = intermediateRows.stream()
+                .filter(row -> row.blockNumber() != null && row.blockHash() != null && !row.blockHash().isBlank())
+                .collect(Collectors.groupingBy(
+                        SampleRow::blockHash,
+                        Collectors.mapping(SampleRow::blockNumber, Collectors.collectingAndThen(
+                            Collectors.toSet(),
+                            set -> set.stream().toList()))));
+        for (Map.Entry<String, List<Long>> entry : blockNumbersByHash.entrySet()) {
+            if (entry.getValue().size() > 1) {
+                org.slf4j.LoggerFactory.getLogger(DashboardService.class)
+                    .warn("Block hash {} has multiple block numbers: {}", entry.getKey(), entry.getValue());
+            }
+        }
+        
         Map<Long, Set<String>> conflictHashesByNumber = hashesByNumber.entrySet().stream()
                 .filter(entry -> entry.getValue().size() > 1)
                 .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
@@ -708,6 +724,7 @@ public class DashboardService {
                 httpErrorOngoing, wsErrorOngoing,
                 httpConfigured, wsConfigured,
                 nodeDefinition != null && nodeDefinition.safeBlocksEnabled(),
+                nodeDefinition != null && nodeDefinition.finalizedBlocksEnabled(),
                 httpUp, wsUp, latestBlockNumber, httpStatus, wsStatus,
                 totalPages, PAGE_SIZE, totalSamples,
                 anomalyTotalPages, PAGE_SIZE, totalAnomalies,

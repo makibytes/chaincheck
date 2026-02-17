@@ -37,13 +37,13 @@ import org.slf4j.LoggerFactory;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import de.makibytes.chaincheck.chain.shared.Confidence;
 import de.makibytes.chaincheck.config.ChainCheckProperties;
 import de.makibytes.chaincheck.model.AnomalyEvent;
 import de.makibytes.chaincheck.model.AnomalyType;
 import de.makibytes.chaincheck.model.MetricSample;
 import de.makibytes.chaincheck.model.MetricSource;
 import de.makibytes.chaincheck.monitor.NodeRegistry.NodeDefinition;
-import de.makibytes.chaincheck.reference.block.ReferenceBlocks.Confidence;
 import de.makibytes.chaincheck.store.InMemoryMetricsStore;
 
 public class WsMonitorService {
@@ -61,6 +61,7 @@ public class WsMonitorService {
     private final ExecutorService recoveryExecutor = Executors.newVirtualThreadPerTaskExecutor();
     private final Map<String, Instant> recoveryAttemptByNodeAndBlock = new ConcurrentHashMap<>();
     private final Map<String, Map<Long, Set<String>>> wsHashesByNodeAndNumber = new ConcurrentHashMap<>();
+    private final Map<String, ChainTracker> chainTrackers = new ConcurrentHashMap<>();
     private static final Duration RECOVERY_ATTEMPT_DEDUP_WINDOW = Duration.ofSeconds(10);
     private static final long INVALID_TRACKING_LOOKBACK_BLOCKS = 64;
     private static final int RECOVERY_MAX_RETRIES = 3;
@@ -259,87 +260,192 @@ public class WsMonitorService {
                     state.lastWsEventReceivedAt = now;
                     state.wsNewHeadCount++;
 
-                    Long headDelayMs = null;
-                    if (blockTimestamp != null) {
-                        long delayMs = Duration.between(blockTimestamp, now).toMillis();
-                        if (delayMs >= 0) {
-                            headDelayMs = delayMs;
-                        }
-                        state.lastWsBlockTimestamp = blockTimestamp;
-                    }
-
-                    MetricSample sample = MetricSample.builder(now, MetricSource.WS)
-                            .success(true)
-                            .blockNumber(blockNumber)
-                            .blockTimestamp(blockTimestamp)
-                            .blockHash(blockHash)
-                            .parentHash(parentHash)
-                            .headDelayMs(headDelayMs)
-                            .build();
-                    if (monitor.isWarmupComplete()) {
-                        store.addSample(node.key(), sample);
-                    }
-                    monitor.resetWsBackoff(state);
-
-                    WsConnectionTracker tracker = nodeRegistry.getWsTracker(node.key());
-                    if (tracker != null) {
-                        tracker.clearLastError();
-                    }
-
-                    if (monitor.isWarmupComplete()) {
-                        List<AnomalyEvent> anomalies = detector.detect(
-                                node.key(),
-                                sample,
-                                node.anomalyDelayMs(),
-                                state.lastWsBlockNumber,
-                                state.lastWsBlockHash,
-                                state.lastHttpBlockNumber);
-                        for (AnomalyEvent anomaly : anomalies) {
-                            store.addAnomaly(node.key(), anomaly);
-                            // Track block height decreased anomalies for auto-closing
-                            if (anomaly.getType() == AnomalyType.REORG && "Block height decreased".equals(anomaly.getMessage())) {
-                                state.hasOpenBlockHeightDecreasedAnomaly = true;
-                                state.consecutiveIncreasingBlocksAfterDecrease = 0;
-                            }
-                        }
-                    }
-
-                    // Handle auto-closing of block height decreased anomalies
-                    if (state.hasOpenBlockHeightDecreasedAnomaly && blockNumber != null && state.lastWsBlockNumber != null) {
-                        if (blockNumber > state.lastWsBlockNumber) {
-                            state.consecutiveIncreasingBlocksAfterDecrease++;
-                            if (state.consecutiveIncreasingBlocksAfterDecrease >= 3) {
-                                store.closeLastAnomaly(node.key(), MetricSource.WS, AnomalyType.REORG);
-                                state.hasOpenBlockHeightDecreasedAnomaly = false;
-                                state.consecutiveIncreasingBlocksAfterDecrease = 0;
-                            }
-                        } else {
-                            // Reset counter if block number didn't increase
-                            state.consecutiveIncreasingBlocksAfterDecrease = 0;
-                        }
-                    }
-
-                    if (blockNumber != null && state.lastWsBlockNumber != null) {
-                        scheduleMissingBlockRecoveryForAllNodes(node, state.lastWsBlockNumber, blockNumber);
-                    }
-
-                    trackWsBlockHash(node, blockNumber, blockHash);
-                    if (blockNumber != null) {
-                        scheduleInvalidDrivenGapRecovery();
-                    }
-
-                    state.lastWsBlockNumber = blockNumber;
-                    if (blockHash != null) {
-                        state.lastWsBlockHash = blockHash;
-                    }
-
-                    if (blockNumber != null && blockHash != null) {
-                        monitor.recordBlock(node.key(), blockNumber, blockHash, Confidence.NEW);
+                    if (properties.getMode() == ChainCheckProperties.Mode.ETHEREUM && blockHash != null) {
+                        handleEthereumNewHead(node, blockHash, blockNumber, parentHash, blockTimestamp, now);
+                    } else {
+                        handleCosmosNewHead(node, blockInfo, blockNumber, blockHash, parentHash, blockTimestamp, now);
                     }
                 }
             } catch (IOException | RuntimeException ex) {
                 logger.error("WebSocket message handling failure ({}): {}", node.name(), ex.getMessage());
                 monitor.recordFailure(node, MetricSource.WS, ex.getMessage());
+            }
+        }
+
+        private void handleEthereumNewHead(NodeDefinition node, String eventHash, Long eventNumber, 
+                String eventParentHash, Instant eventTimestamp, Instant now) {
+            try {
+                RpcMonitorService.BlockInfo fullBlock = httpMonitorService.fetchBlockByHash(node, eventHash);
+                if (fullBlock == null || fullBlock.blockHash() == null) {
+                    logger.warn("Failed to fetch full block by hash {} for node {}", eventHash, node.name());
+                    return;
+                }
+
+                String blockHash = fullBlock.blockHash();
+                String parentHash = fullBlock.parentHash();
+                Long blockNumber = fullBlock.blockNumber();
+                Instant blockTimestamp = fullBlock.blockTimestamp();
+
+                ChainTracker tracker = chainTrackers.computeIfAbsent(node.key(), ChainTracker::new);
+                ChainTracker.BlockNode blockNode = new ChainTracker.BlockNode(
+                        blockHash, parentHash, 
+                        blockNumber != null ? blockNumber : 0L,
+                        blockTimestamp, now, Confidence.NEW);
+
+                ChainTracker.ChainUpdate update = tracker.registerBlock(blockNode);
+
+                if (update.reorg() != null) {
+                    logger.info("Reorg detected via ChainTracker for node {}: depth={}, oldHead={}@{}, newHead={}@{}",
+                            node.name(), update.reorg().reorgDepth(),
+                            update.reorg().oldHeadHash(), update.reorg().oldHeadNumber(),
+                            update.reorg().newHeadHash(), update.reorg().newHeadNumber());
+                }
+
+                if (!update.isNewBlock()) {
+                    return;
+                }
+
+                Long headDelayMs = null;
+                if (blockTimestamp != null) {
+                    long delayMs = java.time.Duration.between(blockTimestamp, now).toMillis();
+                    if (delayMs >= 0) {
+                        headDelayMs = delayMs;
+                    }
+                    state.lastWsBlockTimestamp = blockTimestamp;
+                }
+
+                MetricSample sample = MetricSample.builder(now, MetricSource.WS)
+                        .success(true)
+                        .blockNumber(blockNumber)
+                        .blockTimestamp(blockTimestamp)
+                        .blockHash(blockHash)
+                        .parentHash(parentHash)
+                        .headDelayMs(headDelayMs)
+                        .build();
+                if (monitor.isWarmupComplete()) {
+                    store.addSample(node.key(), sample);
+                }
+                monitor.resetWsBackoff(state);
+
+                WsConnectionTracker connTracker = nodeRegistry.getWsTracker(node.key());
+                if (connTracker != null) {
+                    connTracker.clearLastError();
+                }
+
+                if (blockNumber != null && blockHash != null) {
+                    monitor.recordBlock(node.key(), blockNumber, blockHash, Confidence.NEW);
+                }
+
+                state.lastWsBlockNumber = blockNumber;
+                if (blockHash != null) {
+                    state.lastWsBlockHash = blockHash;
+                }
+
+                if (monitor.isWarmupComplete()) {
+                    List<AnomalyEvent> anomalies = detector.detect(
+                            node.key(),
+                            sample,
+                            node.anomalyDelayMs(),
+                            null,
+                            null,
+                            state.lastHttpBlockNumber);
+                    for (AnomalyEvent anomaly : anomalies) {
+                        store.addAnomaly(node.key(), anomaly);
+                    }
+                }
+
+                List<Long> missing = tracker.findMissingBlockNumbers(blockNode);
+                if (!missing.isEmpty() && node.wsGapRecoveryEnabled()) {
+                    scheduleMissingBlockRecoveryForAllNodes(node, blockNumber - missing.size() - 1, blockNumber);
+                }
+
+                trackWsBlockHash(node, blockNumber, blockHash);
+
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+                logger.warn("Ethereum newHead handling interrupted ({}): {}", node.name(), ex.getMessage());
+            } catch (IOException | RuntimeException ex) {
+                logger.error("Ethereum newHead handling failure ({}): {}", node.name(), ex.getMessage());
+                monitor.recordFailure(node, MetricSource.WS, ex.getMessage());
+            }
+        }
+
+        private void handleCosmosNewHead(NodeDefinition node, RpcMonitorService.BlockInfo blockInfo,
+                Long blockNumber, String blockHash, String parentHash, Instant blockTimestamp, Instant now) {
+
+            Long headDelayMs = null;
+            if (blockTimestamp != null) {
+                long delayMs = java.time.Duration.between(blockTimestamp, now).toMillis();
+                if (delayMs >= 0) {
+                    headDelayMs = delayMs;
+                }
+                state.lastWsBlockTimestamp = blockTimestamp;
+            }
+
+            MetricSample sample = MetricSample.builder(now, MetricSource.WS)
+                    .success(true)
+                    .blockNumber(blockNumber)
+                    .blockTimestamp(blockTimestamp)
+                    .blockHash(blockHash)
+                    .parentHash(parentHash)
+                    .headDelayMs(headDelayMs)
+                    .build();
+            if (monitor.isWarmupComplete()) {
+                store.addSample(node.key(), sample);
+            }
+            monitor.resetWsBackoff(state);
+
+            WsConnectionTracker tracker = nodeRegistry.getWsTracker(node.key());
+            if (tracker != null) {
+                tracker.clearLastError();
+            }
+
+            if (monitor.isWarmupComplete()) {
+                List<AnomalyEvent> anomalies = detector.detect(
+                        node.key(),
+                        sample,
+                        node.anomalyDelayMs(),
+                        state.lastWsBlockNumber,
+                        state.lastWsBlockHash,
+                        state.lastHttpBlockNumber);
+                for (AnomalyEvent anomaly : anomalies) {
+                    store.addAnomaly(node.key(), anomaly);
+                    if (anomaly.getType() == AnomalyType.REORG && "Block height decreased".equals(anomaly.getMessage())) {
+                        state.hasOpenBlockHeightDecreasedAnomaly = true;
+                        state.consecutiveIncreasingBlocksAfterDecrease = 0;
+                    }
+                }
+            }
+
+            if (state.hasOpenBlockHeightDecreasedAnomaly && blockNumber != null && state.lastWsBlockNumber != null) {
+                if (blockNumber > state.lastWsBlockNumber) {
+                    state.consecutiveIncreasingBlocksAfterDecrease++;
+                    if (state.consecutiveIncreasingBlocksAfterDecrease >= 3) {
+                        store.closeLastAnomaly(node.key(), MetricSource.WS, AnomalyType.REORG);
+                        state.hasOpenBlockHeightDecreasedAnomaly = false;
+                        state.consecutiveIncreasingBlocksAfterDecrease = 0;
+                    }
+                } else {
+                    state.consecutiveIncreasingBlocksAfterDecrease = 0;
+                }
+            }
+
+            if (blockNumber != null && state.lastWsBlockNumber != null) {
+                scheduleMissingBlockRecoveryForAllNodes(node, state.lastWsBlockNumber, blockNumber);
+            }
+
+            trackWsBlockHash(node, blockNumber, blockHash);
+            if (blockNumber != null) {
+                scheduleInvalidDrivenGapRecovery();
+            }
+
+            state.lastWsBlockNumber = blockNumber;
+            if (blockHash != null) {
+                state.lastWsBlockHash = blockHash;
+            }
+
+            if (blockNumber != null && blockHash != null) {
+                monitor.recordBlock(node.key(), blockNumber, blockHash, Confidence.NEW);
             }
         }
     }

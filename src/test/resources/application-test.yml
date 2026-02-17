@@ -6,6 +6,7 @@ spring:
       enabled: false
 
 rpc:
+  mode: ethereum
   title: "Mock RPC"
   title-color: "#777777"
   get-safe-blocks: false

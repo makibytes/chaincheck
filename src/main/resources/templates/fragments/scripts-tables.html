@@ -30,10 +30,92 @@
 
         let filteredData = data;
         let filteredPages = Math.max(1, Math.ceil(filteredData.length / pageSize));
+        let currentPage = 1;
+
+        const createPageButton = ({ label, targetPage, active = false, disabled = false, title = '' }) => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.textContent = label;
+            button.classList.add('page-btn');
+            if (active) {
+                button.classList.add('active');
+            }
+            if (disabled) {
+                button.disabled = true;
+            }
+            if (title) {
+                button.title = title;
+            }
+            if (!disabled && Number.isInteger(targetPage)) {
+                button.addEventListener('click', () => renderPage(targetPage));
+            }
+            return button;
+        };
+
+        const createEllipsis = () => {
+            const ellipsis = document.createElement('span');
+            ellipsis.classList.add('page-ellipsis');
+            ellipsis.textContent = '…';
+            return ellipsis;
+        };
+
+        const buildCompactPages = (page, total) => {
+            const pages = new Set();
+
+            for (let p = 1; p <= Math.min(3, total); p += 1) {
+                pages.add(p);
+            }
+            for (let p = Math.max(1, total - 2); p <= total; p += 1) {
+                pages.add(p);
+            }
+            for (let p = Math.max(1, page - 1); p <= Math.min(total, page + 1); p += 1) {
+                pages.add(p);
+            }
+
+            return Array.from(pages).sort((a, b) => a - b);
+        };
+
+        const renderPagination = (page) => {
+            if (!pagination) {
+                return;
+            }
+
+            pagination.innerHTML = '';
+            const safePage = Math.min(Math.max(page, 1), filteredPages);
+            const pages = buildCompactPages(safePage, filteredPages);
+
+            pagination.appendChild(createPageButton({
+                label: '−10',
+                targetPage: Math.max(1, safePage - 10),
+                disabled: safePage <= 1,
+                title: 'Jump 10 pages back'
+            }));
+
+            let previous = null;
+            pages.forEach((p) => {
+                if (previous != null && p - previous > 1) {
+                    pagination.appendChild(createEllipsis());
+                }
+                pagination.appendChild(createPageButton({
+                    label: String(p),
+                    targetPage: p,
+                    active: p === safePage
+                }));
+                previous = p;
+            });
+
+            pagination.appendChild(createPageButton({
+                label: '+10',
+                targetPage: Math.min(filteredPages, safePage + 10),
+                disabled: safePage >= filteredPages,
+                title: 'Jump 10 pages forward'
+            }));
+        };
 
         const renderPage = (page) => {
             if (!body) return;
             const safePage = Math.min(Math.max(page, 1), filteredPages);
+            currentPage = safePage;
             const start = (safePage - 1) * pageSize;
             const end = Math.min(start + pageSize, filteredData.length);
             body.innerHTML = '';
@@ -45,29 +127,12 @@
             if (pageInfo) {
                 pageInfo.textContent = `Showing page ${safePage} of ${filteredPages}`;
             }
-            if (pagination) {
-                Array.from(pagination.children).forEach((child, index) => {
-                    child.classList.toggle('active', index + 1 === safePage);
-                });
-            }
+            renderPagination(safePage);
         };
 
         const updatePagination = (page = 1) => {
             filteredPages = Math.max(1, Math.ceil(filteredData.length / pageSize));
-            if (pagination) {
-                pagination.innerHTML = '';
-                for (let p = 1; p <= filteredPages; p += 1) {
-                    const link = document.createElement('a');
-                    link.href = '#';
-                    link.textContent = String(p);
-                    link.addEventListener('click', (event) => {
-                        event.preventDefault();
-                        renderPage(p);
-                    });
-                    pagination.appendChild(link);
-                }
-            }
-            renderPage(page);
+            renderPage(Math.min(Math.max(page, 1), filteredPages));
         };
 
         if (search) {
@@ -81,7 +146,7 @@
             });
         }
 
-        updatePagination(1);
+        updatePagination(currentPage);
     };
 
     // Samples handler

@@ -15,7 +15,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-package de.makibytes.chaincheck.reference.node;
+package de.makibytes.chaincheck.chain.ethereum;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -46,14 +46,34 @@ import org.slf4j.LoggerFactory;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import de.makibytes.chaincheck.chain.ethereum.attestation.AttestationTracker;
+import de.makibytes.chaincheck.chain.shared.Confidence;
+import de.makibytes.chaincheck.chain.shared.ReferenceObservation;
 import de.makibytes.chaincheck.config.ChainCheckProperties;
 import de.makibytes.chaincheck.model.AttestationConfidence;
-import de.makibytes.chaincheck.reference.attestation.AttestationTracker;
-import de.makibytes.chaincheck.reference.block.ReferenceBlocks.Confidence;
 
+/**
+ * Client for communicating with a beacon/consensus node via REST API and SSE events.
+ * Handles head tracking, finality checkpoints, and attestation monitoring.
+ */
 public class ConsensusNodeClient {
 
     private static final Logger logger = LoggerFactory.getLogger(ConsensusNodeClient.class);
+
+    /**
+     * Default timeout for checkpoint fetch operations in milliseconds.
+     */
+    private static final long DEFAULT_CHECKPOINT_TIMEOUT_MS = 60_000;
+
+    /**
+     * Default history retention period for observations.
+     */
+    private static final Duration HISTORY_RETENTION = Duration.ofDays(35);
+
+    /**
+     * Maximum number of slots to retain in the slot cache.
+     */
+    private static final int MAX_SLOT_CACHE_SIZE = 256;
 
     private final String baseUrl;
     private final String eventsPath;
@@ -63,6 +83,7 @@ public class ConsensusNodeClient {
     private final int attestationTrackingMaxAttempts;
     private final Long safePollIntervalMs;
     private final Long finalizedPollIntervalMs;
+    private final long checkpointTimeoutMs;
     private final HttpClient httpClient;
     private final ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
@@ -77,9 +98,7 @@ public class ConsensusNodeClient {
     private final AtomicReference<ReferenceObservation> safe = new AtomicReference<>();
     private final AtomicReference<ReferenceObservation> finalized = new AtomicReference<>();
     private final Map<Confidence, Deque<ReferenceObservation>> historyByConfidence = new ConcurrentHashMap<>();
-    private static final Duration HISTORY_RETENTION = Duration.ofDays(35);
 
-    private static final long CHECKPOINT_TIMEOUT_MS = 60_000; // 1 minute
     private final AtomicReference<Instant> safeFirstRequestAt = new AtomicReference<>();
     private final AtomicReference<Instant> finalizedFirstRequestAt = new AtomicReference<>();
 
@@ -96,6 +115,7 @@ public class ConsensusNodeClient {
         this.attestationTrackingMaxAttempts = normalizeTrackingAttempts(referenceNode == null ? null : referenceNode.getAttestationTrackingMaxAttempts());
         this.safePollIntervalMs = normalizePollInterval(referenceNode == null ? null : referenceNode.getSafePollIntervalMs());
         this.finalizedPollIntervalMs = normalizePollInterval(referenceNode == null ? null : referenceNode.getFinalizedPollIntervalMs());
+        this.checkpointTimeoutMs = DEFAULT_CHECKPOINT_TIMEOUT_MS;
         this.attestationTracker = attestationTracker;
         long timeoutMs = Math.max(500, referenceNode == null ? 2000 : referenceNode.getTimeoutMs());
         this.httpClient = HttpClient.newBuilder()
@@ -153,11 +173,11 @@ public class ConsensusNodeClient {
         if (refreshSafe && safe.get() == null) {
             safeFirstRequestAt.compareAndSet(null, now);
             Instant firstRequest = safeFirstRequestAt.get();
-            if (Duration.between(firstRequest, now).toMillis() > CHECKPOINT_TIMEOUT_MS) {
+            if (Duration.between(firstRequest, now).toMillis() > checkpointTimeoutMs) {
                 String errorMsg = String.format(
                         "Timeout fetching safe checkpoint from consensus node %s after %d ms. " +
                         "Endpoint: %s%s. Check that the consensus node is running and accessible.",
-                        baseUrl, CHECKPOINT_TIMEOUT_MS, baseUrl, finalityCheckpointsPath);
+                        baseUrl, checkpointTimeoutMs, baseUrl, finalityCheckpointsPath);
                 logger.error(errorMsg);
                 throw new RuntimeException(errorMsg);
             }
@@ -166,11 +186,11 @@ public class ConsensusNodeClient {
         if (refreshFinalized && finalized.get() == null) {
             finalizedFirstRequestAt.compareAndSet(null, now);
             Instant firstRequest = finalizedFirstRequestAt.get();
-            if (Duration.between(firstRequest, now).toMillis() > CHECKPOINT_TIMEOUT_MS) {
+            if (Duration.between(firstRequest, now).toMillis() > checkpointTimeoutMs) {
                 String errorMsg = String.format(
                         "Timeout fetching finalized checkpoint from consensus node %s after %d ms. " +
                         "Endpoint: %s%s. Check that the consensus node is running and accessible.",
-                        baseUrl, CHECKPOINT_TIMEOUT_MS, baseUrl, finalityCheckpointsPath);
+                        baseUrl, checkpointTimeoutMs, baseUrl, finalityCheckpointsPath);
                 logger.error(errorMsg);
                 throw new RuntimeException(errorMsg);
             }
@@ -327,12 +347,12 @@ public class ConsensusNodeClient {
     }
 
     private void pruneSlotCache() {
-        if (executionBlockBySlot.size() > 256) {
+        if (executionBlockBySlot.size() > MAX_SLOT_CACHE_SIZE) {
             long minSlot = executionBlockBySlot.keySet().stream()
                     .mapToLong(Long::longValue)
                     .min()
                     .orElse(0);
-            long cutoff = minSlot + (executionBlockBySlot.size() - 256);
+            long cutoff = minSlot + (executionBlockBySlot.size() - MAX_SLOT_CACHE_SIZE);
             executionBlockBySlot.entrySet().removeIf(entry -> entry.getKey() < cutoff);
         }
     }

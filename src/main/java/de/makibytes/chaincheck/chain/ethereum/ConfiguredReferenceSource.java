@@ -15,7 +15,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-package de.makibytes.chaincheck.reference.node;
+package de.makibytes.chaincheck.chain.ethereum;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -25,34 +25,39 @@ import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import de.makibytes.chaincheck.chain.ethereum.attestation.AttestationTracker;
+import de.makibytes.chaincheck.chain.shared.BlockConfidenceTracker;
+import de.makibytes.chaincheck.chain.shared.Confidence;
+import de.makibytes.chaincheck.chain.shared.ReferenceObservation;
 import de.makibytes.chaincheck.config.ChainCheckProperties;
 import de.makibytes.chaincheck.model.AttestationConfidence;
 import de.makibytes.chaincheck.model.MetricSample;
-import de.makibytes.chaincheck.reference.attestation.AttestationTracker;
 import de.makibytes.chaincheck.model.MetricSource;
 import de.makibytes.chaincheck.monitor.NodeRegistry;
 import de.makibytes.chaincheck.monitor.RpcMonitorService;
-import de.makibytes.chaincheck.reference.block.BlockVotingService;
-import de.makibytes.chaincheck.reference.block.ReferenceBlocks.Confidence;
 
+/**
+ * Source for reference data when using a configured consensus node.
+ * Retrieves head, safe, and finalized blocks from the beacon chain.
+ */
 public class ConfiguredReferenceSource {
 
     private static final Logger logger = LoggerFactory.getLogger(ConfiguredReferenceSource.class);
 
     private final NodeRegistry nodeRegistry;
-    private final BlockVotingService blockVotingService;
+    private final BlockConfidenceTracker blockConfidenceTracker;
     private final Map<String, RpcMonitorService.NodeState> nodeStates;
     private final String configuredReferenceNodeKey;
     private final ConsensusNodeClient consensusNode;
     private final String consensusNodeDisplayName;
 
     public ConfiguredReferenceSource(NodeRegistry nodeRegistry,
-                         BlockVotingService blockVotingService,
-                         Map<String, RpcMonitorService.NodeState> nodeStates,
-                         ChainCheckProperties properties,
-                         String configuredReferenceNodeKey) {
+                          BlockConfidenceTracker blockConfidenceTracker,
+                          Map<String, RpcMonitorService.NodeState> nodeStates,
+                          ChainCheckProperties properties,
+                          String configuredReferenceNodeKey) {
         this.nodeRegistry = nodeRegistry;
-        this.blockVotingService = blockVotingService;
+        this.blockConfidenceTracker = blockConfidenceTracker;
         this.nodeStates = nodeStates;
         this.configuredReferenceNodeKey = configuredReferenceNodeKey;
         AttestationTracker tracker = null;
@@ -66,6 +71,10 @@ public class ConfiguredReferenceSource {
 
     public boolean isConsensusNodeEnabled() {
         return consensusNode.isEnabled();
+    }
+
+    public String getConfiguredReferenceNodeKey() {
+        return configuredReferenceNodeKey;
     }
 
     boolean isSafePollingEnabled() {
@@ -205,21 +214,20 @@ public class ConfiguredReferenceSource {
                 ? configuredReferenceNodeKey
                 : null;
 
-        blockVotingService.clearVotes();
-        blockVotingService.getReferenceBlocks().clear();
+        blockConfidenceTracker.clear();
 
         if (headObservation != null) {
-            blockVotingService.getReferenceBlocks().setHash(headObservation.blockNumber(), Confidence.NEW, headObservation.blockHash());
+            blockConfidenceTracker.setHash(headObservation.blockNumber(), Confidence.NEW, headObservation.blockHash());
         }
 
         ReferenceObservation safeObservation = getObservation(Confidence.SAFE);
         if (safeObservation != null) {
-            blockVotingService.getReferenceBlocks().setHash(safeObservation.blockNumber(), Confidence.SAFE, safeObservation.blockHash());
+            blockConfidenceTracker.setHash(safeObservation.blockNumber(), Confidence.SAFE, safeObservation.blockHash());
         }
 
         ReferenceObservation finalizedObservation = getObservation(Confidence.FINALIZED);
         if (finalizedObservation != null) {
-            blockVotingService.getReferenceBlocks().setHash(finalizedObservation.blockNumber(), Confidence.FINALIZED, finalizedObservation.blockHash());
+            blockConfidenceTracker.setHash(finalizedObservation.blockNumber(), Confidence.FINALIZED, finalizedObservation.blockHash());
         }
 
         return new ReferenceUpdate(state, referenceNodeKey);

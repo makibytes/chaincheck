@@ -1,6 +1,7 @@
 rpc:
   title: "Polygon Mainnet"
   title-color: "#ff0000"
+  mode: cosmos
   get-safe-blocks: false
   get-finalized-blocks: true
   scale-change-ms: 500

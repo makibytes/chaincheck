@@ -15,15 +15,20 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-package de.makibytes.chaincheck.reference.node;
+package de.makibytes.chaincheck.chain.ethereum;
 
 import java.time.Instant;
 import java.util.Map;
 
+import de.makibytes.chaincheck.chain.shared.Confidence;
+import de.makibytes.chaincheck.chain.shared.ReferenceStrategy;
 import de.makibytes.chaincheck.config.ChainCheckProperties;
 import de.makibytes.chaincheck.monitor.RpcMonitorService;
-import de.makibytes.chaincheck.reference.block.ReferenceBlocks.Confidence;
 
+/**
+ * Reference strategy that uses a configured consensus node as the source of truth.
+ * Used in Ethereum mode when a beacon node is configured.
+ */
 public class ConfiguredReferenceStrategy implements ReferenceStrategy {
 
     private final ConfiguredReferenceSource source;

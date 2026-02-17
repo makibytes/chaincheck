@@ -59,6 +59,7 @@ public class DashboardView {
     private final boolean httpConfigured;
     private final boolean wsConfigured;
     private final boolean safeBlocksEnabled;
+    private final boolean finalizedBlocksEnabled;
     private final boolean httpUp;
     private final boolean wsUp;
     private final Long latestBlockNumber;
@@ -94,6 +95,7 @@ public class DashboardView {
                           boolean httpConfigured,
                           boolean wsConfigured,
                           boolean safeBlocksEnabled,
+                          boolean finalizedBlocksEnabled,
                           boolean httpUp,
                           boolean wsUp,
                           Long latestBlockNumber,
@@ -144,6 +146,7 @@ public class DashboardView {
         this.httpConfigured = httpConfigured;
         this.wsConfigured = wsConfigured;
         this.safeBlocksEnabled = safeBlocksEnabled;
+        this.finalizedBlocksEnabled = finalizedBlocksEnabled;
         this.httpUp = httpUp;
         this.wsUp = wsUp;
         this.latestBlockNumber = latestBlockNumber;
@@ -180,6 +183,7 @@ public class DashboardView {
                                 boolean httpConfigured,
                                 boolean wsConfigured,
                                 boolean safeBlocksEnabled,
+                                boolean finalizedBlocksEnabled,
                                 boolean httpUp,
                                 boolean wsUp,
                                 Long latestBlockNumber,
@@ -202,7 +206,7 @@ public class DashboardView {
                 chartReferenceHeadDelays, chartReferenceSafeDelays, chartReferenceFinalizedDelays,
                 hasAggregatedLatencies, hasAggregatedDelays,
                 httpErrorOngoing, wsErrorOngoing,
-                httpConfigured, wsConfigured, safeBlocksEnabled,
+                httpConfigured, wsConfigured, safeBlocksEnabled, finalizedBlocksEnabled,
                 httpUp, wsUp, latestBlockNumber, httpStatus, wsStatus,
                 totalPages, pageSize, totalSamples,
                 anomalyTotalPages, anomalyPageSize, totalAnomalies,
@@ -340,6 +344,10 @@ public class DashboardView {
 
     public boolean isSafeBlocksEnabled() {
         return safeBlocksEnabled;
+    }
+
+    public boolean isFinalizedBlocksEnabled() {
+        return finalizedBlocksEnabled;
     }
 
     public boolean isHttpUp() {

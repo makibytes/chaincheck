@@ -15,7 +15,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-package de.makibytes.chaincheck.reference.node;
+package de.makibytes.chaincheck.chain.cosmos;
 
 import java.time.Instant;
 import java.util.List;
@@ -23,9 +23,11 @@ import java.util.Map;
 
 import org.springframework.stereotype.Service;
 
+import de.makibytes.chaincheck.chain.shared.BlockAgreementTracker;
+import de.makibytes.chaincheck.chain.shared.BlockConfidenceTracker;
+import de.makibytes.chaincheck.chain.shared.NodeSwitchPolicy;
 import de.makibytes.chaincheck.model.MetricSample;
 import de.makibytes.chaincheck.monitor.RpcMonitorService;
-import de.makibytes.chaincheck.reference.block.ReferenceBlocks;
 import de.makibytes.chaincheck.store.InMemoryMetricsStore;
 
 /**
@@ -39,18 +41,18 @@ public class ReferenceNodeSelector {
     private final NodeSwitchPolicy switchPolicy;
 
     public ReferenceNodeSelector() {
-        this.switchPolicy = new NodeSwitchPolicy(20, 15);
+        this.switchPolicy = new NodeSwitchPolicy();
     }
 
     /**
      * Selects the best reference node from the available nodes based on comprehensive scoring.
      * Uses the switch policy to ensure stability.
      */
-    public String select(Map<String, RpcMonitorService.NodeState> nodeStates, ReferenceBlocks referenceBlocks, InMemoryMetricsStore store, Instant now, BlockAgreementTracker blockAgreementTracker, String currentReferenceNodeKey) {
+    public String select(Map<String, RpcMonitorService.NodeState> nodeStates, BlockConfidenceTracker blockConfidenceTracker, InMemoryMetricsStore store, Instant now, BlockAgreementTracker blockAgreementTracker, String currentReferenceNodeKey) {
         String bestNode = null;
         double bestScore = -1;
         for (String nodeKey : nodeStates.keySet()) {
-            double score = computeNodeScore(nodeKey, blockAgreementTracker, nodeStates, referenceBlocks, store, now);
+            double score = computeNodeScore(nodeKey, blockAgreementTracker, nodeStates, blockConfidenceTracker, store, now);
             if (score > bestScore) {
                 bestScore = score;
                 bestNode = nodeKey;
@@ -66,7 +68,7 @@ public class ReferenceNodeSelector {
     }
 
     private double computeNodeScore(String nodeKey, BlockAgreementTracker tracker, Map<String, RpcMonitorService.NodeState> nodeStates,
-            ReferenceBlocks referenceBlocks, InMemoryMetricsStore store, Instant now) {
+            BlockConfidenceTracker blockConfidenceTracker, InMemoryMetricsStore store, Instant now) {
         RpcMonitorService.NodeState state = nodeStates.get(nodeKey);
 
         // WebSocket health: 0 or 1000 points (most important after delays)
@@ -97,7 +99,7 @@ public class ReferenceNodeSelector {
                 .mapToLong(MetricSample::getSafeDelayMs)
                 .average()
                 .orElse(10000);
-        double safeDelayScore = referenceBlocks.getBlocks().values().stream().anyMatch(m -> m.containsKey(ReferenceBlocks.Confidence.SAFE))
+        double safeDelayScore = blockConfidenceTracker.getBlocks().values().stream().anyMatch(m -> m.containsKey(de.makibytes.chaincheck.chain.shared.Confidence.SAFE))
                 ? 1000 / (1 + avgSafeDelay / 1000.0) : 500; // half if not available
 
         double avgFinalizedDelay = samples.stream()

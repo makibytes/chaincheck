@@ -35,22 +35,23 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
+import de.makibytes.chaincheck.chain.cosmos.BlockVotingCoordinator;
+import de.makibytes.chaincheck.chain.cosmos.BlockVotingService;
+import de.makibytes.chaincheck.chain.cosmos.ReferenceNodeSelector;
+import de.makibytes.chaincheck.chain.cosmos.VotingReferenceStrategy;
+import de.makibytes.chaincheck.chain.ethereum.ConfiguredReferenceSource;
+import de.makibytes.chaincheck.chain.ethereum.ConfiguredReferenceStrategy;
+import de.makibytes.chaincheck.chain.shared.BlockAgreementTracker;
+import de.makibytes.chaincheck.chain.shared.BlockConfidenceTracker;
+import de.makibytes.chaincheck.chain.shared.Confidence;
+import de.makibytes.chaincheck.chain.shared.ReferenceObservation;
+import de.makibytes.chaincheck.chain.shared.ReferenceStrategy;
 import de.makibytes.chaincheck.config.ChainCheckProperties;
 import de.makibytes.chaincheck.model.AttestationConfidence;
 import de.makibytes.chaincheck.model.AnomalyEvent;
 import de.makibytes.chaincheck.model.MetricSample;
 import de.makibytes.chaincheck.model.MetricSource;
 import de.makibytes.chaincheck.monitor.NodeRegistry.NodeDefinition;
-import de.makibytes.chaincheck.reference.block.BlockVotingCoordinator;
-import de.makibytes.chaincheck.reference.block.BlockVotingService;
-import de.makibytes.chaincheck.reference.block.ReferenceBlocks.Confidence;
-import de.makibytes.chaincheck.reference.node.BlockAgreementTracker;
-import de.makibytes.chaincheck.reference.node.ConfiguredReferenceSource;
-import de.makibytes.chaincheck.reference.node.ConfiguredReferenceStrategy;
-import de.makibytes.chaincheck.reference.node.ReferenceNodeSelector;
-import de.makibytes.chaincheck.reference.node.ReferenceObservation;
-import de.makibytes.chaincheck.reference.node.ReferenceStrategy;
-import de.makibytes.chaincheck.reference.node.VotingReferenceStrategy;
 import de.makibytes.chaincheck.store.InMemoryMetricsStore;
 import jakarta.annotation.PostConstruct;
 
@@ -102,14 +103,19 @@ public class RpcMonitorService {
         this.blockAgreementTracker = blockAgreementTracker;
         this.referenceNodeSelector = referenceNodeSelector;
         this.configuredReferenceNodeKey = properties.getConsensus() != null ? properties.getConsensus().getNodeKey() : null;
-        this.configuredSource = new ConfiguredReferenceSource(nodeRegistry, blockVotingService, nodeStates, properties, configuredReferenceNodeKey);
+        BlockConfidenceTracker blockConfidenceTracker = new BlockConfidenceTracker();
+        this.configuredSource = new ConfiguredReferenceSource(nodeRegistry, blockConfidenceTracker, nodeStates, properties, configuredReferenceNodeKey);
         this.referenceBlockVoting = new BlockVotingCoordinator(nodeRegistry, blockVotingService, blockAgreementTracker, store, detector);
 
-        // Select reference strategy at startup based on configuration
-        boolean isConfiguredMode = properties.getConsensus() != null && properties.getConsensus().hasConfiguredReferenceNode();
-        if (isConfiguredMode) {
+        // Select reference strategy based on mode and whether consensus is configured
+        ChainCheckProperties.Mode mode = properties.getMode();
+        boolean hasConsensusNode = properties.getConsensus() != null && properties.getConsensus().hasConfiguredReferenceNode();
+        
+        // Use ConfiguredReferenceStrategy only when in ETHEREUM mode AND consensus node is configured
+        if (mode == ChainCheckProperties.Mode.ETHEREUM && hasConsensusNode) {
             this.referenceStrategy = new ConfiguredReferenceStrategy(configuredSource, configuredReferenceNodeKey);
         } else {
+            // Cosmos mode OR Ethereum without consensus: use majority voting across execution nodes
             this.referenceStrategy = new VotingReferenceStrategy(nodeRegistry, blockVotingService, referenceBlockVoting, referenceNodeSelector, blockAgreementTracker, store);
         }
 
@@ -488,7 +494,7 @@ public class RpcMonitorService {
             return;
         }
 
-        if (!blockVotingService.getReferenceBlocks().isEstablished()) {
+        if (!blockVotingService.getBlockConfidenceTracker().isEstablished()) {
             return;
         }
 
@@ -501,7 +507,7 @@ public class RpcMonitorService {
         }
 
         Confidence confidence = "safe".equals(blockTag) ? Confidence.SAFE : Confidence.FINALIZED;
-        String referenceCheckpointHash = blockVotingService.getReferenceBlocks().getHash(checkpointBlock.blockNumber(), confidence);
+        String referenceCheckpointHash = blockVotingService.getBlockConfidenceTracker().getHash(checkpointBlock.blockNumber(), confidence);
 
         if (referenceCheckpointHash != null && !referenceCheckpointHash.equals(checkpointBlock.blockHash())) {
             AnomalyEvent anomaly = detector.wrongHead(

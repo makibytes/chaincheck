@@ -15,7 +15,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-package de.makibytes.chaincheck.reference.attestation;
+package de.makibytes.chaincheck.chain.ethereum.attestation;
 
 import java.time.Instant;
 import java.util.Map;

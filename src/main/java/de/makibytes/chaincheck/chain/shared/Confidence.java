@@ -15,14 +15,11 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-package de.makibytes.chaincheck.reference.node;
+package de.makibytes.chaincheck.chain.shared;
 
-import java.time.Instant;
-
-public record ReferenceObservation(Long blockNumber,
-                            String blockHash,
-                            Instant blockTimestamp,
-                            Instant observedAt,
-                            Instant knowledgeAt,
-                            Long delayMs) {
+/**
+ * Block confidence levels representing finality stages.
+ */
+public enum Confidence {
+    NEW, SAFE, FINALIZED
 }
