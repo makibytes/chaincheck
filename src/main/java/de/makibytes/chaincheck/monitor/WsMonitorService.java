@@ -20,6 +20,7 @@ package de.makibytes.chaincheck.monitor;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.WebSocket;
+import java.net.http.WebSocketHandshakeException;
 import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.time.Instant;
@@ -110,7 +111,7 @@ public class WsMonitorService {
                     .thenAccept(state.webSocketRef::set)
                     .exceptionally(ex -> {
                         String msg = ex.getMessage();
-                        if (ex.getCause() instanceof java.net.http.WebSocketHandshakeException handshakeEx) {
+                        if (ex.getCause() instanceof WebSocketHandshakeException handshakeEx) {
                             try {
                                 int status = handshakeEx.getResponse().statusCode();
                                 msg = "Handshake failed (HTTP " + status + "): " + ex.getMessage();
@@ -307,7 +308,7 @@ public class WsMonitorService {
 
                 Long headDelayMs = null;
                 if (blockTimestamp != null) {
-                    long delayMs = java.time.Duration.between(blockTimestamp, now).toMillis();
+                    long delayMs = Duration.between(blockTimestamp, now).toMillis();
                     if (delayMs >= 0) {
                         headDelayMs = delayMs;
                     }
@@ -375,7 +376,7 @@ public class WsMonitorService {
 
             Long headDelayMs = null;
             if (blockTimestamp != null) {
-                long delayMs = java.time.Duration.between(blockTimestamp, now).toMillis();
+                long delayMs = Duration.between(blockTimestamp, now).toMillis();
                 if (delayMs >= 0) {
                     headDelayMs = delayMs;
                 }

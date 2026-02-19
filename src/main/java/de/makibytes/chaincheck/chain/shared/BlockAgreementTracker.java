@@ -20,6 +20,7 @@ package de.makibytes.chaincheck.chain.shared;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiConsumer;
 
 import org.springframework.stereotype.Service;
 
@@ -46,26 +47,13 @@ public class BlockAgreementTracker {
      */
     public void awardPoints(Map<Long, Map<Confidence, String>> oldBlocks, BlockConfidenceTracker blockConfidenceTracker,
             Map<Long, Map<Confidence, Map<String, Set<String>>>> blockVotes) {
-        for (Map.Entry<Long, Map<Confidence, String>> entry : blockConfidenceTracker.getBlocks().entrySet()) {
-            long blockNumber = entry.getKey();
-            for (Map.Entry<Confidence, String> confEntry : entry.getValue().entrySet()) {
-                Confidence confidence = confEntry.getKey();
-                String newHash = confEntry.getValue();
-                String oldHash = oldBlocks.getOrDefault(blockNumber, Map.of()).get(confidence);
-                if (!newHash.equals(oldHash)) {
-                    // New or changed block
-                    Set<String> nodes = blockVotes.getOrDefault(blockNumber, Map.of())
-                            .getOrDefault(confidence, Map.of())
-                            .get(newHash);
-                    if (nodes != null) {
-                        for (String nodeKey : nodes) {
-                            int current = nodePoints.getOrDefault(nodeKey, 0);
-                            nodePoints.put(nodeKey, Math.min(100, current + 1));
-                        }
+        forEachBlockDelta(oldBlocks, blockConfidenceTracker.getBlocks(), blockVotes,
+                (nodes, confidence) -> {
+                    for (String nodeKey : nodes) {
+                        int current = nodePoints.getOrDefault(nodeKey, 0);
+                        nodePoints.put(nodeKey, Math.min(100, current + 1));
                     }
-                }
-            }
-        }
+                });
     }
 
     /**
@@ -73,27 +61,58 @@ public class BlockAgreementTracker {
      */
     public void penalize(Map<Long, Map<Confidence, String>> oldBlocks, BlockConfidenceTracker blockConfidenceTracker,
             Map<Long, Map<Confidence, Map<String, Set<String>>>> blockVotes) {
+        forEachInvalidatedBlockDelta(oldBlocks, blockConfidenceTracker.getBlocks(), blockVotes,
+                (nodes, confidence) -> {
+                    int penalty = switch (confidence) {
+                        case NEW -> NEW_BLOCK_PENALTY;
+                        case SAFE -> SAFE_BLOCK_PENALTY;
+                        case FINALIZED -> Integer.MAX_VALUE;
+                    };
+                    for (String nodeKey : nodes) {
+                        int current = nodePoints.getOrDefault(nodeKey, 0);
+                        nodePoints.put(nodeKey, Math.max(0, current - penalty));
+                    }
+                });
+    }
+
+    private void forEachBlockDelta(Map<Long, Map<Confidence, String>> oldBlocks,
+                                   Map<Long, Map<Confidence, String>> currentBlocks,
+                                   Map<Long, Map<Confidence, Map<String, Set<String>>>> blockVotes,
+                                   BiConsumer<Set<String>, Confidence> callback) {
+        for (Map.Entry<Long, Map<Confidence, String>> entry : currentBlocks.entrySet()) {
+            long blockNumber = entry.getKey();
+            for (Map.Entry<Confidence, String> confEntry : entry.getValue().entrySet()) {
+                Confidence confidence = confEntry.getKey();
+                String newHash = confEntry.getValue();
+                String oldHash = oldBlocks.getOrDefault(blockNumber, Map.of()).get(confidence);
+                if (!newHash.equals(oldHash)) {
+                    Set<String> nodes = blockVotes.getOrDefault(blockNumber, Map.of())
+                            .getOrDefault(confidence, Map.of())
+                            .get(newHash);
+                    if (nodes != null) {
+                        callback.accept(nodes, confidence);
+                    }
+                }
+            }
+        }
+    }
+
+    private void forEachInvalidatedBlockDelta(Map<Long, Map<Confidence, String>> oldBlocks,
+                                              Map<Long, Map<Confidence, String>> currentBlocks,
+                                              Map<Long, Map<Confidence, Map<String, Set<String>>>> blockVotes,
+                                              BiConsumer<Set<String>, Confidence> callback) {
         for (Map.Entry<Long, Map<Confidence, String>> entry : oldBlocks.entrySet()) {
             long blockNumber = entry.getKey();
             for (Map.Entry<Confidence, String> confEntry : entry.getValue().entrySet()) {
                 Confidence confidence = confEntry.getKey();
                 String oldHash = confEntry.getValue();
-                String newHash = blockConfidenceTracker.getBlocks().getOrDefault(blockNumber, Map.of()).get(confidence);
+                String newHash = currentBlocks.getOrDefault(blockNumber, Map.of()).get(confidence);
                 if (newHash == null || !newHash.equals(oldHash)) {
-                    // Invalidated block
                     Set<String> nodes = blockVotes.getOrDefault(blockNumber, Map.of())
                             .getOrDefault(confidence, Map.of())
                             .get(oldHash);
                     if (nodes != null) {
-                        int penalty = switch (confidence) {
-                            case NEW -> NEW_BLOCK_PENALTY;
-                            case SAFE -> SAFE_BLOCK_PENALTY;
-                            case FINALIZED -> Integer.MAX_VALUE; // all points
-                        };
-                        for (String nodeKey : nodes) {
-                            int current = nodePoints.getOrDefault(nodeKey, 0);
-                            nodePoints.put(nodeKey, Math.max(0, current - penalty));
-                        }
+                        callback.accept(nodes, confidence);
                     }
                 }
             }

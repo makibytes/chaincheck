@@ -22,11 +22,11 @@ import java.time.Instant;
 
 import com.fasterxml.jackson.databind.JsonNode;
 
-final class EthHex {
+public final class EthHex {
 
     private EthHex() {}
 
-    static Long parseLong(String hex) {
+    public static Long parseLong(String hex) {
         if (hex == null) {
             return null;
         }
@@ -37,9 +37,48 @@ final class EthHex {
         return new BigInteger(normalized, 16).longValue();
     }
 
-    static Instant parseTimestamp(String hex) {
+    public static Instant parseTimestamp(String hex) {
         Long seconds = parseLong(hex);
         return seconds == null ? null : Instant.ofEpochSecond(seconds);
+    }
+
+    public static Long parseDecimalOrHexLong(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String normalized = value.trim();
+        if (normalized.startsWith("0x") || normalized.startsWith("0X")) {
+            return new BigInteger(normalized.substring(2), 16).longValue();
+        }
+        return new BigInteger(normalized, 10).longValue();
+    }
+
+    public static Instant parseDecimalOrHexTimestamp(String value) {
+        Long seconds = parseDecimalOrHexLong(value);
+        return seconds == null ? null : Instant.ofEpochSecond(seconds);
+    }
+
+    public static byte[] decodeHex(String hex) {
+        if (hex == null || hex.isBlank()) {
+            return new byte[0];
+        }
+        String normalized = hex.trim();
+        if (normalized.startsWith("0x") || normalized.startsWith("0X")) {
+            normalized = normalized.substring(2);
+        }
+        if (normalized.isEmpty() || normalized.length() % 2 != 0) {
+            return new byte[0];
+        }
+        byte[] bytes = new byte[normalized.length() / 2];
+        for (int i = 0; i < bytes.length; i++) {
+            int high = Character.digit(normalized.charAt(i * 2), 16);
+            int low = Character.digit(normalized.charAt(i * 2 + 1), 16);
+            if (high < 0 || low < 0) {
+                return new byte[0];
+            }
+            bytes[i] = (byte) ((high << 4) | low);
+        }
+        return bytes;
     }
 
     static RpcMonitorService.BlockInfo parseBlockFields(JsonNode result) {

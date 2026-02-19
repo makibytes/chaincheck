@@ -21,6 +21,7 @@ import java.time.Instant;
 import java.util.Map;
 
 import de.makibytes.chaincheck.chain.shared.BlockAgreementTracker;
+import de.makibytes.chaincheck.chain.shared.Confidence;
 import de.makibytes.chaincheck.chain.shared.ReferenceStrategy;
 import de.makibytes.chaincheck.config.ChainCheckProperties;
 import de.makibytes.chaincheck.monitor.NodeRegistry;
@@ -75,7 +76,7 @@ public class VotingReferenceStrategy implements ReferenceStrategy {
         }
 
         blockVotingCoordinator.collectVotesFromNodes(nodeStates);
-        Map<Long, Map<de.makibytes.chaincheck.chain.shared.Confidence, String>> oldBlocks = blockVotingCoordinator.snapshotOldReferenceBlocks();
+        Map<Long, Map<Confidence, String>> oldBlocks = blockVotingCoordinator.snapshotOldReferenceBlocks();
         blockVotingCoordinator.performVotingAndScoring(oldBlocks, inputReferenceNodeKey, now, warmupComplete, nodeStates);
 
         BlockVotingCoordinator.ReferenceHead referenceHead = blockVotingCoordinator.resolveReferenceHead();

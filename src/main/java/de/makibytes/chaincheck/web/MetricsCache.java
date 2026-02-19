@@ -19,6 +19,7 @@ package de.makibytes.chaincheck.web;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -57,7 +58,7 @@ public class MetricsCache {
         cache.entrySet().removeIf(entry -> entry.getValue().generatedAt.plus(TTL).isBefore(now));
         if (cache.size() > MAX_ENTRIES) {
             cache.entrySet().stream()
-                    .min(Map.Entry.comparingByValue(java.util.Comparator.comparing(CacheEntry::generatedAt)))
+                    .min(Map.Entry.comparingByValue(Comparator.comparing(CacheEntry::generatedAt)))
                     .ifPresent(oldest -> cache.remove(oldest.getKey()));
         }
     }

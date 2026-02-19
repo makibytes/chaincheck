@@ -61,9 +61,9 @@ public record SampleRow(
 
     public SampleRow withStatus(String newStatus) {
         return new SampleRow(
-            newStatus,
+            time,
             sources,
-            status,
+            newStatus,
             latencyMs,
             blockNumber,
             blockHash,

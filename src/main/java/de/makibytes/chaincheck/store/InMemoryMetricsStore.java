@@ -17,19 +17,24 @@
  */
 package de.makibytes.chaincheck.store;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.Deque;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.function.Predicate;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -103,32 +108,23 @@ public class InMemoryMetricsStore {
         anomalyById.put(event.getId(), event);
     }
 
-    public void closeLastAnomaly(String nodeKey, de.makibytes.chaincheck.model.MetricSource source) {
-        java.util.Deque<AnomalyEvent> anomalies = rawAnomaliesByNode.get(nodeKey);
-        if (anomalies == null || anomalies.isEmpty()) {
-            return;
-        }
-        java.util.Iterator<AnomalyEvent> it = anomalies.descendingIterator();
-        while (it.hasNext()) {
-            AnomalyEvent event = it.next();
-            if (event.getSource() == source) {
-                if (!event.isClosed()) {
-                    event.setClosed(true);
-                }
-                break;
-            }
-        }
+    public void closeLastAnomaly(String nodeKey, MetricSource source) {
+        closeLastAnomaly(nodeKey, event -> event.getSource() == source);
     }
 
     public void closeLastAnomaly(String nodeKey, MetricSource source, AnomalyType type) {
-        java.util.Deque<AnomalyEvent> anomalies = rawAnomaliesByNode.get(nodeKey);
+        closeLastAnomaly(nodeKey, event -> event.getSource() == source && event.getType() == type);
+    }
+
+    private void closeLastAnomaly(String nodeKey, Predicate<AnomalyEvent> filter) {
+        Deque<AnomalyEvent> anomalies = rawAnomaliesByNode.get(nodeKey);
         if (anomalies == null || anomalies.isEmpty()) {
             return;
         }
-        java.util.Iterator<AnomalyEvent> it = anomalies.descendingIterator();
+        Iterator<AnomalyEvent> it = anomalies.descendingIterator();
         while (it.hasNext()) {
             AnomalyEvent event = it.next();
-            if (event.getSource() == source && event.getType() == type) {
+            if (filter.test(event)) {
                 if (!event.isClosed()) {
                     event.setClosed(true);
                 }
@@ -165,7 +161,7 @@ public class InMemoryMetricsStore {
         if (dailyAggregates != null && !dailyAggregates.isEmpty()) {
             result.addAll(dailyAggregates.tailMap(since, true).values());
         }
-        result.sort(java.util.Comparator.comparing(SampleAggregate::getBucketStart));
+        result.sort(Comparator.comparing(SampleAggregate::getBucketStart));
         return result;
     }
 
@@ -197,7 +193,7 @@ public class InMemoryMetricsStore {
         if (dailyAggregates != null && !dailyAggregates.isEmpty()) {
             result.addAll(dailyAggregates.tailMap(since, true).values());
         }
-        result.sort(java.util.Comparator.comparing(AnomalyAggregate::getBucketStart));
+        result.sort(Comparator.comparing(AnomalyAggregate::getBucketStart));
         return result;
     }
 
@@ -352,7 +348,7 @@ public class InMemoryMetricsStore {
                 latestHttpBlockNumber.putAll(snapshot.latestHttpBlockNumber());
             }
             aggregateOldData();
-        } catch (java.io.IOException ex) {
+        } catch (IOException ex) {
             // Persistence is optional; log as warning
             logger.warn("Failed to load persistence snapshot: {}", ex.getMessage());
         }
@@ -369,8 +365,8 @@ public class InMemoryMetricsStore {
             if (persistenceFile.getParent() != null) {
                 Files.createDirectories(persistenceFile.getParent());
             }
-            Files.writeString(persistenceFile, new String(bytes, java.nio.charset.StandardCharsets.UTF_8));
-        } catch (java.io.IOException ex) {
+            Files.writeString(persistenceFile, new String(bytes, StandardCharsets.UTF_8));
+        } catch (IOException ex) {
             logger.warn("Failed to write persistence snapshot: {}", ex.getMessage());
         }
     }

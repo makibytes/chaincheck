@@ -19,8 +19,8 @@ package de.makibytes.chaincheck.chain.cosmos;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 import org.slf4j.Logger;
@@ -28,11 +28,9 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import de.makibytes.chaincheck.chain.shared.BlockAgreementTracker;
-import de.makibytes.chaincheck.chain.shared.BlockConfidenceTracker;
 import de.makibytes.chaincheck.chain.shared.Confidence;
 import de.makibytes.chaincheck.model.AnomalyEvent;
 import de.makibytes.chaincheck.model.AnomalyType;
-import de.makibytes.chaincheck.model.MetricSample;
 import de.makibytes.chaincheck.model.MetricSource;
 import de.makibytes.chaincheck.monitor.AnomalyDetector;
 import de.makibytes.chaincheck.monitor.NodeRegistry;
@@ -111,21 +109,14 @@ public class BlockVotingCoordinator {
     }
 
     public ReferenceHead resolveReferenceHead() {
-        long referenceHeadNumber = -1;
-        String referenceHeadHash = null;
-        for (Map.Entry<Long, Map<Confidence, String>> entry : blockVotingService.getBlockConfidenceTracker().getBlocks().entrySet()) {
-            long num = entry.getKey();
-            String hash = entry.getValue().get(Confidence.NEW);
-            if (hash != null && num > referenceHeadNumber) {
-                referenceHeadNumber = num;
-                referenceHeadHash = hash;
-            }
-        }
-        if (referenceHeadNumber == -1) {
-            return null;
-        }
-        logger.debug("Resolved reference head: number={} hash= {}", referenceHeadNumber, referenceHeadHash);
-        return new ReferenceHead(referenceHeadNumber, referenceHeadHash);
+        return blockVotingService.getBlockConfidenceTracker().getBlocks().entrySet().stream()
+                .filter(entry -> entry.getValue().get(Confidence.NEW) != null)
+                .max(Comparator.comparingLong(Map.Entry::getKey))
+                .map(entry -> {
+                    logger.debug("Resolved reference head: number={} hash= {}", entry.getKey(), entry.getValue().get(Confidence.NEW));
+                    return new ReferenceHead(entry.getKey(), entry.getValue().get(Confidence.NEW));
+                })
+                .orElse(null);
     }
 
     private void emitWrongHeadForInvalidatedWsNewHeads(Map<Long, Map<Confidence, String>> oldBlocks,
@@ -179,44 +170,24 @@ public class BlockVotingCoordinator {
         if (nodeKey == null || blockNumber == null || blockHash == null) {
             return false;
         }
-        List<MetricSample> samples = store.getRawSamplesSince(nodeKey, since);
-        for (MetricSample sample : samples) {
-            if (sample.getSource() != MetricSource.WS) {
-                continue;
-            }
-            if (!sample.isSuccess()) {
-                continue;
-            }
-            if (sample.getBlockNumber() == null || !blockNumber.equals(sample.getBlockNumber())) {
-                continue;
-            }
-            if (sample.getBlockHash() != null && sample.getBlockHash().equalsIgnoreCase(blockHash)) {
-                return true;
-            }
-        }
-        return false;
+        return store.getRawSamplesSince(nodeKey, since).stream()
+                .anyMatch(s -> s.getSource() == MetricSource.WS
+                        && s.isSuccess()
+                        && blockNumber.equals(s.getBlockNumber())
+                        && s.getBlockHash() != null
+                        && s.getBlockHash().equalsIgnoreCase(blockHash));
     }
 
     private boolean hasExistingWrongHeadForHash(String nodeKey, Long blockNumber, String blockHash, Instant since) {
         if (nodeKey == null || blockNumber == null || blockHash == null) {
             return false;
         }
-        List<AnomalyEvent> anomalies = store.getRawAnomaliesSince(nodeKey, since);
-        for (AnomalyEvent anomaly : anomalies) {
-            if (anomaly.getType() != AnomalyType.WRONG_HEAD) {
-                continue;
-            }
-            if (anomaly.getSource() != MetricSource.WS) {
-                continue;
-            }
-            if (!blockNumber.equals(anomaly.getBlockNumber())) {
-                continue;
-            }
-            if (anomaly.getBlockHash() != null && anomaly.getBlockHash().equalsIgnoreCase(blockHash)) {
-                return true;
-            }
-        }
-        return false;
+        return store.getRawAnomaliesSince(nodeKey, since).stream()
+                .anyMatch(a -> a.getType() == AnomalyType.WRONG_HEAD
+                        && a.getSource() == MetricSource.WS
+                        && blockNumber.equals(a.getBlockNumber())
+                        && a.getBlockHash() != null
+                        && a.getBlockHash().equalsIgnoreCase(blockHash));
     }
 
     public record ReferenceHead(Long headNumber, String headHash) {

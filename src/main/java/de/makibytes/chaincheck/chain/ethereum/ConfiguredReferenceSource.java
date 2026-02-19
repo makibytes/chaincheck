@@ -19,6 +19,7 @@ package de.makibytes.chaincheck.chain.ethereum;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 
@@ -194,7 +195,7 @@ public class ConfiguredReferenceSource {
         // Head (NEW) delay should come from the execution node monitoring, not consensus
         appendReferenceDelaySamples(result, consensusNode.getObservationHistorySince(Confidence.SAFE, since), Confidence.SAFE);
         appendReferenceDelaySamples(result, consensusNode.getObservationHistorySince(Confidence.FINALIZED, since), Confidence.FINALIZED);
-        result.sort(java.util.Comparator.comparing(MetricSample::getTimestamp));
+        result.sort(Comparator.comparing(MetricSample::getTimestamp));
         return result;
     }
 
@@ -237,24 +238,16 @@ public class ConfiguredReferenceSource {
                                              List<ReferenceObservation> observations,
                                              Confidence confidence) {
         for (ReferenceObservation observation : observations) {
-            Long headDelay = confidence == Confidence.NEW ? observation.delayMs() : null;
-            Long safeDelay = confidence == Confidence.SAFE ? observation.delayMs() : null;
-            Long finalizedDelay = confidence == Confidence.FINALIZED ? observation.delayMs() : null;
-            target.add(new MetricSample(
-                    observation.observedAt(),
-                    MetricSource.HTTP,
-                    true,
-                    -1,
-                    observation.blockNumber(),
-                    observation.blockTimestamp(),
-                    observation.blockHash(),
-                    null,
-                    null,
-                    null,
-                    null,
-                    headDelay,
-                    safeDelay,
-                    finalizedDelay));
+            target.add(MetricSample.builder(observation.observedAt(), MetricSource.HTTP)
+                    .success(true)
+                    .latencyMs(-1)
+                    .blockNumber(observation.blockNumber())
+                    .blockTimestamp(observation.blockTimestamp())
+                    .blockHash(observation.blockHash())
+                    .headDelayMs(confidence == Confidence.NEW ? observation.delayMs() : null)
+                    .safeDelayMs(confidence == Confidence.SAFE ? observation.delayMs() : null)
+                    .finalizedDelayMs(confidence == Confidence.FINALIZED ? observation.delayMs() : null)
+                    .build());
         }
     }
 

@@ -26,6 +26,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import de.makibytes.chaincheck.model.AttestationConfidence;
+import de.makibytes.chaincheck.monitor.EthHex;
 
 /**
  * Tracks attestation confidence for blocks based on committee data.
@@ -105,7 +106,7 @@ public class AttestationTracker {
      * which marks the length boundary. This bit is not counted as an attesting validator.
      */
     static int countSetBits(String aggregationBitsHex) {
-        byte[] bytes = decodeHex(aggregationBitsHex);
+        byte[] bytes = EthHex.decodeHex(aggregationBitsHex);
         if (bytes.length == 0) {
             return 0;
         }
@@ -131,7 +132,7 @@ public class AttestationTracker {
      * The sentinel bit position determines the length.
      */
     static int bitlistLength(String aggregationBitsHex) {
-        byte[] bytes = decodeHex(aggregationBitsHex);
+        byte[] bytes = EthHex.decodeHex(aggregationBitsHex);
         if (bytes.length == 0) {
             return 0;
         }
@@ -145,29 +146,6 @@ public class AttestationTracker {
         int sentinelPos = 31 - Integer.numberOfLeadingZeros(lastByte);
         // Total bits = full bytes before last byte * 8 + bits before sentinel in last byte
         return (bytes.length - 1) * 8 + sentinelPos;
-    }
-
-    private static byte[] decodeHex(String hex) {
-        if (hex == null || hex.isBlank()) {
-            return new byte[0];
-        }
-        String normalized = hex.trim();
-        if (normalized.startsWith("0x") || normalized.startsWith("0X")) {
-            normalized = normalized.substring(2);
-        }
-        if (normalized.isEmpty() || normalized.length() % 2 != 0) {
-            return new byte[0];
-        }
-        byte[] bytes = new byte[normalized.length() / 2];
-        for (int i = 0; i < bytes.length; i++) {
-            int high = Character.digit(normalized.charAt(i * 2), 16);
-            int low = Character.digit(normalized.charAt(i * 2 + 1), 16);
-            if (high < 0 || low < 0) {
-                return new byte[0];
-            }
-            bytes[i] = (byte) ((high << 4) | low);
-        }
-        return bytes;
     }
 
 }

@@ -21,6 +21,8 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
+import de.makibytes.chaincheck.chain.shared.Confidence;
+
 import org.springframework.stereotype.Service;
 
 import de.makibytes.chaincheck.chain.shared.BlockAgreementTracker;
@@ -61,7 +63,11 @@ public class ReferenceNodeSelector {
 
         if (bestNode != null) {
             switchPolicy.registerSelection(bestNode);
-            // For now, always switch if better score, but could use policy for threshold
+            if (currentReferenceNodeKey != null && !bestNode.equals(currentReferenceNodeKey)) {
+                if (!switchPolicy.shouldSwitchTo(bestNode)) {
+                    return currentReferenceNodeKey;
+                }
+            }
             return bestNode;
         }
         return null;
@@ -77,37 +83,42 @@ public class ReferenceNodeSelector {
         // Get recent samples (last 5 minutes)
         List<MetricSample> samples = store.getRawSamplesSince(nodeKey, now.minusSeconds(300));
 
-        // Latency score: inverse of average latency (much less important)
-        double avgLatency = samples.stream()
-                .filter(MetricSample::isSuccess)
-                .mapToLong(MetricSample::getLatencyMs)
-                .filter(l -> l >= 0)
-                .average()
-                .orElse(10000); // default high latency if no data
-        double latencyScore = 50 / (1 + avgLatency / 1000.0); // 0-50, much lower weight
+        // Single-pass accumulation of latency and delay metrics
+        long latencySum = 0, latencyCount = 0;
+        long headDelaySum = 0, headDelayCount = 0;
+        long safeDelaySum = 0, safeDelayCount = 0;
+        long finalizedDelaySum = 0, finalizedDelayCount = 0;
+        for (MetricSample sample : samples) {
+            if (sample.isSuccess() && sample.getLatencyMs() >= 0) {
+                latencySum += sample.getLatencyMs();
+                latencyCount++;
+            }
+            if (sample.getHeadDelayMs() != null) {
+                headDelaySum += sample.getHeadDelayMs();
+                headDelayCount++;
+            }
+            if (sample.getSafeDelayMs() != null) {
+                safeDelaySum += sample.getSafeDelayMs();
+                safeDelayCount++;
+            }
+            if (sample.getFinalizedDelayMs() != null) {
+                finalizedDelaySum += sample.getFinalizedDelayMs();
+                finalizedDelayCount++;
+            }
+        }
 
-        // Block delay scores: much more important than latency
-        double avgHeadDelay = samples.stream()
-                .filter(s -> s.getHeadDelayMs() != null)
-                .mapToLong(MetricSample::getHeadDelayMs)
-                .average()
-                .orElse(10000);
-        double headDelayScore = 1000 / (1 + avgHeadDelay / 1000.0); // 0-1000
+        double avgLatency = latencyCount > 0 ? (double) latencySum / latencyCount : 10000;
+        double latencyScore = 50 / (1 + avgLatency / 1000.0);
 
-        double avgSafeDelay = samples.stream()
-                .filter(s -> s.getSafeDelayMs() != null)
-                .mapToLong(MetricSample::getSafeDelayMs)
-                .average()
-                .orElse(10000);
-        double safeDelayScore = blockConfidenceTracker.getBlocks().values().stream().anyMatch(m -> m.containsKey(de.makibytes.chaincheck.chain.shared.Confidence.SAFE))
-                ? 1000 / (1 + avgSafeDelay / 1000.0) : 500; // half if not available
+        double avgHeadDelay = headDelayCount > 0 ? (double) headDelaySum / headDelayCount : 10000;
+        double headDelayScore = 1000 / (1 + avgHeadDelay / 1000.0);
 
-        double avgFinalizedDelay = samples.stream()
-                .filter(s -> s.getFinalizedDelayMs() != null)
-                .mapToLong(MetricSample::getFinalizedDelayMs)
-                .average()
-                .orElse(10000);
-        double finalizedDelayScore = 1000 / (1 + avgFinalizedDelay / 1000.0); // 0-1000
+        double avgSafeDelay = safeDelayCount > 0 ? (double) safeDelaySum / safeDelayCount : 10000;
+        double safeDelayScore = blockConfidenceTracker.getBlocks().values().stream().anyMatch(m -> m.containsKey(Confidence.SAFE))
+                ? 1000 / (1 + avgSafeDelay / 1000.0) : 500;
+
+        double avgFinalizedDelay = finalizedDelayCount > 0 ? (double) finalizedDelaySum / finalizedDelayCount : 10000;
+        double finalizedDelayScore = 1000 / (1 + avgFinalizedDelay / 1000.0);
 
         // Matching score: points from agreement with reference
         double matchingScore = tracker.getPoints(nodeKey);

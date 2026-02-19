@@ -20,7 +20,6 @@ package de.makibytes.chaincheck.chain.ethereum;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.math.BigInteger;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
@@ -51,6 +50,7 @@ import de.makibytes.chaincheck.chain.shared.Confidence;
 import de.makibytes.chaincheck.chain.shared.ReferenceObservation;
 import de.makibytes.chaincheck.config.ChainCheckProperties;
 import de.makibytes.chaincheck.model.AttestationConfidence;
+import de.makibytes.chaincheck.monitor.EthHex;
 
 /**
  * Client for communicating with a beacon/consensus node via REST API and SSE events.
@@ -436,7 +436,7 @@ public class ConsensusNodeClient {
                 long headSlot = payload.path("slot").asLong(-1);
                 if (headSlot >= 0) {
                     executionBlockBySlot.put(headSlot, executionBlock);
-                        registerAttestationTracking(headSlot, executionBlock);
+                    registerAttestationTracking(headSlot, executionBlock);
                     pruneSlotCache();
                 }
                 Instant knowledgeAt = executionBlock.blockTimestamp() != null ? executionBlock.blockTimestamp() : observedAt;
@@ -531,8 +531,8 @@ public class ConsensusNodeClient {
                 return null;
             }
             String blockHash = executionPayload.path("block_hash").asText(null);
-            Long blockNumber = parseDecimalOrHexLong(executionPayload.path("block_number").asText(null));
-            Instant blockTimestamp = parseExecutionPayloadTimestamp(executionPayload.path("timestamp").asText(null));
+            Long blockNumber = EthHex.parseDecimalOrHexLong(executionPayload.path("block_number").asText(null));
+            Instant blockTimestamp = EthHex.parseDecimalOrHexTimestamp(executionPayload.path("timestamp").asText(null));
             if (blockHash == null || blockHash.isBlank() || blockNumber == null) {
                 logger.error("Failed to resolve execution block from consensus root {}: invalid block data (hash={}, number={}) from {}{}",
                         blockRoot, blockHash, blockNumber, baseUrl, path);
@@ -604,22 +604,6 @@ public class ConsensusNodeClient {
         }
         String normalized = root.trim().toLowerCase();
         return normalized.matches("0x0+");
-    }
-
-    private Long parseDecimalOrHexLong(String value) {
-        if (value == null || value.isBlank()) {
-            return null;
-        }
-        String normalized = value.trim();
-        if (normalized.startsWith("0x") || normalized.startsWith("0X")) {
-            return new BigInteger(normalized.substring(2), 16).longValue();
-        }
-        return new BigInteger(normalized, 10).longValue();
-    }
-
-    private Instant parseExecutionPayloadTimestamp(String timestamp) {
-        Long seconds = parseDecimalOrHexLong(timestamp);
-        return seconds == null ? null : Instant.ofEpochSecond(seconds);
     }
 
     private Instant resolveKnowledgeTimestamp(Instant fallback) {

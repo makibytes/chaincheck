@@ -17,6 +17,7 @@
  */
 package de.makibytes.chaincheck.monitor;
 
+import java.net.ConnectException;
 import java.net.http.HttpTimeoutException;
 import java.net.http.WebSocket;
 import java.time.Duration;
@@ -25,6 +26,7 @@ import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
@@ -323,25 +325,14 @@ public class RpcMonitorService {
             scheduleWsBackoff(state, now);
         }
 
-        MetricSample sample = new MetricSample(
-                Instant.now(),
-                source,
-                false,
-                -1,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                errorMessage,
-                null,
-                null,
-                null);
-            if (!warmupComplete) {
-                return;
-            }
-            store.addSample(node.key(), sample);
+        MetricSample sample = MetricSample.builder(Instant.now(), source)
+                .success(false)
+                .error(errorMessage)
+                .build();
+        if (!warmupComplete) {
+            return;
+        }
+        store.addSample(node.key(), sample);
         state = nodeStates.get(node.key());
         Long lastBlock = getLastBlock(state, source);
         String lastHash = getLastHash(state, source);
@@ -361,7 +352,7 @@ public class RpcMonitorService {
     boolean areErrorsSame(String error1, String error2) {
         String norm1 = normalizeError(error1);
         String norm2 = normalizeError(error2);
-        return java.util.Objects.equals(norm1, norm2);
+        return Objects.equals(norm1, norm2);
     }
 
     String normalizeError(String error) {
@@ -384,7 +375,7 @@ public class RpcMonitorService {
         if (error instanceof HttpTimeoutException) {
             return "HTTP timeout: " + error.getMessage();
         }
-        if (error instanceof java.net.ConnectException) {
+        if (error instanceof ConnectException) {
             return "Connect error: " + error.getMessage();
         }
         if (error instanceof HttpMonitorService.HttpStatusException statusEx) {
@@ -567,9 +558,9 @@ public class RpcMonitorService {
         return configuredSource.getAttestationConfidence(blockNumber);
     }
 
-    public java.util.Map<String, AttestationConfidence> getRecentAttestationConfidences() {
+    public Map<String, AttestationConfidence> getRecentAttestationConfidences() {
         if (!isConfiguredReferenceMode()) {
-            return java.util.Map.of();
+            return Map.of();
         }
         return configuredSource.getRecentAttestationConfidences();
     }
@@ -746,27 +737,6 @@ public class RpcMonitorService {
         blockVotingService.recordBlock(nodeKey, blockNumber, blockHash, confidence);
     }
 
-    public static class ReferenceState {
-        private final Long headNumber;
-        private final String headHash;
-        private final Instant fetchedAt;
-
-        public ReferenceState(Long headNumber, String headHash, Instant fetchedAt) {
-            this.headNumber = headNumber;
-            this.headHash = headHash;
-            this.fetchedAt = fetchedAt;
-        }
-
-        public Long headNumber() {
-            return headNumber;
-        }
-
-        public String headHash() {
-            return headHash;
-        }
-
-        public Instant fetchedAt() {
-            return fetchedAt;
-        }
+    public record ReferenceState(Long headNumber, String headHash, Instant fetchedAt) {
     }
 }
