@@ -41,6 +41,7 @@ public class ChainCheckProperties {
     private int wsGapRecoveryMaxBlocks = 5;
     private int scaleChangeMs = 500;
     private int scaleMaxMs = 30000;
+    private long blockVerificationDelayMs = 5000;
     private Consensus consensus = new Consensus();
     private Defaults defaults = new Defaults();
     private Persistence persistence = new Persistence();
@@ -117,6 +118,14 @@ public class ChainCheckProperties {
 
     public void setScaleMaxMs(int scaleMaxMs) {
         this.scaleMaxMs = scaleMaxMs;
+    }
+
+    public long getBlockVerificationDelayMs() {
+        return blockVerificationDelayMs;
+    }
+
+    public void setBlockVerificationDelayMs(long blockVerificationDelayMs) {
+        this.blockVerificationDelayMs = blockVerificationDelayMs;
     }
 
     public Consensus getConsensus() {

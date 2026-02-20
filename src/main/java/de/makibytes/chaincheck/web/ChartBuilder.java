@@ -28,6 +28,7 @@ import java.util.List;
 import de.makibytes.chaincheck.model.MetricSample;
 import de.makibytes.chaincheck.model.MetricSource;
 import de.makibytes.chaincheck.model.TimeRange;
+import de.makibytes.chaincheck.store.HistogramAccumulator;
 import de.makibytes.chaincheck.store.SampleAggregate;
 
 class ChartBuilder {
@@ -42,11 +43,12 @@ class ChartBuilder {
                      List<Double> errorRates,
                      List<Double> wsErrorRates,
                      List<Boolean> httpErrorBuckets,
-                     List<Boolean> wsErrorBuckets) {
+                     List<Boolean> wsErrorBuckets,
+                     boolean hasBounds) {
 
         static ChartData empty() {
             return new ChartData(List.of(), List.of(), List.of(), List.of(),
-                    List.of(), List.of(), List.of(), List.of(), List.of());
+                    List.of(), List.of(), List.of(), List.of(), List.of(), false);
         }
     }
 
@@ -59,11 +61,12 @@ class ChartBuilder {
                           List<Long> safeDelayMaxs,
                           List<Long> finalizedDelays,
                           List<Long> finalizedDelayMins,
-                          List<Long> finalizedDelayMaxs) {
+                          List<Long> finalizedDelayMaxs,
+                          boolean hasBounds) {
 
         static DelayChartData empty() {
             return new DelayChartData(List.of(), List.of(), List.of(), List.of(),
-                    List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+                    List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), false);
         }
     }
 
@@ -124,6 +127,7 @@ class ChartBuilder {
         List<Double> wsErrorRates = new ArrayList<>(grid.bucketCount());
         List<Boolean> httpErrorBuckets = new ArrayList<>(grid.bucketCount());
         List<Boolean> wsErrorBuckets = new ArrayList<>(grid.bucketCount());
+        boolean hasBounds = false;
 
         int sampleIndex = 0;
         int aggregateIndex = 0;
@@ -135,10 +139,9 @@ class ChartBuilder {
                 bucketEnd = grid.chartEnd();
             }
 
-            long latencySum = 0;
-            long latencyCount = 0;
-            long latencyMin = Long.MAX_VALUE;
-            long latencyMax = 0;
+            List<Long> rawLatencies = new ArrayList<>();
+            HistogramAccumulator histAcc = new HistogramAccumulator();
+            boolean hasHistogram = false;
             int totalBucket = 0;
             int errorBucket = 0;
             int wsBucket = 0;
@@ -161,10 +164,7 @@ class ChartBuilder {
                         errorBucket++;
                     }
                     if (sample.getLatencyMs() >= 0) {
-                        latencySum += sample.getLatencyMs();
-                        latencyCount++;
-                        latencyMin = Math.min(latencyMin, sample.getLatencyMs());
-                        latencyMax = Math.max(latencyMax, sample.getLatencyMs());
+                        rawLatencies.add(sample.getLatencyMs());
                     }
                 } else if (sample.getSource() == MetricSource.WS) {
                     wsBucket++;
@@ -185,13 +185,10 @@ class ChartBuilder {
                 if (!ts.isBefore(bucketEnd)) {
                     break;
                 }
-                latencySum += aggregate.getLatencySumMs();
-                latencyCount += aggregate.getLatencyCount();
-                if (aggregate.getLatencyCount() > 0) {
-                    latencyMin = Math.min(latencyMin, aggregate.getMinLatencyMs());
-                    latencyMax = Math.max(latencyMax, aggregate.getMaxLatencyMs());
+                if (aggregate.getLatencyHistogram() != null) {
+                    histAcc.merge(aggregate.getLatencyHistogram());
+                    hasHistogram = true;
                 }
-
                 totalBucket += aggregate.getHttpCount();
                 long httpErrors = aggregate.getErrorCount() - aggregate.getWsErrorCount();
                 errorBucket += Math.max(0, httpErrors);
@@ -201,11 +198,39 @@ class ChartBuilder {
                 aggregateIndex++;
             }
 
+            // Feed raw values into histogram too
+            for (Long val : rawLatencies) {
+                histAcc.record(val);
+            }
+            boolean hasRaw = !rawLatencies.isEmpty();
+            long totalPoints = histAcc.totalCount();
+
+            Long p95Val = null;
+            Long p5Val = null;
+            Long p99Val = null;
+            if (totalPoints > 0) {
+                if (hasRaw && !hasHistogram) {
+                    // Pure raw data: use exact percentile calculation
+                    rawLatencies.sort(Long::compareTo);
+                    p95Val = Math.round(percentile(rawLatencies, 0.95));
+                    p5Val = Math.round(percentile(rawLatencies, 0.05));
+                    p99Val = Math.round(percentile(rawLatencies, 0.99));
+                } else {
+                    // Has histogram data (possibly mixed with raw): use histogram
+                    p95Val = Math.round(histAcc.percentile(0.95));
+                    p5Val = Math.round(histAcc.percentile(0.05));
+                    p99Val = Math.round(histAcc.percentile(0.99));
+                }
+                if (totalPoints >= 2) {
+                    hasBounds = true;
+                }
+            }
+
             labels.add(grid.formatter().format(bucketStart));
             timestamps.add(bucketStart.toEpochMilli());
-            latencies.add(latencyCount == 0 ? null : Math.round((double) latencySum / latencyCount));
-            latencyMins.add(latencyCount == 0 ? null : latencyMin);
-            latencyMaxs.add(latencyCount == 0 ? null : latencyMax);
+            latencies.add(p95Val);
+            latencyMins.add(p5Val);
+            latencyMaxs.add(p99Val);
             errorRates.add(totalBucket == 0 ? null : (double) errorBucket / totalBucket);
             wsErrorRates.add(wsBucket == 0 ? null : (double) wsErrorBucket / wsBucket);
             httpErrorBuckets.add(errorBucket > 0);
@@ -217,7 +242,7 @@ class ChartBuilder {
         }
 
         return new ChartData(timestamps, labels, latencies, latencyMins, latencyMaxs,
-                errorRates, wsErrorRates, httpErrorBuckets, wsErrorBuckets);
+                errorRates, wsErrorRates, httpErrorBuckets, wsErrorBuckets, hasBounds);
     }
 
     static DelayChartData buildDelayChart(List<MetricSample> rawSamples,
@@ -250,6 +275,7 @@ class ChartBuilder {
         List<Long> finalizedDelays = new ArrayList<>(grid.bucketCount());
         List<Long> finalizedDelayMins = new ArrayList<>(grid.bucketCount());
         List<Long> finalizedDelayMaxs = new ArrayList<>(grid.bucketCount());
+        boolean hasBounds = false;
 
         int sampleIndex = 0;
         int aggregateIndex = 0;
@@ -261,18 +287,15 @@ class ChartBuilder {
                 bucketEnd = grid.chartEnd();
             }
 
-            long headDelaySum = 0;
-            long headDelayCount = 0;
-            long headDelayMin = Long.MAX_VALUE;
-            long headDelayMax = 0;
-            long safeDelaySum = 0;
-            long safeDelayCount = 0;
-            long safeDelayMin = Long.MAX_VALUE;
-            long safeDelayMax = 0;
-            long finalizedDelaySum = 0;
-            long finalizedDelayCount = 0;
-            long finalizedDelayMin = Long.MAX_VALUE;
-            long finalizedDelayMax = 0;
+            List<Long> rawHead = new ArrayList<>();
+            List<Long> rawSafe = new ArrayList<>();
+            List<Long> rawFinalized = new ArrayList<>();
+            HistogramAccumulator headHist = new HistogramAccumulator();
+            HistogramAccumulator safeHist = new HistogramAccumulator();
+            HistogramAccumulator finalizedHist = new HistogramAccumulator();
+            boolean hasHeadHist = false;
+            boolean hasSafeHist = false;
+            boolean hasFinalizedHist = false;
 
             while (sampleIndex < sortedSamples.size()) {
                 MetricSample sample = sortedSamples.get(sampleIndex);
@@ -286,22 +309,13 @@ class ChartBuilder {
                 }
 
                 if (sample.getSource() == MetricSource.WS && sample.getHeadDelayMs() != null) {
-                    headDelaySum += sample.getHeadDelayMs();
-                    headDelayCount++;
-                    headDelayMin = Math.min(headDelayMin, sample.getHeadDelayMs());
-                    headDelayMax = Math.max(headDelayMax, sample.getHeadDelayMs());
+                    rawHead.add(sample.getHeadDelayMs());
                 }
                 if (sample.getSafeDelayMs() != null) {
-                    safeDelaySum += sample.getSafeDelayMs();
-                    safeDelayCount++;
-                    safeDelayMin = Math.min(safeDelayMin, sample.getSafeDelayMs());
-                    safeDelayMax = Math.max(safeDelayMax, sample.getSafeDelayMs());
+                    rawSafe.add(sample.getSafeDelayMs());
                 }
                 if (sample.getFinalizedDelayMs() != null) {
-                    finalizedDelaySum += sample.getFinalizedDelayMs();
-                    finalizedDelayCount++;
-                    finalizedDelayMin = Math.min(finalizedDelayMin, sample.getFinalizedDelayMs());
-                    finalizedDelayMax = Math.max(finalizedDelayMax, sample.getFinalizedDelayMs());
+                    rawFinalized.add(sample.getFinalizedDelayMs());
                 }
                 sampleIndex++;
             }
@@ -316,37 +330,39 @@ class ChartBuilder {
                 if (!ts.isBefore(bucketEnd)) {
                     break;
                 }
-                headDelaySum += aggregate.getHeadDelaySumMs();
-                headDelayCount += aggregate.getHeadDelayCount();
-                if (aggregate.getHeadDelayCount() > 0) {
-                    headDelayMin = Math.min(headDelayMin, aggregate.getMinHeadDelayMs());
-                    headDelayMax = Math.max(headDelayMax, aggregate.getMaxHeadDelayMs());
+                if (aggregate.getHeadDelayHistogram() != null) {
+                    headHist.merge(aggregate.getHeadDelayHistogram());
+                    hasHeadHist = true;
                 }
-                safeDelaySum += aggregate.getSafeDelaySumMs();
-                safeDelayCount += aggregate.getSafeDelayCount();
-                if (aggregate.getSafeDelayCount() > 0) {
-                    safeDelayMin = Math.min(safeDelayMin, aggregate.getMinSafeDelayMs());
-                    safeDelayMax = Math.max(safeDelayMax, aggregate.getMaxSafeDelayMs());
+                if (aggregate.getSafeDelayHistogram() != null) {
+                    safeHist.merge(aggregate.getSafeDelayHistogram());
+                    hasSafeHist = true;
                 }
-                finalizedDelaySum += aggregate.getFinalizedDelaySumMs();
-                finalizedDelayCount += aggregate.getFinalizedDelayCount();
-                if (aggregate.getFinalizedDelayCount() > 0) {
-                    finalizedDelayMin = Math.min(finalizedDelayMin, aggregate.getMinFinalizedDelayMs());
-                    finalizedDelayMax = Math.max(finalizedDelayMax, aggregate.getMaxFinalizedDelayMs());
+                if (aggregate.getFinalizedDelayHistogram() != null) {
+                    finalizedHist.merge(aggregate.getFinalizedDelayHistogram());
+                    hasFinalizedHist = true;
                 }
                 aggregateIndex++;
             }
 
-            headDelays.add(headDelayCount == 0 ? null : Math.round((double) headDelaySum / headDelayCount));
-            headDelayMins.add(headDelayCount == 0 ? null : headDelayMin);
-            headDelayMaxs.add(headDelayCount == 0 ? null : headDelayMax);
+            PercentileResult headResult = computePercentiles(rawHead, headHist, hasHeadHist);
+            PercentileResult safeResult = computePercentiles(rawSafe, safeHist, hasSafeHist);
+            PercentileResult finalizedResult = computePercentiles(rawFinalized, finalizedHist, hasFinalizedHist);
+
+            if (headResult.hasBounds || safeResult.hasBounds || finalizedResult.hasBounds) {
+                hasBounds = true;
+            }
+
+            headDelays.add(headResult.p95);
+            headDelayMins.add(headResult.p5);
+            headDelayMaxs.add(headResult.p99);
             timestamps.add(bucketStart.toEpochMilli());
-            safeDelays.add(safeDelayCount == 0 ? null : Math.round((double) safeDelaySum / safeDelayCount));
-            safeDelayMins.add(safeDelayCount == 0 ? null : safeDelayMin);
-            safeDelayMaxs.add(safeDelayCount == 0 ? null : safeDelayMax);
-            finalizedDelays.add(finalizedDelayCount == 0 ? null : Math.round((double) finalizedDelaySum / finalizedDelayCount));
-            finalizedDelayMins.add(finalizedDelayCount == 0 ? null : finalizedDelayMin);
-            finalizedDelayMaxs.add(finalizedDelayCount == 0 ? null : finalizedDelayMax);
+            safeDelays.add(safeResult.p95);
+            safeDelayMins.add(safeResult.p5);
+            safeDelayMaxs.add(safeResult.p99);
+            finalizedDelays.add(finalizedResult.p95);
+            finalizedDelayMins.add(finalizedResult.p5);
+            finalizedDelayMaxs.add(finalizedResult.p99);
 
             if (bucketEnd.equals(grid.chartEnd())) {
                 break;
@@ -355,7 +371,7 @@ class ChartBuilder {
 
         return new DelayChartData(timestamps, headDelays, headDelayMins, headDelayMaxs,
                 safeDelays, safeDelayMins, safeDelayMaxs,
-                finalizedDelays, finalizedDelayMins, finalizedDelayMaxs);
+                finalizedDelays, finalizedDelayMins, finalizedDelayMaxs, hasBounds);
     }
 
     static DelayChartData buildDelayChartAligned(List<MetricSample> rawSamples,
@@ -382,6 +398,7 @@ class ChartBuilder {
         List<Long> finalizedDelays = new ArrayList<>(baseTimestamps.size());
         List<Long> finalizedDelayMins = new ArrayList<>(baseTimestamps.size());
         List<Long> finalizedDelayMaxs = new ArrayList<>(baseTimestamps.size());
+        boolean hasBounds = false;
 
         int sampleIndex = 0;
         int aggregateIndex = 0;
@@ -390,18 +407,15 @@ class ChartBuilder {
             Instant bucketStart = Instant.ofEpochMilli(tsMillis);
             Instant bucketEnd = bucketStart.plusMillis(bucketMs);
 
-            long headDelaySum = 0;
-            long headDelayCount = 0;
-            long headDelayMin = Long.MAX_VALUE;
-            long headDelayMax = 0;
-            long safeDelaySum = 0;
-            long safeDelayCount = 0;
-            long safeDelayMin = Long.MAX_VALUE;
-            long safeDelayMax = 0;
-            long finalizedDelaySum = 0;
-            long finalizedDelayCount = 0;
-            long finalizedDelayMin = Long.MAX_VALUE;
-            long finalizedDelayMax = 0;
+            List<Long> rawHead = new ArrayList<>();
+            List<Long> rawSafe = new ArrayList<>();
+            List<Long> rawFinalized = new ArrayList<>();
+            HistogramAccumulator headHist = new HistogramAccumulator();
+            HistogramAccumulator safeHist = new HistogramAccumulator();
+            HistogramAccumulator finalizedHist = new HistogramAccumulator();
+            boolean hasHeadHist = false;
+            boolean hasSafeHist = false;
+            boolean hasFinalizedHist = false;
 
             while (sampleIndex < sortedSamples.size()) {
                 MetricSample sample = sortedSamples.get(sampleIndex);
@@ -414,22 +428,13 @@ class ChartBuilder {
                     break;
                 }
                 if (sample.getSource() == MetricSource.WS && sample.getHeadDelayMs() != null) {
-                    headDelaySum += sample.getHeadDelayMs();
-                    headDelayCount++;
-                    headDelayMin = Math.min(headDelayMin, sample.getHeadDelayMs());
-                    headDelayMax = Math.max(headDelayMax, sample.getHeadDelayMs());
+                    rawHead.add(sample.getHeadDelayMs());
                 }
                 if (sample.getSafeDelayMs() != null) {
-                    safeDelaySum += sample.getSafeDelayMs();
-                    safeDelayCount++;
-                    safeDelayMin = Math.min(safeDelayMin, sample.getSafeDelayMs());
-                    safeDelayMax = Math.max(safeDelayMax, sample.getSafeDelayMs());
+                    rawSafe.add(sample.getSafeDelayMs());
                 }
                 if (sample.getFinalizedDelayMs() != null) {
-                    finalizedDelaySum += sample.getFinalizedDelayMs();
-                    finalizedDelayCount++;
-                    finalizedDelayMin = Math.min(finalizedDelayMin, sample.getFinalizedDelayMs());
-                    finalizedDelayMax = Math.max(finalizedDelayMax, sample.getFinalizedDelayMs());
+                    rawFinalized.add(sample.getFinalizedDelayMs());
                 }
                 sampleIndex++;
             }
@@ -444,41 +449,74 @@ class ChartBuilder {
                 if (!ts.isBefore(bucketEnd)) {
                     break;
                 }
-                headDelaySum += aggregate.getHeadDelaySumMs();
-                headDelayCount += aggregate.getHeadDelayCount();
-                if (aggregate.getHeadDelayCount() > 0) {
-                    headDelayMin = Math.min(headDelayMin, aggregate.getMinHeadDelayMs());
-                    headDelayMax = Math.max(headDelayMax, aggregate.getMaxHeadDelayMs());
+                if (aggregate.getHeadDelayHistogram() != null) {
+                    headHist.merge(aggregate.getHeadDelayHistogram());
+                    hasHeadHist = true;
                 }
-                safeDelaySum += aggregate.getSafeDelaySumMs();
-                safeDelayCount += aggregate.getSafeDelayCount();
-                if (aggregate.getSafeDelayCount() > 0) {
-                    safeDelayMin = Math.min(safeDelayMin, aggregate.getMinSafeDelayMs());
-                    safeDelayMax = Math.max(safeDelayMax, aggregate.getMaxSafeDelayMs());
+                if (aggregate.getSafeDelayHistogram() != null) {
+                    safeHist.merge(aggregate.getSafeDelayHistogram());
+                    hasSafeHist = true;
                 }
-                finalizedDelaySum += aggregate.getFinalizedDelaySumMs();
-                finalizedDelayCount += aggregate.getFinalizedDelayCount();
-                if (aggregate.getFinalizedDelayCount() > 0) {
-                    finalizedDelayMin = Math.min(finalizedDelayMin, aggregate.getMinFinalizedDelayMs());
-                    finalizedDelayMax = Math.max(finalizedDelayMax, aggregate.getMaxFinalizedDelayMs());
+                if (aggregate.getFinalizedDelayHistogram() != null) {
+                    finalizedHist.merge(aggregate.getFinalizedDelayHistogram());
+                    hasFinalizedHist = true;
                 }
                 aggregateIndex++;
             }
 
-            headDelays.add(headDelayCount == 0 ? null : Math.round((double) headDelaySum / headDelayCount));
-            headDelayMins.add(headDelayCount == 0 ? null : headDelayMin);
-            headDelayMaxs.add(headDelayCount == 0 ? null : headDelayMax);
-            safeDelays.add(safeDelayCount == 0 ? null : Math.round((double) safeDelaySum / safeDelayCount));
-            safeDelayMins.add(safeDelayCount == 0 ? null : safeDelayMin);
-            safeDelayMaxs.add(safeDelayCount == 0 ? null : safeDelayMax);
-            finalizedDelays.add(finalizedDelayCount == 0 ? null : Math.round((double) finalizedDelaySum / finalizedDelayCount));
-            finalizedDelayMins.add(finalizedDelayCount == 0 ? null : finalizedDelayMin);
-            finalizedDelayMaxs.add(finalizedDelayCount == 0 ? null : finalizedDelayMax);
+            PercentileResult headResult = computePercentiles(rawHead, headHist, hasHeadHist);
+            PercentileResult safeResult = computePercentiles(rawSafe, safeHist, hasSafeHist);
+            PercentileResult finalizedResult = computePercentiles(rawFinalized, finalizedHist, hasFinalizedHist);
+
+            if (headResult.hasBounds || safeResult.hasBounds || finalizedResult.hasBounds) {
+                hasBounds = true;
+            }
+
+            headDelays.add(headResult.p95);
+            headDelayMins.add(headResult.p5);
+            headDelayMaxs.add(headResult.p99);
+            safeDelays.add(safeResult.p95);
+            safeDelayMins.add(safeResult.p5);
+            safeDelayMaxs.add(safeResult.p99);
+            finalizedDelays.add(finalizedResult.p95);
+            finalizedDelayMins.add(finalizedResult.p5);
+            finalizedDelayMaxs.add(finalizedResult.p99);
         }
 
         return new DelayChartData(baseTimestamps, headDelays, headDelayMins, headDelayMaxs,
                 safeDelays, safeDelayMins, safeDelayMaxs,
-                finalizedDelays, finalizedDelayMins, finalizedDelayMaxs);
+                finalizedDelays, finalizedDelayMins, finalizedDelayMaxs, hasBounds);
+    }
+
+    private record PercentileResult(Long p95, Long p5, Long p99, boolean hasBounds) {}
+
+    private static PercentileResult computePercentiles(List<Long> rawValues,
+                                                        HistogramAccumulator histAcc,
+                                                        boolean hasHistogram) {
+        for (Long val : rawValues) {
+            histAcc.record(val);
+        }
+        boolean hasRaw = !rawValues.isEmpty();
+        long totalPoints = histAcc.totalCount();
+
+        if (totalPoints == 0) {
+            return new PercentileResult(null, null, null, false);
+        }
+
+        Long p95;
+        Long p5;
+        Long p99;
+        if (hasRaw && !hasHistogram) {
+            rawValues.sort(Long::compareTo);
+            p95 = Math.round(percentile(rawValues, 0.95));
+            p5 = Math.round(percentile(rawValues, 0.05));
+            p99 = Math.round(percentile(rawValues, 0.99));
+        } else {
+            p95 = Math.round(histAcc.percentile(0.95));
+            p5 = Math.round(histAcc.percentile(0.05));
+            p99 = Math.round(histAcc.percentile(0.99));
+        }
+        return new PercentileResult(p95, p5, p99, totalPoints >= 2);
     }
 
     private static Instant findEarliest(List<MetricSample> sortedSamples,
@@ -499,11 +537,10 @@ class ChartBuilder {
     private static BucketGrid computeGrid(Instant rangeStart, Instant end,
                                            Instant earliestData) {
         Instant chartStart = earliestData.isAfter(rangeStart) ? earliestData : rangeStart;
-        Instant chartEnd = end;
-        if (chartStart.isAfter(chartEnd)) {
+        if (chartStart.isAfter(end)) {
             return null;
         }
-        long spanMs = Math.max(1, Duration.between(chartStart, chartEnd).toMillis());
+        long spanMs = Math.max(1, Duration.between(chartStart, end).toMillis());
         long bucketMs = Math.max(1000, spanMs / TARGET_POINTS);
         int bucketCount = (int) Math.min(TARGET_POINTS,
                 Math.max(1, Math.ceil((double) spanMs / bucketMs)));
@@ -518,6 +555,6 @@ class ChartBuilder {
         }
         formatter = formatter.withZone(ZoneId.systemDefault());
 
-        return new BucketGrid(chartStart, chartEnd, bucketMs, bucketCount, formatter);
+        return new BucketGrid(chartStart, end, bucketMs, bucketCount, formatter);
     }
 }

@@ -184,15 +184,6 @@
 
                     ctx.fillStyle = baseColor;
                     ctx.fillRect(xStart, top, width, height);
-
-                    if (httpErrorBuckets[i]) {
-                        ctx.fillStyle = httpPattern;
-                        ctx.fillRect(xStart, top, width, height);
-                    }
-                    if (wsErrorBuckets[i]) {
-                        ctx.fillStyle = wsPattern;
-                        ctx.fillRect(xStart, top, width, height);
-                    }
                 }
             };
 

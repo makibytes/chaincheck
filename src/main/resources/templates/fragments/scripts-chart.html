@@ -14,14 +14,14 @@
 
         if (hasAggregatedLatencies) {
             datasets.push(createBandDataset({
-                label: 'Network Latency (Low)',
+                label: 'Network Latency (P5)',
                 data: latencyMinScaled,
                 originalData: latencyMinData,
                 rgb: theme.primaryRgb
             }));
 
             datasets.push(createBandDataset({
-                label: 'Network Latency (High)',
+                label: 'Network Latency (P99)',
                 data: latencyMaxScaled,
                 originalData: latencyMaxData,
                 rgb: theme.primaryRgb
@@ -203,7 +203,7 @@
             } = config;
 
             datasets.push(createLineDataset({
-                label: `${type} Delay`,
+                label: `${type} Delay P95`,
                 data: data,
                 originalData: originalData,
                 color: color,
@@ -219,14 +219,14 @@
 
             if (hasAggregatedDelays) {
                 datasets.push(createBandDataset({
-                    label: `${type} Delay (Low)`,
+                    label: `${type} Delay (P5)`,
                     data: minData,
                     originalData: originalMinData,
                     rgb: rgb
                 }));
 
                 datasets.push(createBandDataset({
-                    label: `${type} Delay (High)`,
+                    label: `${type} Delay (P99)`,
                     data: maxData,
                     originalData: originalMaxData,
                     rgb: rgb
@@ -430,6 +430,7 @@
                 chartInstance.update();
             });
         }
+
     }
 </script>
 </th:block>

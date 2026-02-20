@@ -26,15 +26,15 @@ All source lives under `de.makibytes.chaincheck` with eight packages:
 - **config** — `ChainCheckProperties` binds the `rpc.*` YAML namespace. Per-node overrides (timeouts, retries, headers, anomaly thresholds) fall back to `rpc.defaults.*`.
 - **model** — Value types: `MetricSample` (raw metrics per poll/event), `AnomalyEvent` (with `AnomalyType` enum: ERROR, RATE_LIMIT, TIMEOUT, DELAY, BLOCK_GAP, CONFLICT, REORG, WRONG_HEAD), `MetricSource` (HTTP vs WS), `TimeRange`, `AttestationConfidence` (per-block attestation tracking data).
 - **monitor** — Core monitoring services:
-  - `RpcMonitorService` — orchestrator, wires up per-node HTTP/WS monitors
-  - `HttpMonitorService` — scheduled polling of `eth_blockNumber`/`eth_getBlockByNumber`
-  - `WsMonitorService` — WebSocket `eth_subscribe(newHeads)` for real-time head tracking
+  - `RpcMonitorService` — orchestrator, wires up per-node HTTP/WS monitors, selects reference strategy based on mode
+  - `HttpMonitorService` — scheduled polling of `eth_blockNumber`/`eth_getBlockByNumber`; also provides `fetchBlockByHash` used by WS verification
+  - `WsMonitorService` — WebSocket `eth_subscribe(newHeads)` for real-time head tracking; Ethereum and Cosmos paths differ significantly (see below)
   - `AnomalyDetector` — evaluates each sample against thresholds, emits `AnomalyEvent`s
   - `NodeRegistry` — maintains the set of monitored nodes (uses a `NodeDefinition` record)
   - `HttpConnectionTracker` / `WsConnectionTracker` — track connection health per node
 - **reference/node** — Reference node selection:
   - `ReferenceNodeSelector` — selects best reference node via scoring with `NodeSwitchPolicy` hysteresis
-  - `ReferenceStrategy` interface with `ConfiguredReferenceStrategy` (explicit consensus node) and `VotingReferenceStrategy` (majority voting)
+  - `ReferenceStrategy` interface with `ConfiguredReferenceStrategy` (explicit consensus node, Ethereum mode only) and `VotingReferenceStrategy` (majority voting, used in Cosmos mode and in Ethereum mode without a consensus node)
   - `ConfiguredReferenceSource` / `ConsensusNodeClient` — manage consensus node HTTP client, SSE event stream, and block updates. `ConsensusNodeClient` also drives attestation tracking when enabled: on each `head` SSE event it registers attestation tracking, then a background loop polls committee data and updates `AttestationTracker`.
   - `BlockAgreementTracker` — tracks which nodes agree on blocks
 - **reference/attestation** — Attestation-based block confidence scoring:
@@ -43,160 +43,205 @@ All source lives under `de.makibytes.chaincheck` with eight packages:
   - `BlockVotingService` — records block votes and performs majority voting
   - `BlockVotingCoordinator` — coordinates voting across all nodes
   - `ReferenceBlocks` — stores voted block hashes by confidence level (NEW, SAFE, FINALIZED)
-- **store** — `InMemoryMetricsStore` holds three retention tiers: raw samples (2h), minutely aggregates (3d), daily/monthly aggregates (30d). Uses `SampleAggregate` and `AnomalyAggregate` for rollups. Optional on-disk JSON snapshots via persistence config.
-- **web** — `DashboardController` + `DashboardService` serve the Thymeleaf dashboard. `MetricsCache` caches responses. `ChartBuilder` generates Chart.js-compatible data. Supporting classes: `DashboardView`, `ReferenceComparison`, `AnomalyRow`/`AnomalyDetails`, `SampleRow` (record), `HttpStatus`/`WsStatus`, `AppVersionProvider`.
+- **store** — `InMemoryMetricsStore` holds three retention tiers: raw samples (2h), minutely aggregates (3d), daily/monthly aggregates (30d). Uses `SampleAggregate` and `AnomalyAggregate` for rollups. `SampleAggregate` stores histogram data (`long[]`) for latency, head delay, safe delay, and finalized delay using `HistogramAccumulator`'s fixed bucket layout. `HistogramAccumulator` provides histogram-based percentile computation (P5/P95/P99) over 21 predefined buckets (0–60000 ms). Optional on-disk JSON snapshots via persistence config.
+- **web** — `DashboardController` + `DashboardService` serve the Thymeleaf dashboard. `MetricsCache` caches responses. `ChartBuilder` generates Chart.js-compatible data using `HistogramAccumulator` for per-bucket percentile computation; produces P5/P95/P99 bounds for latency, head delay, safe delay, and finalized delay. The main chart line is the P95 value; P5 and P99 are rendered as a toggleable band (off by default, labelled "P5–P99 band"). Supporting classes: `DashboardView`, `ReferenceComparison`, `AnomalyRow`/`AnomalyDetails`, `SampleRow` (record), `HttpStatus`/`WsStatus`, `AppVersionProvider`.
 
 ### Data Flow
 
 1. HTTP monitors poll RPC endpoints on configurable intervals; WS monitors receive `newHeads` events
 2. Samples are stored in `InMemoryMetricsStore` and merged by block hash for a unified block view
 3. `AnomalyDetector` evaluates each sample in real-time
-4. `ReferenceNodeSelector` establishes consensus head via configured consensus node or majority voting
-5. When attestation tracking is enabled, `ConsensusNodeClient` polls committee data on each new head and `AttestationTracker` computes per-block confidence
-6. Dashboard queries the store and renders via Thymeleaf + Chart.js; `DashboardService` enriches `SampleRow` records with attestation confidence data
+4. `ReferenceNodeSelector` establishes consensus head via configured consensus node (Ethereum) or majority voting (Cosmos)
+5. When attestation tracking is enabled (Ethereum only), `ConsensusNodeClient` polls committee data on each new head and `AttestationTracker` computes per-block confidence
+6. Dashboard queries the store and renders via Thymeleaf + Chart.js; `DashboardService` enriches `SampleRow` records with safe/finalized status from the consensus node (applying it globally by block hash across all nodes) and with attestation confidence data
 
-## Mode
+## Modes
 
-### Ethereum / Beacon Chain
+ChainCheck operates in one of two modes set by `rpc.mode`: `ETHEREUM` (default: `COSMOS`).
 
-You can configure a specific consensus node as the reference source for safe/finalized comparisons.
+---
 
-Ethereum newHeads Processing — Architecture Rules (MUST FOLLOW)
-1. Core Principles
-eth_subscribe("newHeads") is NOT a sequential block stream.
-WebSocket subscriptions are best-effort notifications, not a source of truth.
-Blocks are uniquely identified by block hash, NOT by block number.
-Multiple valid blocks with the same block number may exist (reorgs).
-Execution block numbers are part of the hashed header and never change.
-Block numbers are only meaningful within a single canonical branch.
-2. Assumptions that MUST NOT be made
-The implementation MUST NEVER assume:
-block numbers are strictly increasing
-each new head equals previous number + 1
-every intermediate head event is delivered
-websocket events arrive in order
-websocket events are unique
-websocket events are complete
-3. Source of Truth
-The canonical source of truth is:
-eth_getBlockByHash
-eth_getBlockByNumber
-WebSocket newHeads events MUST be treated only as:
-wake-up signals indicating that the chain head may have changed.
-4. Event Processing Model
-4.1 Serialization (MANDATORY)
-All newHeads processing MUST be single-threaded and strictly serialized.
-Required architecture:
-WebSocket callback
-    -> thread-safe queue
-    -> single chain-processing thread
-The system MUST NOT process newHeads in parallel.
-4.2 Hash-first identity
-Internal block identity MUST use:
-blockHash as primary key
-Block numbers MUST NOT be used as unique identifiers.
-5. Handling newHeads Events
-Upon receiving a newHeads event:
-Fetch full block via:
-eth_getBlockByHash(event.hash)
-Store block by hash.
-Verify parent linkage using parentHash.
-If parent is unknown:
-recursively fetch missing parents until a known block is reached.
-Detect reorgs by parentHash mismatch against current canonical head.
-6. Reorg Handling (REQUIRED)
-A reorg occurs when:
-newHead.parentHash != currentCanonicalHead.hash
-Required behavior:
-Walk backwards via parentHash.
-Find common ancestor with canonical chain.
-Roll back old branch.
-Apply new branch.
-Never rely on block number continuity to detect reorgs.
-7. Handling Missing Events (CRITICAL)
-Implementation MUST tolerate dropped websocket events.
-If a gap is detected:
-fetch missing blocks via parent traversal
-reconstruct chain from hashes
-No error should be raised solely because of block number gaps.
-8. Confirmation Model (RECOMMENDED)
-Blocks should be tracked with confirmation depth:
-head (0 confirmations)
-unsafe
-safe
-finalized
-Canonical persistence SHOULD only occur after configurable confirmations.
-9. Validation Rules
-The following MUST be validated:
-child.parentHash == parent.hash
-block hash integrity via RPC
-chain connectivity via hashes
-The following MUST NOT be used as correctness criteria:
-numeric adjacency alone
-duplicate block numbers
-10. WebSocket Reliability Rules
-Implementation MUST assume:
-events may be delayed
-events may be coalesced
-events may be dropped
-events may arrive after newer heads
-System MUST remain correct under all these conditions.
-11. Recommended Internal Data Model
-BlockNode {
-    hash
-    parentHash
-    number
-    timestamp
-}
-Storage:
-Map<Hash, BlockNode> knownBlocks
-CanonicalChain = linked via parentHash
-12. Golden Rule (IMPORTANT)
-Never derive chain state from websocket event order.
-Always derive chain state from block hashes and parent links.
-13. Common Anti-Patterns (FORBIDDEN)
-Treating newHeads as an append-only stream
-Assuming one event per block
-Using block number as unique key
-Parallel processing of WS events
-Raising errors on duplicate heights
-14. Intended Behavior
-System MUST remain correct under:
-short reorgs
-deep reorgs
-skipped websocket events
-duplicate heights
-reordered events
-temporary node lag
+### Ethereum Mode
 
-Mode `ethereum` has these settings:
+Intended for Ethereum mainnet/testnets with a beacon chain. A separate consensus node must be configured under `rpc.consensus`.
 
-- consensus node is configured and polled for
-  - attestations
-  - safe and finalized blocks
-- execution nodes are subscribed for newHeads
+#### Reference source
+The consensus node is the single authoritative source of truth for safe and finalized block hashes. Its observations are applied **globally to all execution nodes** by matching block hash in `DashboardService`. This is in contrast to Cosmos mode where each node tracks its own finality locally.
 
-### Cosmos (e.g. Polygon) / Majority Voting
+#### WS newHead path (execution nodes, `source=WS`)
 
-When mode `cosmos` is set, the reference node is selected via majority voting across all monitored nodes. Mode cosmos has these settings:
+On each `eth_subscribe("newHeads")` event, `WsMonitorService.handleEthereumNewHead` runs:
 
-- no attestations
-- no consensus node
-- no safe blocks
-- all execution nodes are...
- .- are subscribed for newHeads
-  - polled (http) for finalized blocks
+1. **Immediately** calls `eth_getBlockByHash(event.hash)` on the same execution node via HTTP. This is mandatory because the block number in the newHead event payload is unreliable — the hash is the only trusted identity.
+2. The result from `getBlockByHash` provides a reliable `blockNumber`, `parentHash`, `blockTimestamp`, and `blockHash`.
+3. Registers the block in `ChainTracker` for parentHash-based reorg detection.
+4. Stores a `MetricSample` with `source=WS` containing: `blockHash`, `parentHash`, `blockNumber` (reliable, from `getBlockByHash`), `blockTimestamp`, `headDelayMs` (now − blockTimestamp). No `latencyMs`, `transactionCount`, or `gasPriceWei`.
+5. **5 seconds later** (configurable via `rpc.block-verification-delay-ms`, default 5000), calls `eth_getBlockByHash` again via HTTP to create a verification sample with `source=HTTP`: `blockHash`, `parentHash`, `blockNumber`, `blockTimestamp`, `transactionCount`, `gasPriceWei`, `latencyMs` (the HTTP call's round-trip time). This sample does not affect finality status — it only provides a reliable block number and HTTP latency data point.
+
+Block numbers from newHead events MUST NOT be trusted or used as unique identifiers. Block identity is always the hash.
+
+#### HTTP polling path (execution nodes, `source=HTTP`)
+
+`HttpMonitorService` polls each execution node on its configured interval. When WS is active, only finality checkpoint tags are polled (safe and/or finalized, alternating). The resulting `MetricSample` (`source=HTTP`) contains:
+- `blockNumber` — from `eth_blockNumber` (used for latency measurement and WS health check)
+- `latencyMs` — total round-trip time for the poll cycle
+- `blockHash`, `parentHash`, `blockTimestamp`, `transactionCount`, `gasPriceWei` — from `eth_getBlockByNumber("safe"|"finalized")`
+- `headDelayMs` — derived from WS freshness: time since last WS block timestamp (only when WS data is fresh)
+- `safeDelayMs` — time from when the consensus node first observed the safe block (via `getReferenceObservedAt`) to now. Falls back to block timestamp if not available.
+- `finalizedDelayMs` — same pattern as safeDelayMs, anchored to the consensus node's finalized observation time.
+
+#### Consensus node path (beacon node, not per-execution-node)
+
+`ConsensusNodeClient` connects to the beacon node and:
+- Subscribes to SSE events: `head` and `finalized_checkpoint`
+- Optionally polls `/eth/v1/beacon/states/head/finality_checkpoints` at configurable intervals
+- Resolves execution block hashes from beacon block roots
+- Stores `ReferenceObservation` history for NEW, SAFE, and FINALIZED confidence levels
+
+The consensus node data is exposed via `ConfiguredReferenceSource.getDelaySamplesSince()`. These are synthetic `MetricSample` objects (`source=HTTP`, `latencyMs=-1`) with `safeDelayMs` or `finalizedDelayMs` set, keyed by block hash. In `DashboardService`, these are used to build `consensusSafeHashes` and `consensusFinalizedHashes` sets. Any execution node sample row whose `blockHash` appears in those sets is tagged as safe or finalized — **regardless of which execution node saw it**. This means the consensus node's finality knowledge is shared across all execution nodes.
+
+#### Attestations (Ethereum only, opt-in)
+
+When `rpc.consensus.attestations-enabled: true`:
+- On each `head` SSE event, the slot is registered for attestation tracking
+- A background loop polls `/eth/v1/beacon/states/head/committees?slot={slot}` every `attestation-tracking-interval-ms` (default 3s)
+- `AttestationTracker` records up to 3 attestation rounds per block, computing confidence as `(round/3) * 100%`
+- The dashboard shows attestation round badges (1/2/3) on NEW blocks
+- Attestation confidence is also used for orphan detection in `DashboardService`: blocks with 3 attestation rounds are treated as 90% canonical
+
+#### Orphan (invalid block) detection
+
+A block is tagged invalid only when a more trusted canonical block occupies the same parent slot. Specifically, a block B is orphaned if another block C exists such that `C.parentHash == B.parentHash` and C belongs to the canonical chain at the appropriate confidence level:
+- **Finalized** blocks are 100% certain: B is invalid if a different finalized block shares B's parentHash
+- **Safe** blocks are 99% certain: same logic
+- **3-attestation blocks** are 90% certain: same logic
+- NewHead and 1–2 attestation round blocks are NOT sufficient to mark another block invalid
+
+Block numbers are never used as the basis for conflict/invalid detection. Only parentHash chain linkage determines validity.
+
+#### Summary — Ethereum mode data sources
+
+| Sample field | WS newHead sample | HTTP verification sample (5s) | HTTP poll sample | Consensus node |
+|---|---|---|---|---|
+| source | WS | HTTP | HTTP | HTTP (latencyMs=-1) |
+| blockHash | from getBlockByHash | from getBlockByHash | from block tag | per observation |
+| blockNumber | from getBlockByHash (reliable) | from getBlockByHash | from eth_blockNumber | per observation |
+| parentHash | from getBlockByHash | from getBlockByHash | from block tag | — |
+| blockTimestamp | from getBlockByHash | from getBlockByHash | from block tag | per observation |
+| transactionCount | — | yes | yes | — |
+| gasPriceWei | — | yes | yes | — |
+| latencyMs | — | yes (HTTP call time) | yes (poll time) | -1 (synthetic) |
+| headDelayMs | now − blockTimestamp | — | from WS freshness | yes (head only) |
+| safeDelayMs | — | — | yes (per node) | yes (all nodes) |
+| finalizedDelayMs | — | — | yes (per node) | yes (all nodes) |
+
+---
+
+### Cosmos Mode (e.g. Polygon)
+
+Used for EVM chains without a beacon chain. There is no consensus node; finality is tracked per execution node and the reference head is determined by majority voting.
+
+#### Reference source
+Majority voting across all execution nodes. The reference head is the block hash agreed on by the most nodes. Safe and finalized observations are per-node (each node's own HTTP poll determines its own finality).
+
+#### WS newHead path (execution nodes, `source=WS`)
+
+On each `eth_subscribe("newHeads")` event, `WsMonitorService.handleCosmosNewHead` runs:
+
+1. **Trusts the event data directly** — no `eth_getBlockByHash` call is made. Block number, hash, parentHash, and timestamp come from the event payload.
+2. Stores a `MetricSample` with `source=WS` containing: `blockHash`, `parentHash`, `blockNumber` (from event, may be unreliable), `blockTimestamp`, `headDelayMs` (now − blockTimestamp).
+3. No delayed block verification HTTP call. Block numbers from events are used as-is.
+
+#### HTTP polling path (execution nodes, `source=HTTP`)
+
+When WS is active, HTTP polling alternates between safe and finalized block tags (as configured). When WS is not active, HTTP also polls `latest`. The resulting `MetricSample` (`source=HTTP`) contains the same fields as in Ethereum mode, with one key difference: `safeDelayMs` and `finalizedDelayMs` are computed using block timestamp as the baseline (no consensus node observation time is available), and safe/finalized status applies only to that node's own samples.
+
+#### No consensus node, no attestations
+
+- No beacon node is connected
+- No SSE events for finality
+- No attestation tracking
+- `consensusSafeHashes` and `consensusFinalizedHashes` are always empty in `DashboardService`
+- Safe/finalized tagging on sample rows comes only from each node's own HTTP polling results
+- The `DashboardService` orphan detection still applies via parentHash chain from each node's finalized/safe samples
+
+#### Summary — Cosmos mode vs Ethereum mode
+
+| Feature | Ethereum mode | Cosmos mode |
+|---|---|---|
+| Consensus node | Required for full finality | Not used |
+| WS newHead: getBlockByHash | Yes (immediate, for reliable block number) | No (trusts event data) |
+| WS newHead: delayed HTTP verification | Yes (5s later, `rpc.block-verification-delay-ms`) | No |
+| Safe blocks | From consensus node (applies to all nodes) | Per execution node (HTTP poll `safe` tag) |
+| Finalized blocks | From consensus node (applies to all nodes) | Per execution node (HTTP poll `finalized` tag) |
+| safeDelayMs baseline | Consensus node observation time | Block timestamp |
+| finalizedDelayMs baseline | Consensus node observation time | Block timestamp |
+| Attestations | Optional (beacon committees) | Not available |
+| Orphan detection confidence | Finalized + safe + 3-attest rounds | Finalized + safe |
+| Reference head | Consensus node head SSE | Majority vote across execution nodes |
+| Block number reliability | Hash is identity; block number verified via getBlockByHash | Block number from event (may be wrong) |
+
+---
+
+## Ethereum newHeads Processing — Architecture Rules (MUST FOLLOW)
+
+1. **Core Principles**
+   - `eth_subscribe("newHeads")` is NOT a sequential block stream
+   - WebSocket subscriptions are best-effort notifications, not a source of truth
+   - Blocks are uniquely identified by block hash, NOT by block number
+   - Multiple valid blocks with the same block number may exist (reorgs)
+   - Block numbers from newHead events are unreliable and MUST NOT be used as unique identifiers
+
+2. **Assumptions that MUST NOT be made**
+   - Block numbers are strictly increasing
+   - Each new head equals previous number + 1
+   - Every intermediate head event is delivered
+   - WebSocket events arrive in order, are unique, or are complete
+
+3. **Source of Truth**
+   - Canonical source: `eth_getBlockByHash`, `eth_getBlockByNumber`
+   - WS newHead events are wake-up signals only
+
+4. **Event Processing Model**
+   - All newHead processing MUST be single-threaded and serialized: WS callback → thread-safe queue → single processing thread
+   - Block identity MUST use blockHash as primary key
+
+5. **Reorg Handling**
+   - A reorg occurs when `newHead.parentHash != currentCanonicalHead.hash`
+   - Walk backwards via parentHash, find common ancestor, roll back old branch, apply new branch
+   - Never rely on block number continuity to detect reorgs
+
+6. **Missing Events**
+   - MUST tolerate dropped WS events
+   - Fetch missing blocks via parent traversal; reconstruct chain from hashes
+
+7. **Validation Rules**
+   - MUST validate: `child.parentHash == parent.hash`, block hash integrity, chain connectivity via hashes
+   - MUST NOT use: numeric adjacency alone, duplicate block numbers as correctness criteria
+
+8. **Golden Rule**
+   - Never derive chain state from WebSocket event order
+   - Always derive chain state from block hashes and parent links
+
+9. **Common Anti-Patterns (FORBIDDEN)**
+   - Treating newHeads as an append-only stream
+   - Using block number as unique key
+   - Parallel processing of WS events
+   - Raising errors on duplicate heights
 
 ## Block Finality Status and Updates
 
-Blocks initially have the status NEW, then SAFE (optionally), and finally FINALIZED. NEW blocks are streamed via WebSocket's newHeads subscription, if available, otherwise via HTTP polling ('latest'). SAFE and FINALIZED blocks can also be polled via HTTP, but that's not the preferred method for all chains. On Ethereum you should configure a consensus node as reference and get the SAFE and FINALIZED status from there.
+Blocks initially have the status NEW, then SAFE (optionally), and finally FINALIZED.
 
-When ChainCheck learns about SAFE and FINALIZED blocks the status updates are triggered by the following rules:
+NEW blocks are streamed via WebSocket's newHeads subscription, if available, otherwise via HTTP polling ('latest').
 
-- First time we get to know about a FINALIZED block: tag this block finalized and go back through the blockchain (block-by-block by the parent hash), tag each of the blocks you go through finalized as well, until you encounter a block that has already been tagged finalized, then stop
-- First time we get to know about a SAFE block: tag this block safe and go back through the blockchain (block-by-block by the parent hash), tag each of the blocks you go through safe as well, until you encounter a block that has already been tagged safe or finalized, then stop
+When ChainCheck learns about SAFE and FINALIZED blocks, status is propagated backward through the parentHash chain:
+- **FINALIZED**: tag this block finalized, then walk backward via parentHash tagging each ancestor finalized until reaching an already-finalized block
+- **SAFE**: same, stopping at any block already safe or finalized
 
-When HTTP polling is used, these rules apply for the current node's samples only. When a consensus node is configured, these rules apply to all nodes' samples.
+**In Ethereum mode**, the source of safe/finalized block hashes is the consensus node. Its observations are applied globally — all execution nodes' sample rows for matching block hashes are tagged safe/finalized in `DashboardService`, regardless of which node polled them. The parentHash chain enrichment also spans all execution nodes' samples when a consensus node is configured.
+
+**In Cosmos mode**, each execution node's HTTP polling independently discovers its own safe and finalized blocks. The propagation applies only within that node's own samples.
 
 ## Attestation-Based Block Confidence
 
@@ -208,7 +253,7 @@ When `rpc.consensus.attestations-enabled: true` is set:
 3. `AttestationTracker` records up to 3 attestation rounds per block, computing confidence as `(round/3) * 100%`
 4. The dashboard shows attestation round badges (1/2/3) on NEW blocks and the confidence percentage in the sample detail modal
 
-The feature is opt-in and only works in configured reference mode (consensus node required). Configuration options under `rpc.consensus`:
+The feature is opt-in and only works in Ethereum mode with a consensus node configured. Configuration options under `rpc.consensus`:
 - `attestations-enabled` — enable/disable (default: false)
 - `attestations-path` — beacon block attestations endpoint (default: `/eth/v1/beacon/blocks/{slot}/attestations`)
 - `committees-path` — beacon committee endpoint (default: `/eth/v1/beacon/states/head/committees`)
@@ -217,18 +262,19 @@ The feature is opt-in and only works in configured reference mode (consensus nod
 
 ## Conflicting and Invalid Blocks
 
-- Only one status of new/safe/finalized is allowed. New blocks are new, status=safe replaces status=new and status=finalized replaces both, status=new and status=safe
-- Only one additional status of conflict/invalid is allowed. Conflict means there's at least one other block with the same block number and we don't know which one is the "real" one and which ones are the invalid ones.
-- For a conflict when we get to know which one is the real one and which ones are the invalid ones, we remove the conflict from the real one (so it only has a status of new/safe/finalized) and we mark all other blocks with the same block number but a different block hash as invalid
+- Only one finality status is allowed per block: NEW < SAFE < FINALIZED (each supersedes the previous)
+- A block is marked **invalid** (orphan) when a more confident canonical block occupies the same parent slot — i.e., a different block at the same parentHash is known to be canonical at finalized (100%), safe (99%), or 3-attestation-round (90%) confidence. NewHead and 1–2 attestation round blocks are NOT sufficient to invalidate another block.
+- Block number collisions are not a basis for marking a block invalid. Only parentHash chain linkage determines validity.
+- **Conflict status** (two competing blocks at the same height where neither is yet resolved) is no longer used; the dashboard always sets `conflict=false`.
 
 ## Configuration
 
-All config is in `src/main/resources/application.yml` under the `rpc` prefix, bound to `ChainCheckProperties`. The mock profile (`application-mock.yml`) provides fake RPC responses for local development. The `rpc.consensus` namespace configures the beacon/consensus node connection, finality checkpoint polling, and attestation tracking. Per-node WS gap recovery can be configured via `ws-gap-recovery-enabled` and `ws-gap-recovery-max-blocks` at both the global and per-node level.
+All config is in `src/main/resources/application.yml` under the `rpc` prefix, bound to `ChainCheckProperties`. The mock profile (`application-mock.yml`) provides fake RPC responses for local development. The `rpc.consensus` namespace configures the beacon/consensus node connection, finality checkpoint polling, and attestation tracking. Per-node WS gap recovery can be configured via `ws-gap-recovery-enabled` and `ws-gap-recovery-max-blocks` at both the global and per-node level. The `rpc.block-verification-delay-ms` property (default 5000) controls the delay before the post-newHead HTTP block verification call in Ethereum mode.
 
 ## Key Conventions
 
 - All source files carry the Apache 2.0 license header (see `HEADER` file)
-- No Lombok — plain Java POJOs with getters/setters for model/config classes; records used for value types (e.g., `NodeDefinition`, `ChartData`, `ChainNode`, `SampleRow`)
+- No Lombok — plain Java POJOs with getters/setters for model/config classes; records used for value types (e.g., `NodeDefinition`, `ChartData`, `SampleRow`)
 - Concurrency handled via `ConcurrentHashMap`, `ConcurrentLinkedDeque`, `ConcurrentSkipListMap`, `AtomicReference`, `AtomicLong`, `volatile` fields, and `NavigableMap`
 - No external HTTP client library — uses `java.net.http.HttpClient` and `java.net.http.WebSocket` directly
 - JSON-RPC communication uses Jackson for serialization

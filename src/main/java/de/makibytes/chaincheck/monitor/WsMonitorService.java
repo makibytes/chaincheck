@@ -326,6 +326,10 @@ public class WsMonitorService {
                 if (monitor.isWarmupComplete()) {
                     store.addSample(node.key(), sample);
                 }
+                if (node.http() != null && !node.http().isBlank()) {
+                    final String verifyHash = blockHash;
+                    recoveryExecutor.submit(() -> scheduleBlockVerification(node, verifyHash));
+                }
                 monitor.resetWsBackoff(state);
 
                 WsConnectionTracker connTracker = nodeRegistry.getWsTracker(node.key());
@@ -563,6 +567,46 @@ public class WsMonitorService {
         String key = nodeKey + ":" + blockNumber;
         Instant previous = recoveryAttemptByNodeAndBlock.put(key, now);
         return previous == null || previous.isBefore(cutoff);
+    }
+
+    private void scheduleBlockVerification(NodeDefinition node, String blockHash) {
+        long delayMs = properties.getBlockVerificationDelayMs();
+        if (delayMs > 0) {
+            try {
+                Thread.sleep(delayMs);
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+        }
+        long startNanos = System.nanoTime();
+        try {
+            RpcMonitorService.BlockInfo block = httpMonitorService.fetchBlockByHash(node, blockHash);
+            if (block == null || block.blockHash() == null) {
+                return;
+            }
+            long latencyMs = (System.nanoTime() - startNanos) / 1_000_000;
+            Instant now = Instant.now();
+            MetricSample sample = MetricSample.builder(now, MetricSource.HTTP)
+                    .success(true)
+                    .latencyMs(latencyMs)
+                    .blockNumber(block.blockNumber())
+                    .blockTimestamp(block.blockTimestamp())
+                    .blockHash(block.blockHash())
+                    .parentHash(block.parentHash())
+                    .transactionCount(block.transactionCount())
+                    .gasPriceWei(block.gasPriceWei())
+                    .build();
+            if (monitor.isWarmupComplete()) {
+                store.addSample(node.key(), sample);
+            }
+            logger.debug("Block verification sample (node={}, hash={}, number={})",
+                    node.name(), blockHash, block.blockNumber());
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+        } catch (IOException | RuntimeException ex) {
+            logger.debug("Block verification failed (node={}, hash={}): {}", node.name(), blockHash, ex.getMessage());
+        }
     }
 
     private void recoverMissingBlockWithRetry(NodeDefinition node, long blockNumber) {

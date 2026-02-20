@@ -138,13 +138,9 @@ public class InMemoryMetricsStore {
         if (samples == null || samples.isEmpty()) {
             return Collections.emptyList();
         }
-        List<MetricSample> result = new ArrayList<>();
-        for (MetricSample sample : samples) {
-            if (!sample.getTimestamp().isBefore(since)) {
-                result.add(sample);
-            }
-        }
-        return result;
+        return samples.stream()
+                .filter(sample -> !sample.getTimestamp().isBefore(since))
+                .toList();
     }
 
     public List<SampleAggregate> getAggregatedSamplesSince(String nodeKey, Instant since) {
@@ -170,13 +166,9 @@ public class InMemoryMetricsStore {
         if (anomalies == null || anomalies.isEmpty()) {
             return Collections.emptyList();
         }
-        List<AnomalyEvent> result = new ArrayList<>();
-        for (AnomalyEvent event : anomalies) {
-            if (!event.getTimestamp().isBefore(since)) {
-                result.add(event);
-            }
-        }
-        return result;
+        return anomalies.stream()
+                .filter(event -> !event.getTimestamp().isBefore(since))
+                .toList();
     }
 
     public List<AnomalyAggregate> getAggregatedAnomaliesSince(String nodeKey, Instant since) {
@@ -198,19 +190,13 @@ public class InMemoryMetricsStore {
     }
 
     public Instant getOldestAggregateTimestamp(String nodeKey) {
-        NavigableMap<Instant, SampleAggregate> hourlyAggregates = sampleAggregatesByNode.get(nodeKey);
-        NavigableMap<Instant, SampleAggregate> dailyAggregates = sampleDailyAggregatesByNode.get(nodeKey);
-        Instant oldest = null;
-        if (hourlyAggregates != null && !hourlyAggregates.isEmpty()) {
-            oldest = hourlyAggregates.firstKey();
-        }
-        if (dailyAggregates != null && !dailyAggregates.isEmpty()) {
-            Instant dailyOldest = dailyAggregates.firstKey();
-            if (oldest == null || dailyOldest.isBefore(oldest)) {
-                oldest = dailyOldest;
-            }
-        }
-        return oldest;
+        NavigableMap<Instant, SampleAggregate> minutely = sampleAggregatesByNode.get(nodeKey);
+        NavigableMap<Instant, SampleAggregate> daily = sampleDailyAggregatesByNode.get(nodeKey);
+        Instant minutelyOldest = (minutely != null && !minutely.isEmpty()) ? minutely.firstKey() : null;
+        Instant dailyOldest = (daily != null && !daily.isEmpty()) ? daily.firstKey() : null;
+        if (minutelyOldest == null) return dailyOldest;
+        if (dailyOldest == null) return minutelyOldest;
+        return minutelyOldest.isBefore(dailyOldest) ? minutelyOldest : dailyOldest;
     }
 
     public AnomalyEvent getAnomaly(long id) {

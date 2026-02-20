@@ -4,9 +4,9 @@
         <div class="chart-controls">
             <label id="toggleBoundsLabel" class="chart-control-label" th:if="${view.hasAggregatedLatencies || view.hasAggregatedDelays}">
                 <input type="checkbox" id="toggleBounds" />
-                <span>Upper/lower bounds</span>
+                <span>P5–P99 band</span>
             </label>
-            <label id="referenceToggleLabel" class="chart-control-label" th:if="${referenceNodeKey != null && !view.referenceNode}">
+<label id="referenceToggleLabel" class="chart-control-label" th:if="${referenceNodeKey != null && !view.referenceNode}">
                 <input type="checkbox" id="toggleReferenceLines" />
                 <span>Reference Node</span>
             </label>
