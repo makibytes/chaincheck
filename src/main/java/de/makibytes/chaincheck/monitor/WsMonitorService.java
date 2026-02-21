@@ -262,9 +262,9 @@ public class WsMonitorService {
                     state.wsNewHeadCount++;
 
                     if (properties.getMode() == ChainCheckProperties.Mode.ETHEREUM && blockHash != null) {
-                        handleEthereumNewHead(node, blockHash, blockNumber, parentHash, blockTimestamp, now);
+                        handleEthereumNewHead(node, blockHash, now);
                     } else {
-                        handleCosmosNewHead(node, blockInfo, blockNumber, blockHash, parentHash, blockTimestamp, now);
+                        handleCosmosNewHead(node, blockNumber, blockHash, parentHash, blockTimestamp, now);
                     }
                 }
             } catch (IOException | RuntimeException ex) {
@@ -273,8 +273,7 @@ public class WsMonitorService {
             }
         }
 
-        private void handleEthereumNewHead(NodeDefinition node, String eventHash, Long eventNumber, 
-                String eventParentHash, Instant eventTimestamp, Instant now) {
+        private void handleEthereumNewHead(NodeDefinition node, String eventHash, Instant now) {
             try {
                 RpcMonitorService.BlockInfo fullBlock = httpMonitorService.fetchBlockByHash(node, eventHash);
                 if (fullBlock == null || fullBlock.blockHash() == null) {
@@ -360,7 +359,7 @@ public class WsMonitorService {
                 }
 
                 List<Long> missing = tracker.findMissingBlockNumbers(blockNode);
-                if (!missing.isEmpty() && node.wsGapRecoveryEnabled()) {
+                if (!missing.isEmpty() && node.wsGapRecoveryEnabled() && blockNumber != null) {
                     scheduleMissingBlockRecoveryForAllNodes(node, blockNumber - missing.size() - 1, blockNumber);
                 }
 
@@ -375,7 +374,7 @@ public class WsMonitorService {
             }
         }
 
-        private void handleCosmosNewHead(NodeDefinition node, RpcMonitorService.BlockInfo blockInfo,
+        private void handleCosmosNewHead(NodeDefinition node,
                 Long blockNumber, String blockHash, String parentHash, Instant blockTimestamp, Instant now) {
 
             Long headDelayMs = null;
@@ -469,7 +468,6 @@ public class WsMonitorService {
         if (maxBlocks > 0 && gap > maxBlocks) {
             long cappedStart = currentBlockNumber - maxBlocks;
             start = Math.max(start, cappedStart);
-            gap = end - start + 1;
             logger.warn("WS gap recovery capped (trigger={}): previous={} current={} cappedStart={} maxBlocks={}",
                     triggerNode.name(), previousBlockNumber, currentBlockNumber, start, maxBlocks);
         }

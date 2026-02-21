@@ -26,11 +26,13 @@ public class FleetView {
     private final List<FleetNodeSummary> nodes;
     private final String referenceNodeKey;
     private final TimeRange range;
+    private final long maxBlockNumber;
 
-    public FleetView(List<FleetNodeSummary> nodes, String referenceNodeKey, TimeRange range) {
+    public FleetView(List<FleetNodeSummary> nodes, String referenceNodeKey, TimeRange range, long maxBlockNumber) {
         this.nodes = nodes != null ? List.copyOf(nodes) : List.of();
         this.referenceNodeKey = referenceNodeKey;
         this.range = range;
+        this.maxBlockNumber = maxBlockNumber;
     }
 
     public List<FleetNodeSummary> getNodes() {
@@ -43,5 +45,9 @@ public class FleetView {
 
     public TimeRange getRange() {
         return range;
+    }
+
+    public long getMaxBlockNumber() {
+        return maxBlockNumber;
     }
 }

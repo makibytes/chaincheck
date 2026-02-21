@@ -26,8 +26,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
-import de.makibytes.chaincheck.chain.cosmos.BlockVotingService;
-import de.makibytes.chaincheck.chain.shared.BlockConfidenceTracker;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -35,6 +33,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import de.makibytes.chaincheck.chain.cosmos.BlockVotingService;
+import de.makibytes.chaincheck.chain.shared.BlockConfidenceTracker;
 import de.makibytes.chaincheck.config.ChainCheckProperties;
 import de.makibytes.chaincheck.model.AnomalyEvent;
 import de.makibytes.chaincheck.model.AnomalyType;
@@ -436,7 +436,7 @@ class RpcMonitorServiceTest {
     private void setReferenceState(RpcMonitorService svc, Long headNumber, String headHash) {
         AtomicReference<?> ref = (AtomicReference<?>) ReflectionTestUtils.getField(svc, "referenceState");
         Object state = createReferenceState(headNumber, headHash, Instant.now());
-        @SuppressWarnings("rawtypes")
+        @SuppressWarnings({"rawtypes", "unchecked"})
         AtomicReference rawRef = (AtomicReference) ref;
         rawRef.set(state);
     }

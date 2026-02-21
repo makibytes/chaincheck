@@ -1290,6 +1290,10 @@ pre {
     color: var(--color-danger);
 }
 
+.text-success {
+    color: var(--color-success);
+}
+
 /* ===== Back-to-fleet link ===== */
 .back-to-fleet {
     display: inline-flex;

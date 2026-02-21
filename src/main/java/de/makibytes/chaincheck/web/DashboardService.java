@@ -61,21 +61,35 @@ public class DashboardService {
     private final NodeRegistry nodeRegistry;
     private final RpcMonitorService nodeMonitorService;
     private final ChainCheckProperties properties;
+    private final HealthScoreCalculator healthScoreCalculator;
+    private final SparklineBuilder sparklineBuilder;
+    
+    // Pagination and limits
     private static final int MAX_SAMPLES = 10000;
     private static final int PAGE_SIZE = 50;
     private static final int MAX_PAGES = 20;
     private static final int MAX_ANOMALIES = 10000;
+    
+    // Thresholds
+    private static final long STALE_BLOCK_THRESHOLD_MS = 30000; // 30 seconds
+    private static final double SECONDS_PER_MINUTE = 60.0;
+    private static final double PERCENT_MULTIPLIER = 100.0;
+
 
     public DashboardService(InMemoryMetricsStore store,
                             MetricsCache cache,
                             NodeRegistry nodeRegistry,
                             RpcMonitorService nodeMonitorService,
-                            ChainCheckProperties properties) {
+                            ChainCheckProperties properties,
+                            HealthScoreCalculator healthScoreCalculator,
+                            SparklineBuilder sparklineBuilder) {
         this.store = store;
         this.cache = cache;
         this.nodeRegistry = nodeRegistry;
         this.nodeMonitorService = nodeMonitorService;
         this.properties = properties;
+        this.healthScoreCalculator = healthScoreCalculator;
+        this.sparklineBuilder = sparklineBuilder;
     }
 
     public DashboardView getDashboard(String nodeKey, TimeRange range, Instant end) {
@@ -157,9 +171,9 @@ public class DashboardService {
                 + aggregateSamples.stream().mapToLong(SampleAggregate::getWsCount).sum();
         double rangeSeconds = Math.max(1, range.getDuration().toSeconds());
         double httpRps = httpCount / rangeSeconds;
-        double wsEventsPerMinute = (wsCount / rangeSeconds) * 60.0;
-        double uptimePercent = total == 0 ? 0 : (success * 100.0) / total;
-        double errorRatePercent = total == 0 ? 0 : (errors * 100.0) / total;
+        double wsEventsPerMinute = (wsCount / rangeSeconds) * SECONDS_PER_MINUTE;
+        double uptimePercent = total == 0 ? 0 : (success * PERCENT_MULTIPLIER) / total;
+        double errorRatePercent = total == 0 ? 0 : (errors * PERCENT_MULTIPLIER) / total;
 
         List<Long> propagationDelays = rawSamples.stream()
                 .filter(sample -> sample.getSource() == MetricSource.HTTP && sample.getBlockTimestamp() != null)
@@ -180,20 +194,20 @@ public class DashboardService {
                 propagationValues.add(Math.round((double) aggregate.getPropagationDelaySumMs() / aggregate.getPropagationDelayCount()));
             }
         }
-        long staleBlockCount = propagationValues.stream().filter(delay -> delay > 30000).count()
+        long staleBlockCount = propagationValues.stream().filter(delay -> delay > STALE_BLOCK_THRESHOLD_MS).count()
                 + aggregateSamples.stream().mapToLong(SampleAggregate::getStaleBlockCount).sum();
 
         Map<AnomalyType, Long> anomalyCounts = anomalies.stream()
                 .collect(Collectors.groupingBy(AnomalyEvent::getType, Collectors.counting()));
         aggregatedAnomalies.forEach(aggregate -> {
-            anomalyCounts.merge(AnomalyType.DELAY, aggregate.getDelayCount(), Long::sum);
-            anomalyCounts.merge(AnomalyType.REORG, aggregate.getReorgCount(), Long::sum);
-            anomalyCounts.merge(AnomalyType.CONFLICT, aggregate.getConflictCount(), Long::sum);
-            anomalyCounts.merge(AnomalyType.BLOCK_GAP, aggregate.getBlockGapCount(), Long::sum);
-            anomalyCounts.merge(AnomalyType.ERROR, aggregate.getErrorCount(), Long::sum);
-            anomalyCounts.merge(AnomalyType.RATE_LIMIT, aggregate.getRateLimitCount(), Long::sum);
-            anomalyCounts.merge(AnomalyType.TIMEOUT, aggregate.getTimeoutCount(), Long::sum);
-            anomalyCounts.merge(AnomalyType.WRONG_HEAD, aggregate.getWrongHeadCount(), Long::sum);
+            anomalyCounts.merge(AnomalyType.DELAY, aggregate.getDelayCount(), (a, b) -> a + b);
+            anomalyCounts.merge(AnomalyType.REORG, aggregate.getReorgCount(), (a, b) -> a + b);
+            anomalyCounts.merge(AnomalyType.CONFLICT, aggregate.getConflictCount(), (a, b) -> a + b);
+            anomalyCounts.merge(AnomalyType.BLOCK_GAP, aggregate.getBlockGapCount(), (a, b) -> a + b);
+            anomalyCounts.merge(AnomalyType.ERROR, aggregate.getErrorCount(), (a, b) -> a + b);
+            anomalyCounts.merge(AnomalyType.RATE_LIMIT, aggregate.getRateLimitCount(), (a, b) -> a + b);
+            anomalyCounts.merge(AnomalyType.TIMEOUT, aggregate.getTimeoutCount(), (a, b) -> a + b);
+            anomalyCounts.merge(AnomalyType.WRONG_HEAD, aggregate.getWrongHeadCount(), (a, b) -> a + b);
         });
 
         long maxBlockNumber = nodeRegistry.getNodes().stream()
@@ -596,7 +610,7 @@ public class DashboardService {
                 .filter(s -> s.getSource() == MetricSource.HTTP && s.getTimestamp().isAfter(threeMinAgo) && s.isSuccess())
                 .count();
         boolean isCurrentlyDown = httpConfigured && recentHttp > 0 && recentHttpSuccess == 0;
-        int healthScore = computeHealthScore(uptimePercent, p95Latency, newBlockStats.p95(), errors, total, isCurrentlyDown);
+        int healthScore = healthScoreCalculator.calculateHealthScore(uptimePercent, p95Latency, newBlockStats.p95(), errors, total, isCurrentlyDown);
 
         // Last block age
         Instant lastBlockTs = store.getLatestBlockTimestamp(nodeKey);
@@ -665,62 +679,6 @@ public class DashboardService {
         return view;
     }
 
-    private static int computeHealthScore(double uptime, double p95Lat, double p95Head, long errors, long total,
-                                          boolean isCurrentlyDown) {
-        if (isCurrentlyDown || (total > 0 && uptime <= 0.0)) return 0;
-        double uptimeScore = uptime * 0.40;
-        double latScore = 25.0 * Math.max(0, 1.0 - Math.min(1.0, p95Lat / 2000.0));
-        double headScore = p95Head <= 0 ? 20.0
-                : 20.0 * Math.max(0, 1.0 - Math.min(1.0, p95Head / 10000.0));
-        double errRate = total == 0 ? 0 : (double) errors / total;
-        double anomalyScore = 15.0 * Math.max(0, 1.0 - Math.min(1.0, errRate * 10));
-        return (int) Math.round(uptimeScore + latScore + headScore + anomalyScore);
-    }
-
-    private static String buildSparklinePoints(List<MetricSample> raw, Instant now) {
-        int numBuckets = 60;
-        long windowSecs = 60 * 60L;
-        long bucketSecs = windowSecs / numBuckets;
-        Instant start = now.minusSeconds(windowSecs);
-
-        double[] bucketSum = new double[numBuckets];
-        int[] bucketCount = new int[numBuckets];
-
-        for (MetricSample s : raw) {
-            if (s.getLatencyMs() < 0) continue;
-            long offset = Duration.between(start, s.getTimestamp()).toSeconds();
-            if (offset < 0 || offset >= windowSecs) continue;
-            int idx = (int) (offset / bucketSecs);
-            if (idx >= numBuckets) idx = numBuckets - 1;
-            bucketSum[idx] += s.getLatencyMs();
-            bucketCount[idx]++;
-        }
-
-        Double[] avgs = new Double[numBuckets];
-        double maxVal = 0;
-        for (int i = 0; i < numBuckets; i++) {
-            if (bucketCount[i] > 0) {
-                avgs[i] = bucketSum[i] / bucketCount[i];
-                maxVal = Math.max(maxVal, avgs[i]);
-            }
-        }
-        if (maxVal == 0) return "";
-
-        int svgWidth = 60;
-        int svgHeight = 28;
-        int padding = 2;
-        double xStep = (double) svgWidth / numBuckets;
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < numBuckets; i++) {
-            if (avgs[i] == null) continue;
-            double x = i * xStep + xStep / 2.0;
-            double y = (svgHeight - padding) - (avgs[i] / maxVal) * (svgHeight - 2 * padding);
-            if (sb.length() > 0) sb.append(' ');
-            sb.append(String.format("%.1f,%.1f", x, y));
-        }
-        return sb.toString();
-    }
-
     public AnomalyEvent getAnomaly(long id) {
         return store.getAnomaly(id);
     }
@@ -748,7 +706,7 @@ public class DashboardService {
             long errors = total - success;
             double uptime = total == 0 ? 0 : success * 100.0 / total;
 
-            // Calculate p95 latency using same logic as details view (includes aggregates)
+            // Calculate p95 latency using same logic as details view
             List<Long> latVals = raw.stream()
                     .filter(s -> s.getLatencyMs() >= 0)
                     .map(MetricSample::getLatencyMs)
@@ -763,20 +721,14 @@ public class DashboardService {
             latVals = latVals.stream().sorted().toList();
             double p95Lat = ChartBuilder.percentile(latVals, 0.95);
 
-            // Calculate p95 head delay using same logic as details view (includes aggregates)
-            List<Long> headVals = raw.stream()
-                    .map(MetricSample::getHeadDelayMs)
-                    .filter(d -> d != null && d >= 0)
-                    .collect(Collectors.toCollection(ArrayList::new));
-            if (headVals.isEmpty()) {
-                for (SampleAggregate aggregate : agg) {
-                    if (aggregate.getHeadDelayCount() > 0) {
-                        headVals.add(Math.round((double) aggregate.getHeadDelaySumMs() / aggregate.getHeadDelayCount()));
-                    }
-                }
-            }
-            headVals = headVals.stream().sorted().toList();
-            double p95Head = ChartBuilder.percentile(headVals, 0.95);
+            // Calculate initial head delay stats  
+            DelayStats headStats = computeDelayStats(raw, agg,
+                    MetricSample::getHeadDelayMs, SampleAggregate::getHeadDelaySumMs, SampleAggregate::getHeadDelayCount);
+
+            // Build chart data and override from chart series (same as details view)
+            ChartBuilder.DelayChartData delayChartData = ChartBuilder.buildDelayChart(raw, agg, range, now);
+            headStats = overrideFromChartSeries(delayChartData.headDelays(), headStats);
+            double p95Head = headStats.p95();
 
             Long latestBlock = store.getLatestBlockNumber(nk);
             long blockLag = latestBlock == null ? 0 : Math.max(0, maxBlock - latestBlock);
@@ -788,7 +740,8 @@ public class DashboardService {
             long anomalyCount = nodeAnomalies.size();
 
             WsConnectionTracker wsTracker = nodeRegistry.getWsTracker(nk);
-            long wsDisconnects = wsTracker == null ? 0 : wsTracker.getDisconnectCount();
+            Instant past24Hours = now.minusSeconds(24L * 60 * 60);
+            long wsDisconnects = wsTracker == null ? 0 : wsTracker.getDisconnectCountSince(past24Hours);
             boolean wsUp = wsTracker != null && wsTracker.getConnectedSince() != null;
 
             MetricSample latestHttp = raw.stream()
@@ -807,9 +760,9 @@ public class DashboardService {
                     .filter(s -> s.getSource() == MetricSource.HTTP && s.getTimestamp().isAfter(threeMinAgo) && s.isSuccess())
                     .count();
             boolean isCurrentlyDown = httpConfigured && recentHttp > 0 && recentHttpSuccess == 0;
-            int healthScore = computeHealthScore(uptime, p95Lat, p95Head, errors, total, isCurrentlyDown);
+            int healthScore = healthScoreCalculator.calculateHealthScore(uptime, p95Lat, p95Head, errors, total, isCurrentlyDown);
             String healthLabel = FleetNodeSummary.labelForScore(healthScore);
-            String sparkline = buildSparklinePoints(raw, now);
+            String sparkline = sparklineBuilder.buildPoints(raw, now);
 
             summaries.add(new FleetNodeSummary(
                     nk, node.name(), httpConfigured, wsConfigured, httpUp, wsUp,
@@ -818,7 +771,7 @@ public class DashboardService {
                     nk.equals(referenceNodeKey), sparkline));
         }
 
-        return new FleetView(summaries, referenceNodeKey, range);
+        return new FleetView(summaries, referenceNodeKey, range, maxBlock);
     }
 
     private record DelayStats(double average, double p95, double p99) {}

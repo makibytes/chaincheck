@@ -17,6 +17,8 @@
  */
 package de.makibytes.chaincheck.monitor;
 
+import java.time.Instant;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -26,12 +28,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import java.time.Instant;
-
 import de.makibytes.chaincheck.chain.shared.Confidence;
 import de.makibytes.chaincheck.monitor.ChainTracker.BlockNode;
 import de.makibytes.chaincheck.monitor.ChainTracker.ChainUpdate;
-import de.makibytes.chaincheck.monitor.ChainTracker.ReorgEvent;
 
 @DisplayName("ChainTracker Tests (Golden Rule)")
 class ChainTrackerTest {

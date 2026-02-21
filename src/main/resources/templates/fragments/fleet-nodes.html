@@ -7,14 +7,13 @@
                     <th>Health <span class="hint" data-hint="Composite score 0–100 weighted from: uptime (40%), latency P95 (25%), head-delay P95 (20%), error rate (15%). Score is 0 when the node is currently down.">?</span></th>
                     <th>Node</th>
                     <th>Trend <span class="hint" data-hint="Average HTTP latency per minute over the last hour. The line height reflects relative response time — higher means slower.">?</span></th>
-                    <th>Latest Block <span class="hint" data-hint="Most recent block number this node has reported.">?</span></th>
+                    <th>Latest Block <span class="hint" data-hint="Most recent block number this node has reported. Green = highest · yellow = 1 behind · red = 2+ behind.">?</span></th>
                     <th>Age <span class="hint" data-hint="Time elapsed since this node last saw a new block. Green &lt; 15 s · amber &lt; 60 s · red ≥ 60 s.">?</span></th>
                     <th>Uptime <span class="hint" data-hint="Percentage of HTTP RPC calls that succeeded over the selected time range.">?</span></th>
                     <th>Latency P95 <span class="hint" data-hint="95th-percentile HTTP round-trip time. 95% of all requests completed within this value.">?</span></th>
                     <th>Head Delay P95 <span class="hint" data-hint="95th-percentile time between a block's own timestamp and when this node first reported it via WebSocket.">?</span></th>
-                    <th>Block Lag <span class="hint" data-hint="How many blocks behind the network's current tip this node is.">?</span></th>
                     <th>Anomalies <span class="hint" data-hint="Number of anomaly events detected in the selected range: delays, reorgs, wrong heads, timeouts, block gaps, etc.">?</span></th>
-                    <th>WS <span class="hint" data-hint="WebSocket subscription status. Green = connected · red = disconnected · grey = not configured. Number in brackets = reconnections.">?</span></th>
+                    <th>WS <span class="hint" data-hint="WebSocket subscription status. OK = connected · Error = disconnected · Off = not configured. Number in red brackets = reconnections in the past 24 hours.">?</span></th>
                     <th></th>
                 </tr>
             </thead>
@@ -44,7 +43,12 @@
                         </svg>
                         <span th:if="${#strings.isEmpty(node.latencySparklinePoints)}" class="muted">—</span>
                     </td>
-                    <td th:text="${node.latestBlockNumber != null ? node.latestBlockNumber : '-'}">-</td>
+                    <td>
+                        <span th:if="${node.latestBlockNumber != null}"
+                            th:classappend="${node.latestBlockNumber == fleetView.maxBlockNumber} ? ' text-success' : (${node.latestBlockNumber == fleetView.maxBlockNumber - 1} ? ' text-warn' : ' text-danger')"
+                            th:text="${node.latestBlockNumber}">-</span>
+                        <span th:if="${node.latestBlockNumber == null}" class="muted">-</span>
+                    </td>
                     <td>
                         <span th:if="${node.lastBlockAgeMs != null}"
                             th:classappend="${node.lastBlockAgeMs < 15000 ? ' age-fresh' : (node.lastBlockAgeMs < 60000 ? ' age-warn' : ' age-stale')}"
@@ -58,20 +62,16 @@
                     <td th:text="${node.p95LatencyMs > 0} ? ${#numbers.formatDecimal(node.p95LatencyMs, 1, 0)} + 'ms' : '-'">-</td>
                     <td th:text="${node.p95HeadDelayMs > 0} ? ${#numbers.formatDecimal(node.p95HeadDelayMs / 1000.0, 1, 2)} + 's' : '-'">-</td>
                     <td>
-                        <span th:if="${node.blockLagBlocks > 0}" class="text-warn" th:text="${node.blockLagBlocks} + ' blk'">0</span>
-                        <span th:if="${node.blockLagBlocks == 0}" class="muted">—</span>
-                    </td>
-                    <td>
                         <span th:if="${node.anomalyCount > 0}" class="text-danger" th:text="${node.anomalyCount}">0</span>
                         <span th:if="${node.anomalyCount == 0}" class="muted">—</span>
                     </td>
                     <td>
                         <span th:if="${node.wsConfigured}">
-                            <span th:if="${node.wsUp}" class="status-light status-ws-up" title="WS connected"></span>
-                            <span th:if="${!node.wsUp}" class="status-light status-error" title="WS disconnected"></span>
-                            <span th:if="${node.wsDisconnectCount > 0}" class="muted fleet-ws-disconnects" th:text="'(' + ${node.wsDisconnectCount} + 'x)'">-</span>
+                            <span th:if="${node.wsUp}" class="text-success">OK</span>
+                            <span th:if="${!node.wsUp}" class="text-danger">Error</span>
+                            <span th:if="${node.wsDisconnectCount > 0}" class="text-danger" th:text="' (' + ${node.wsDisconnectCount} + ')'">-</span>
                         </span>
-                        <span th:if="${!node.wsConfigured}" class="status-light status-off" title="WS not configured"></span>
+                        <span th:if="${!node.wsConfigured}" class="muted">Off</span>
                     </td>
                     <td>
                         <a class="button ghost fleet-details-link"

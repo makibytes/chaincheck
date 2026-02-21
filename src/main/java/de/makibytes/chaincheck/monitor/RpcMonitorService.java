@@ -49,8 +49,8 @@ import de.makibytes.chaincheck.chain.shared.Confidence;
 import de.makibytes.chaincheck.chain.shared.ReferenceObservation;
 import de.makibytes.chaincheck.chain.shared.ReferenceStrategy;
 import de.makibytes.chaincheck.config.ChainCheckProperties;
-import de.makibytes.chaincheck.model.AttestationConfidence;
 import de.makibytes.chaincheck.model.AnomalyEvent;
+import de.makibytes.chaincheck.model.AttestationConfidence;
 import de.makibytes.chaincheck.model.MetricSample;
 import de.makibytes.chaincheck.model.MetricSource;
 import de.makibytes.chaincheck.monitor.NodeRegistry.NodeDefinition;
@@ -80,9 +80,7 @@ public class RpcMonitorService {
     private final WsMonitorService wsMonitorService;
     private final BlockVotingService blockVotingService;
     private final ConfiguredReferenceSource configuredSource;
-    private final ReferenceNodeSelector referenceNodeSelector;
     private final BlockVotingCoordinator referenceBlockVoting;
-    private final BlockAgreementTracker blockAgreementTracker;
     private final String configuredReferenceNodeKey;
     private final ReferenceStrategy referenceStrategy;
     private final Instant warmupStartedAt = Instant.now();
@@ -102,8 +100,6 @@ public class RpcMonitorService {
         this.detector = detector;
         this.properties = properties;
         this.blockVotingService = blockVotingService;
-        this.blockAgreementTracker = blockAgreementTracker;
-        this.referenceNodeSelector = referenceNodeSelector;
         this.configuredReferenceNodeKey = properties.getConsensus() != null ? properties.getConsensus().getNodeKey() : null;
         BlockConfidenceTracker blockConfidenceTracker = new BlockConfidenceTracker();
         this.configuredSource = new ConfiguredReferenceSource(nodeRegistry, blockConfidenceTracker, nodeStates, properties, configuredReferenceNodeKey);
@@ -445,9 +441,8 @@ public class RpcMonitorService {
         // Only flag as delay anomaly if lag exceeds configurable threshold
         // Small differences are normal and expected
         ChainCheckProperties.AnomalyDetection detection = properties.getAnomalyDetection();
-        int lagThreshold = detection != null && detection.getLongDelayBlockCount() != null
-                ? detection.getLongDelayBlockCount()
-                : 15;
+        Integer longDelayThreshold = detection != null ? detection.getLongDelayBlockCount() : null;
+        int lagThreshold = longDelayThreshold != null ? longDelayThreshold : 15;
 
         if (lag >= lagThreshold) {
             AnomalyEvent anomaly = detector.referenceDelay(
@@ -719,8 +714,6 @@ public class RpcMonitorService {
         Instant lastWsPongReceivedAt;
         public Instant lastFinalizedFetchAt;
         Instant lastLatestFetchAt;
-        Long lastReorgBlockNumber;
-        String lastReorgBlockHash;
         Deque<BlockInfo> finalizedHistory = new ArrayDeque<>();
         long wsFailureBackoffSeconds = 0;
         Instant wsNextFailureSampleAt;
