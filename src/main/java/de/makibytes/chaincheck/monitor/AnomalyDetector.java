@@ -162,8 +162,9 @@ public class AnomalyDetector {
         if (currentBlockNumber != null && previousBlockNumber != null) {
             if (currentBlockNumber < previousBlockNumber) {
                 if (allowReorgDetection) {
+                    long reorgDepth = previousBlockNumber - currentBlockNumber;
                     anomalies.add(createReorgAnomaly(nodeKey, sample, now, "Block height decreased",
-                            "Previous height " + previousBlockNumber + ", current " + currentBlockNumber));
+                            "Previous height " + previousBlockNumber + ", current " + currentBlockNumber, reorgDepth));
                 }
             } else if (source == MetricSource.WS && currentNodeHttpBlockNumber != null && currentNodeHttpBlockNumber - currentBlockNumber >= 5) {
                 anomalies.add(createBlockGapAnomaly(nodeKey, sample, now, currentNodeHttpBlockNumber - currentBlockNumber));
@@ -180,7 +181,7 @@ public class AnomalyDetector {
             String currentParentHash, boolean allowReorgDetection, List<AnomalyEvent> anomalies, Instant now) {
         if (allowReorgDetection && previousBlockHash != null && currentBlockHash != null && !previousBlockHash.equals(currentBlockHash)) {
             anomalies.add(createReorgAnomaly(nodeKey, sample, now, "Block hash changed at same height",
-                    "Previous hash " + previousBlockHash + ", current " + currentBlockHash));
+                    "Previous hash " + previousBlockHash + ", current " + currentBlockHash, 1L));
         }
     }
 
@@ -188,11 +189,11 @@ public class AnomalyDetector {
             boolean allowReorgDetection, List<AnomalyEvent> anomalies, Instant now) {
         if (allowReorgDetection && previousBlockHash != null && currentParentHash != null && !previousBlockHash.equals(currentParentHash)) {
             anomalies.add(createReorgAnomaly(nodeKey, sample, now, "Parent hash mismatch",
-                    "Expected parent " + previousBlockHash + ", got " + currentParentHash));
+                    "Expected parent " + previousBlockHash + ", got " + currentParentHash, 1L));
         }
     }
 
-    private AnomalyEvent createReorgAnomaly(String nodeKey, MetricSample sample, Instant now, String message, String details) {
+    private AnomalyEvent createReorgAnomaly(String nodeKey, MetricSample sample, Instant now, String message, String details, Long depth) {
         return new AnomalyEvent(
                 idSequence.getAndIncrement(),
                 nodeKey,
@@ -203,7 +204,8 @@ public class AnomalyDetector {
                 sample.getBlockNumber(),
                 sample.getBlockHash(),
                 sample.getParentHash(),
-                details);
+                details,
+                depth);
     }
 
     private AnomalyEvent createBlockGapAnomaly(String nodeKey, MetricSample sample, Instant now, long gap) {
@@ -217,7 +219,8 @@ public class AnomalyDetector {
                 sample.getBlockNumber(),
                 sample.getBlockHash(),
                 sample.getParentHash(),
-                "Gap of " + gap + " blocks");
+                "Gap of " + gap + " blocks",
+                gap);
     }
 
     private AnomalyType classifyErrorType(String error) {

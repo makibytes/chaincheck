@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ChainCheck Fleet Dashboard</title>
+    <link rel="icon" type="image/svg+xml" th:href="@{/favicon.svg}" />
+    <link rel="stylesheet" th:href="@{/style.css}" />
+</head>
+
+<body>
+    <div th:replace="~{fragments/fleet-header :: fleetHeader}"></div>
+    <div th:replace="~{fragments/fleet-nodes :: fleetNodes}"></div>
+    <div class="app-version" th:text="|ChainCheck v${appVersion}|"></div>
+    <div th:replace="~{fragments/scripts-hints :: scripts-hints}"></div>
+</body>
+
+</html>

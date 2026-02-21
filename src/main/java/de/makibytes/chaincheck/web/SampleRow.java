@@ -35,7 +35,8 @@ public record SampleRow(
     Integer transactionCount,
     Long gasPriceWei,
     Double attestationConfidence,
-    Long attestationSlot
+    Long attestationSlot,
+    Long firstSeenDeltaMs
 ) {
     public SampleRow {
         sources = sources != null ? List.copyOf(sources) : List.of();
@@ -56,111 +57,54 @@ public record SampleRow(
                      Integer transactionCount,
                      Long gasPriceWei) {
         this(time, sources, status, latencyMs, blockNumber, blockHash, parentHash,
-             blockTime, safe, finalized, invalid, conflict, transactionCount, gasPriceWei, null, null);
+             blockTime, safe, finalized, invalid, conflict, transactionCount, gasPriceWei, null, null, null);
     }
 
     public SampleRow withStatus(String newStatus) {
         return new SampleRow(
-            time,
-            sources,
-            newStatus,
-            latencyMs,
-            blockNumber,
-            blockHash,
-            parentHash,
-            blockTime,
-            safe,
-            finalized,
-            invalid,
-            conflict,
-            transactionCount,
-            gasPriceWei,
-            attestationConfidence,
-            attestationSlot
+            time, sources, newStatus, latencyMs, blockNumber, blockHash, parentHash,
+            blockTime, safe, finalized, invalid, conflict, transactionCount, gasPriceWei,
+            attestationConfidence, attestationSlot, firstSeenDeltaMs
         );
     }
 
     public SampleRow withFinalized(boolean newFinalized) {
         return new SampleRow(
-            time,
-            sources,
-            status,
-            latencyMs,
-            blockNumber,
-            blockHash,
-            parentHash,
-            blockTime,
-            safe,
-            newFinalized,
-            invalid,
-            conflict,
-            transactionCount,
-            gasPriceWei,
-            attestationConfidence,
-            attestationSlot
+            time, sources, status, latencyMs, blockNumber, blockHash, parentHash,
+            blockTime, safe, newFinalized, invalid, conflict, transactionCount, gasPriceWei,
+            attestationConfidence, attestationSlot, firstSeenDeltaMs
         );
     }
 
     public SampleRow withSafe(boolean newSafe) {
         return new SampleRow(
-            time,
-            sources,
-            status,
-            latencyMs,
-            blockNumber,
-            blockHash,
-            parentHash,
-            blockTime,
-            newSafe,
-            finalized,
-            invalid,
-            conflict,
-            transactionCount,
-            gasPriceWei,
-            attestationConfidence,
-            attestationSlot
+            time, sources, status, latencyMs, blockNumber, blockHash, parentHash,
+            blockTime, newSafe, finalized, invalid, conflict, transactionCount, gasPriceWei,
+            attestationConfidence, attestationSlot, firstSeenDeltaMs
         );
     }
 
     public SampleRow withConflict(boolean newConflict) {
         return new SampleRow(
-            time,
-            sources,
-            status,
-            latencyMs,
-            blockNumber,
-            blockHash,
-            parentHash,
-            blockTime,
-            safe,
-            finalized,
-            invalid,
-            newConflict,
-            transactionCount,
-            gasPriceWei,
-            attestationConfidence,
-            attestationSlot
+            time, sources, status, latencyMs, blockNumber, blockHash, parentHash,
+            blockTime, safe, finalized, invalid, newConflict, transactionCount, gasPriceWei,
+            attestationConfidence, attestationSlot, firstSeenDeltaMs
         );
     }
 
     public SampleRow withInvalid(boolean newInvalid) {
         return new SampleRow(
-            time,
-            sources,
-            status,
-            latencyMs,
-            blockNumber,
-            blockHash,
-            parentHash,
-            blockTime,
-            safe,
-            finalized,
-            newInvalid,
-            conflict,
-            transactionCount,
-            gasPriceWei,
-            attestationConfidence,
-            attestationSlot
+            time, sources, status, latencyMs, blockNumber, blockHash, parentHash,
+            blockTime, safe, finalized, newInvalid, conflict, transactionCount, gasPriceWei,
+            attestationConfidence, attestationSlot, firstSeenDeltaMs
+        );
+    }
+
+    public SampleRow withFirstSeenDeltaMs(Long newDelta) {
+        return new SampleRow(
+            time, sources, status, latencyMs, blockNumber, blockHash, parentHash,
+            blockTime, safe, finalized, invalid, conflict, transactionCount, gasPriceWei,
+            attestationConfidence, attestationSlot, newDelta
         );
     }
 }

@@ -18,7 +18,13 @@
             <span class="label">Latest Block</span>
             <span th:text="${view.latestBlockNumber != null ? view.latestBlockNumber : '-'}">-</span>
         </div>
-
+        <div class="status-item">
+            <span class="label">Last Block Age <span class="hint" data-hint="Time elapsed since the most recent block timestamp seen by this node.">?</span></span>
+            <span th:if="${view.lastBlockAgeMs != null}"
+                th:classappend="${view.lastBlockAgeMs < 15000 ? ' age-fresh' : (view.lastBlockAgeMs < 60000 ? ' age-warn' : ' age-stale')}"
+                th:text="${view.lastBlockAgeMs < 1000 ? view.lastBlockAgeMs + 'ms' : (view.lastBlockAgeMs < 60000 ? #numbers.formatDecimal(view.lastBlockAgeMs / 1000.0, 1, 1) + 's' : #numbers.formatDecimal(view.lastBlockAgeMs / 60000.0, 1, 1) + 'm')}">-</span>
+            <span th:if="${view.lastBlockAgeMs == null}" class="muted">-</span>
+        </div>
     </div>
     <div class="rpc-columns">
         <div class="rpc-column">
@@ -41,8 +47,8 @@
                     th:text="${view.wsStatus.connectedSince != null ? #temporals.format(view.wsStatus.connectedSince, 'yyyy-MM-dd HH:mm:ss') : '-'}">-</span>
             </div>
             <div class="rpc-item">
-                <span class="label">Current Error</span>
-                <span th:text="${view.wsStatus.lastError != null ? view.wsStatus.lastError : '-'}">-</span>
+                <span class="label">Current Error, Reconnections <span class="hint" data-hint="Last WebSocket error message and total reconnection count since startup.">?</span></span>
+                <span th:text="${(view.wsStatus.lastError != null ? view.wsStatus.lastError : '-') + ' (' + view.wsStatus.disconnectCount + ')'}">- (0)</span>
             </div>
         </div>
     </div>

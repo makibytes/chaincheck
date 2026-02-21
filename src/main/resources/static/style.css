@@ -1151,3 +1151,221 @@ pre {
 ::-webkit-scrollbar-thumb:hover {
     background: var(--color-text-subtle);
 }
+
+/* ===== Health Score Badge ===== */
+.health-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 32px;
+    height: 32px;
+    padding: 0 8px;
+    border-radius: 50%;
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: #fff;
+    cursor: default;
+}
+
+.health-excellent {
+    background: var(--color-success);
+}
+
+.health-good {
+    background: var(--color-warning);
+    color: #111;
+}
+
+.health-degraded {
+    background: var(--color-danger);
+}
+
+.health-down {
+    background: var(--color-text-subtle);
+}
+
+/* ===== First-seen delta chips ===== */
+.delta-first {
+    display: inline-block;
+    background: var(--color-success);
+    color: #fff;
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 4px;
+    letter-spacing: 0.03em;
+}
+
+.delta-behind {
+    color: var(--color-text-muted);
+    font-size: 0.8rem;
+}
+
+/* ===== Fleet Dashboard ===== */
+.fleet-panel {
+    margin: var(--space-lg) auto;
+    max-width: 1400px;
+    width: 95%;
+}
+
+.fleet-table-wrapper {
+    overflow-x: auto;
+    margin-top: var(--space-md);
+}
+
+.fleet-table {
+    border-collapse: collapse;
+    font-size: 0.88rem;
+}
+
+.fleet-table th {
+    text-align: left;
+    color: var(--color-text-muted);
+    font-weight: 500;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--color-border);
+    white-space: nowrap;
+}
+
+.fleet-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--color-border);
+    vertical-align: middle;
+}
+
+.fleet-row {
+    cursor: pointer;
+    transition: background var(--transition-base);
+}
+
+.fleet-row:hover {
+    background: var(--color-surface-elevated);
+}
+
+.fleet-row:last-child td {
+    border-bottom: none;
+}
+
+.fleet-details-link {
+    white-space: nowrap;
+}
+
+.fleet-ws-disconnects {
+    font-size: 0.75rem;
+    margin-left: 4px;
+}
+
+/* Reference badge */
+.ref-badge {
+    display: inline-block;
+    background: #808080;
+    color: #fff;
+    font-size: 0.6rem;
+    font-weight: 700;
+    padding: 2px 5px;
+    border-radius: 3px;
+    margin-left: 4px;
+    vertical-align: middle;
+}
+
+/* Age / last-block-age color classes */
+.age-fresh {
+    color: var(--color-success);
+}
+
+.age-warn {
+    color: var(--color-warning);
+}
+
+.age-stale {
+    color: var(--color-danger);
+}
+
+/* Utility text colors */
+.text-warn {
+    color: var(--color-warning);
+}
+
+.text-danger {
+    color: var(--color-danger);
+}
+
+/* ===== Back-to-fleet link ===== */
+.back-to-fleet {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 28px;
+    padding: 0 10px;
+    border-radius: 6px;
+    background: var(--color-surface-elevated);
+    color: var(--color-text-muted);
+    text-decoration: none;
+    font-size: 0.82rem;
+    font-weight: 500;
+    white-space: nowrap;
+    transition: background var(--transition-base), color var(--transition-base);
+    flex-shrink: 0;
+}
+
+.back-to-fleet:hover {
+    background: var(--color-border-strong);
+    color: var(--color-text);
+}
+
+/* ===== Hint badges & floating tooltip ===== */
+.hint {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 13px;
+    height: 13px;
+    border-radius: 50%;
+    border: 1px solid var(--color-border-strong);
+    color: var(--color-text-subtle);
+    font-size: 0.6rem;
+    font-weight: 700;
+    font-style: normal;
+    cursor: help;
+    vertical-align: middle;
+    margin-left: 4px;
+    flex-shrink: 0;
+    line-height: 1;
+    user-select: none;
+}
+
+.hint-tooltip {
+    position: absolute;
+    z-index: 9999;
+    background: var(--color-surface-elevated);
+    border: 1px solid var(--color-border-strong);
+    color: var(--color-text);
+    font-size: 0.78rem;
+    font-weight: 400;
+    line-height: 1.45;
+    padding: 8px 12px;
+    border-radius: 7px;
+    width: max-content;
+    max-width: 240px;
+    pointer-events: none;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+}
+
+.hint-tooltip[hidden] {
+    display: none;
+}
+
+/* ===== Fleet sparkline ===== */
+.fleet-sparkline-cell {
+    padding: 4px 8px;
+    width: 76px;
+    max-width: 76px;
+    text-align: left;
+}
+
+.fleet-sparkline {
+    display: block;
+    width: 60px;
+    height: 28px;
+    overflow: visible;
+}

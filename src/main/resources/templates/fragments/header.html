@@ -1,8 +1,13 @@
 <header class="app-header" th:fragment="header">
-    <div>
-        <h1 class="title">ChainCheck<span th:if="${appTitle != null and !appTitle.isEmpty()}"
-                th:text="' · ' + ${appTitle}"
-                th:style="'font-weight: bold; color: ' + ${appTitleColor} + ';'"></span></h1>
+    <div style="display: flex; align-items: center; gap: 16px;">
+        <a href="/" class="back-to-fleet" title="Fleet Dashboard">← Dashboard</a>
+        <h1 class="title" style="display: flex; align-items: center; gap: 10px;">
+            <span th:text="${nodeName}">Node</span>
+            <span class="health-badge"
+                th:classappend="${view.summary.healthScore >= 80} ? ' health-excellent' : (${view.summary.healthScore >= 50} ? ' health-good' : (${view.summary.healthScore >= 20} ? ' health-degraded' : ' health-down'))"
+                th:text="${view.summary.healthScore}">0</span>
+            <span class="hint" data-hint="Composite score 0–100: uptime (40%), latency P95 (25%), head-delay P95 (20%), error rate (15%). Score is 0 when the node has been continuously down for 3+ minutes.">?</span>
+        </h1>
     </div>
     <div class="header-controls">
         <label class="select-label">

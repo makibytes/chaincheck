@@ -26,6 +26,9 @@ public class DashboardSummary {
     private final long errorCount;
     private final double avgLatencyMs;
     private final long maxLatencyMs;
+    private final double p5LatencyMs;
+    private final double p25LatencyMs;
+    private final double p75LatencyMs;
     private final double p95LatencyMs;
     private final double p99LatencyMs;
     private final double httpRps;
@@ -50,6 +53,14 @@ public class DashboardSummary {
     private final long timeoutCount;
     private final long wrongHeadCount;
     private final long conflictCount;
+    private final double canonicalRatePercent;
+    private final long invalidBlockCount;
+    private final double wrongHeadRatePercent;
+    private final long maxReorgDepth;
+    private final long maxGapSize;
+    private final double avgFirstSeenDeltaMs;
+    private final double p95FirstSeenDeltaMs;
+    private final int healthScore;
 
     public DashboardSummary(long totalSamples,
                             long httpSamples,
@@ -58,6 +69,9 @@ public class DashboardSummary {
                             long errorCount,
                             double avgLatencyMs,
                             long maxLatencyMs,
+                            double p5LatencyMs,
+                            double p25LatencyMs,
+                            double p75LatencyMs,
                             double p95LatencyMs,
                             double p99LatencyMs,
                             double httpRps,
@@ -81,7 +95,15 @@ public class DashboardSummary {
                             long rateLimitCount,
                             long timeoutCount,
                             long wrongHeadCount,
-                            long conflictCount) {
+                            long conflictCount,
+                            double canonicalRatePercent,
+                            long invalidBlockCount,
+                            double wrongHeadRatePercent,
+                            long maxReorgDepth,
+                            long maxGapSize,
+                            double avgFirstSeenDeltaMs,
+                            double p95FirstSeenDeltaMs,
+                            int healthScore) {
         this.totalSamples = totalSamples;
         this.httpSamples = httpSamples;
         this.wsSamples = wsSamples;
@@ -89,6 +111,9 @@ public class DashboardSummary {
         this.errorCount = errorCount;
         this.avgLatencyMs = avgLatencyMs;
         this.maxLatencyMs = maxLatencyMs;
+        this.p5LatencyMs = p5LatencyMs;
+        this.p25LatencyMs = p25LatencyMs;
+        this.p75LatencyMs = p75LatencyMs;
         this.p95LatencyMs = p95LatencyMs;
         this.p99LatencyMs = p99LatencyMs;
         this.httpRps = httpRps;
@@ -113,6 +138,14 @@ public class DashboardSummary {
         this.timeoutCount = timeoutCount;
         this.wrongHeadCount = wrongHeadCount;
         this.conflictCount = conflictCount;
+        this.canonicalRatePercent = canonicalRatePercent;
+        this.invalidBlockCount = invalidBlockCount;
+        this.wrongHeadRatePercent = wrongHeadRatePercent;
+        this.maxReorgDepth = maxReorgDepth;
+        this.maxGapSize = maxGapSize;
+        this.avgFirstSeenDeltaMs = avgFirstSeenDeltaMs;
+        this.p95FirstSeenDeltaMs = p95FirstSeenDeltaMs;
+        this.healthScore = healthScore;
     }
 
     public long getTotalSamples() {
@@ -141,6 +174,18 @@ public class DashboardSummary {
 
     public long getMaxLatencyMs() {
         return maxLatencyMs;
+    }
+
+    public double getP5LatencyMs() {
+        return p5LatencyMs;
+    }
+
+    public double getP25LatencyMs() {
+        return p25LatencyMs;
+    }
+
+    public double getP75LatencyMs() {
+        return p75LatencyMs;
     }
 
     public double getP95LatencyMs() {
@@ -237,5 +282,37 @@ public class DashboardSummary {
 
     public long getConflictCount() {
         return conflictCount;
+    }
+
+    public double getCanonicalRatePercent() {
+        return canonicalRatePercent;
+    }
+
+    public long getInvalidBlockCount() {
+        return invalidBlockCount;
+    }
+
+    public double getWrongHeadRatePercent() {
+        return wrongHeadRatePercent;
+    }
+
+    public long getMaxReorgDepth() {
+        return maxReorgDepth;
+    }
+
+    public long getMaxGapSize() {
+        return maxGapSize;
+    }
+
+    public double getAvgFirstSeenDeltaMs() {
+        return avgFirstSeenDeltaMs;
+    }
+
+    public double getP95FirstSeenDeltaMs() {
+        return p95FirstSeenDeltaMs;
+    }
+
+    public int getHealthScore() {
+        return healthScore;
     }
 }

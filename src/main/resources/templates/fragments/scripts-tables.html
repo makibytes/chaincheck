@@ -217,11 +217,23 @@
             }).join(' ');
         }
 
+        let deltaCell = '';
+        if (multiNodeConfigured) {
+            if (s.firstSeenDeltaMs === 0) {
+                deltaCell = '<td><span class="delta-first">FIRST</span></td>';
+            } else if (s.firstSeenDeltaMs != null && s.firstSeenDeltaMs > 0) {
+                deltaCell = `<td><span class="delta-behind">+${s.firstSeenDeltaMs}ms</span></td>`;
+            } else {
+                deltaCell = '<td><span class="muted">-</span></td>';
+            }
+        }
+
         return `
         <td>${s.time ?? '-'}</td>
         <td>${sourceDisplay || '-'}</td>
         <td>${statusDisplay}</td>
         <td>${s.latencyMs !== null && s.latencyMs !== undefined ? s.latencyMs + ' ms' : 'n/a'}</td>
+        ${deltaCell}
         <td>${blockDisplay}</td>
         <td>${s.transactionCount ?? '-'}</td>
         <td>${s.gasPriceWei ? (s.gasPriceWei / 1_000_000_000).toFixed(4) : '-'}</td>

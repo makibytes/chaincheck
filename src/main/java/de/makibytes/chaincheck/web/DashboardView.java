@@ -77,6 +77,8 @@ public class DashboardView {
     private final Instant generatedAt;
     private final ReferenceComparison referenceComparison;
     private final boolean isReferenceNode;
+    private final Long lastBlockAgeMs;
+    private final boolean multiNodeConfigured;
 
     private DashboardView(TimeRange range,
                           DashboardSummary summary,
@@ -112,7 +114,9 @@ public class DashboardView {
                           boolean hasOlderAggregates,
                           Instant generatedAt,
                           ReferenceComparison referenceComparison,
-                          boolean isReferenceNode) {
+                          boolean isReferenceNode,
+                          Long lastBlockAgeMs,
+                          boolean multiNodeConfigured) {
         this.range = range;
         this.summary = summary;
         this.anomalies = anomalies;
@@ -164,6 +168,8 @@ public class DashboardView {
         this.generatedAt = generatedAt;
         this.referenceComparison = referenceComparison;
         this.isReferenceNode = isReferenceNode;
+        this.lastBlockAgeMs = lastBlockAgeMs;
+        this.multiNodeConfigured = multiNodeConfigured;
     }
 
     static DashboardView create(TimeRange range,
@@ -200,7 +206,9 @@ public class DashboardView {
                                 boolean hasOlderAggregates,
                                 Instant generatedAt,
                                 ReferenceComparison referenceComparison,
-                                boolean isReferenceNode) {
+                                boolean isReferenceNode,
+                                Long lastBlockAgeMs,
+                                boolean multiNodeConfigured) {
         return new DashboardView(range, summary, anomalies, anomalyRows, sampleRows,
                 chartData, delayChartData,
                 chartReferenceHeadDelays, chartReferenceSafeDelays, chartReferenceFinalizedDelays,
@@ -211,7 +219,8 @@ public class DashboardView {
                 totalPages, pageSize, totalSamples,
                 anomalyTotalPages, anomalyPageSize, totalAnomalies,
                 scaleChangeMs, scaleMaxMs, hasOlderAggregates,
-                generatedAt, referenceComparison, isReferenceNode);
+                generatedAt, referenceComparison, isReferenceNode,
+                lastBlockAgeMs, multiNodeConfigured);
     }
 
     public TimeRange getRange() {
@@ -416,5 +425,13 @@ public class DashboardView {
 
     public boolean isReferenceNode() {
         return isReferenceNode;
+    }
+
+    public Long getLastBlockAgeMs() {
+        return lastBlockAgeMs;
+    }
+
+    public boolean isMultiNodeConfigured() {
+        return multiNodeConfigured;
     }
 }

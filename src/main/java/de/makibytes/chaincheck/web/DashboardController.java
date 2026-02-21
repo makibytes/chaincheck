@@ -55,7 +55,35 @@ public class DashboardController {
         this.appVersionProvider = appVersionProvider;
     }
 
-    @GetMapping({"/", "/dashboard"})
+    @GetMapping("/")
+    public String fleet(@RequestParam(name = "range", required = false) String rangeKey,
+                        @RequestParam(name = "end", required = false) Long endEpochMs,
+                        Model model) {
+        TimeRange range = TimeRange.fromKey(rangeKey);
+        Instant now = Instant.now();
+        Instant end = endEpochMs == null ? now : Instant.ofEpochMilli(endEpochMs);
+        if (end.isAfter(now)) {
+            end = now;
+        }
+        Instant oldestEnd = now.minus(TimeRange.MONTH_1.getDuration());
+        if (end.isBefore(oldestEnd)) {
+            end = oldestEnd;
+        }
+
+        FleetView fleetView = dashboardService.getFleetView(range, end);
+
+        model.addAttribute("appName", "ChainCheck");
+        model.addAttribute("appTitle", properties.getTitle());
+        model.addAttribute("appTitleColor", properties.getTitleColor());
+        model.addAttribute("ranges", TimeRange.values());
+        model.addAttribute("range", range);
+        model.addAttribute("endParam", endEpochMs);
+        model.addAttribute("fleetView", fleetView);
+        model.addAttribute("appVersion", appVersionProvider.getVersion());
+        return "fleet";
+    }
+
+    @GetMapping("/dashboard")
     public String dashboard(@RequestParam(name = "range", required = false) String rangeKey,
                             @RequestParam(name = "node", required = false) String nodeKey,
                             @RequestParam(name = "end", required = false) Long endEpochMs,

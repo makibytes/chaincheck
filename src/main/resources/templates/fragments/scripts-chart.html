@@ -318,6 +318,23 @@
             });
         }
 
+        const hasAnyErrorRate = errorRateData.some(v => v != null && v > 0);
+        if (hasAnyErrorRate) {
+            datasets.push({
+                label: 'Error rate %',
+                data: errorRateData,
+                borderColor: `rgba(${theme.dangerRgb}, 0.6)`,
+                backgroundColor: `rgba(${theme.dangerRgb}, 0.0)`,
+                borderWidth: 1,
+                borderDash: [4, 4],
+                pointRadius: 0,
+                spanGaps: true,
+                tension: 0.2,
+                yAxisID: 'yError',
+                order: 0
+            });
+        }
+
         const chartInstance = new Chart(ctx, {
             type: 'line',
             data: {
@@ -402,6 +419,17 @@
                             callback: (value) => `${inverseScale(value)} ms`
                         },
                         grid: { color: theme.grid }
+                    },
+                    yError: {
+                        display: hasAnyErrorRate,
+                        position: 'right',
+                        min: 0,
+                        max: 100,
+                        ticks: {
+                            color: theme.textSubtle,
+                            callback: (value) => value + '%'
+                        },
+                        grid: { drawOnChartArea: false }
                     }
                 }
             }

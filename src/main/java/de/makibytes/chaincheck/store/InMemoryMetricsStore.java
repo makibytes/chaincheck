@@ -63,6 +63,7 @@ public class InMemoryMetricsStore {
     private final Map<Long, AnomalyEvent> anomalyById = new ConcurrentHashMap<>();
     private final Map<String, Long> latestHttpBlockNumber = new ConcurrentHashMap<>();
     private final Map<String, Long> latestBlockNumber = new ConcurrentHashMap<>();
+    private final Map<String, Instant> latestBlockTimestampByNode = new ConcurrentHashMap<>();
     private final Duration rawRetention = Duration.ofHours(2);
     private final Duration minutelyRetention = Duration.ofDays(3);
     private final Duration aggregateRetention = TimeRange.MONTH_1.getDuration();
@@ -100,6 +101,10 @@ public class InMemoryMetricsStore {
             if (sample.getSource() == MetricSource.HTTP) {
                 latestHttpBlockNumber.put(nodeKey, sample.getBlockNumber());
             }
+        }
+        if (sample.getBlockTimestamp() != null) {
+            latestBlockTimestampByNode.merge(nodeKey, sample.getBlockTimestamp(),
+                    (existing, incoming) -> incoming.isAfter(existing) ? incoming : existing);
         }
     }
 
@@ -209,6 +214,10 @@ public class InMemoryMetricsStore {
 
     public Long getLatestKnownBlockNumber(String nodeKey) {
         return latestBlockNumber.get(nodeKey);
+    }
+
+    public Instant getLatestBlockTimestamp(String nodeKey) {
+        return latestBlockTimestampByNode.get(nodeKey);
     }
 
     @Scheduled(fixedDelay = 5000)
