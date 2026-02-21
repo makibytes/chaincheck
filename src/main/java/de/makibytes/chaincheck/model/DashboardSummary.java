@@ -31,8 +31,6 @@ public class DashboardSummary {
     private final double p75LatencyMs;
     private final double p95LatencyMs;
     private final double p99LatencyMs;
-    private final double httpRps;
-    private final double wsEventsPerMinute;
     private final double uptimePercent;
     private final double errorRatePercent;
     private final double avgNewBlockPropagationMs;
@@ -74,8 +72,6 @@ public class DashboardSummary {
                             double p75LatencyMs,
                             double p95LatencyMs,
                             double p99LatencyMs,
-                            double httpRps,
-                            double wsEventsPerMinute,
                             double uptimePercent,
                             double errorRatePercent,
                             double avgNewBlockPropagationMs,
@@ -116,8 +112,6 @@ public class DashboardSummary {
         this.p75LatencyMs = p75LatencyMs;
         this.p95LatencyMs = p95LatencyMs;
         this.p99LatencyMs = p99LatencyMs;
-        this.httpRps = httpRps;
-        this.wsEventsPerMinute = wsEventsPerMinute;
         this.uptimePercent = uptimePercent;
         this.errorRatePercent = errorRatePercent;
         this.avgNewBlockPropagationMs = avgNewBlockPropagationMs;
@@ -194,14 +188,6 @@ public class DashboardSummary {
 
     public double getP99LatencyMs() {
         return p99LatencyMs;
-    }
-
-    public double getHttpRps() {
-        return httpRps;
-    }
-
-    public double getWsEventsPerMinute() {
-        return wsEventsPerMinute;
     }
 
     public double getUptimePercent() {

@@ -60,6 +60,10 @@ public class WsMonitorService {
     private final Map<String, RpcMonitorService.NodeState> nodeStates;
     private final HttpMonitorService httpMonitorService;
     private final ExecutorService recoveryExecutor = Executors.newVirtualThreadPerTaskExecutor();
+    // Bounded memory tracking:
+    // - recoveryAttemptByNodeAndBlock: cleaned up entries older than RECOVERY_ATTEMPT_DEDUP_WINDOW (10s)
+    // - wsHashesByNodeAndNumber: cleaned up entries before blockNumber - INVALID_TRACKING_LOOKBACK_BLOCKS (64)
+    // - chainTrackers: per-node ChainTracker with internal limits (MAX_KNOWN_BLOCKS=1024, MAX_CANONICAL_LENGTH=256)
     private final Map<String, Instant> recoveryAttemptByNodeAndBlock = new ConcurrentHashMap<>();
     private final Map<String, Map<Long, Set<String>>> wsHashesByNodeAndNumber = new ConcurrentHashMap<>();
     private final Map<String, ChainTracker> chainTrackers = new ConcurrentHashMap<>();
@@ -402,6 +406,21 @@ public class WsMonitorService {
             WsConnectionTracker tracker = nodeRegistry.getWsTracker(node.key());
             if (tracker != null) {
                 tracker.clearLastError();
+            }
+
+            // Cosmos mode: register block via ChainTracker for reorg detection via parentHash linkage
+            if (blockHash != null && parentHash != null && blockNumber != null && blockTimestamp != null) {
+                ChainTracker chainTracker = chainTrackers.computeIfAbsent(node.key(), ChainTracker::new);
+                ChainTracker.BlockNode blockNode = new ChainTracker.BlockNode(
+                        blockHash, parentHash, blockNumber, blockTimestamp, now, Confidence.NEW);
+                ChainTracker.ChainUpdate update = chainTracker.registerBlock(blockNode);
+
+                if (update.reorg() != null) {
+                    logger.info("Reorg detected via ChainTracker for Cosmos node {}: depth={}, oldHead={}@{}, newHead={}@{}",
+                            node.name(), update.reorg().reorgDepth(),
+                            update.reorg().oldHeadHash(), update.reorg().oldHeadNumber(),
+                            update.reorg().newHeadHash(), update.reorg().newHeadNumber());
+                }
             }
 
             if (monitor.isWarmupComplete()) {

@@ -219,6 +219,49 @@
     // Helper function to scale multiple data arrays
     const scaleMultiple = (arrays) => arrays.map(arr => arr.map(scaleValue));
 
+    // Color gradient function for latency values (blue < 200ms -> purple < 500ms -> red > 500ms)
+    const getLatencyColor = (latencyMs, alpha = 1) => {
+        if (latencyMs == null) return null;
+        
+        let r, g, b;
+        if (latencyMs < 200) {
+            // Blue (91, 141, 255) at 0ms, transitioning to purple at 200ms
+            const t = latencyMs / 200;
+            r = Math.round(91 + (176 - 91) * t);    // 91 -> 176
+            g = Math.round(141 + (116 - 141) * t);  // 141 -> 116
+            b = Math.round(255 + (255 - 255) * t);  // 255 -> 255
+        } else if (latencyMs < 500) {
+            // Purple (176, 116, 255) at 200ms, transitioning to red at 500ms
+            const t = (latencyMs - 200) / 300;
+            r = Math.round(176 + (255 - 176) * t);  // 176 -> 255
+            g = Math.round(116 + (107 - 116) * t);  // 116 -> 107
+            b = Math.round(255 + (107 - 255) * t);  // 255 -> 107
+        } else {
+            // Red (255, 107, 107) for 500ms and above
+            r = 255;
+            g = 107;
+            b = 107;
+        }
+        
+        return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    };
+
+    const getLatencyGradientColors = (dataArray) => {
+        if (!dataArray || dataArray.length === 0) return [];
+        
+        const colors = [];
+        for (let i = 0; i < dataArray.length; i++) {
+            const value = dataArray[i];
+            if (value != null) {
+                const unscaled = inverseScale(value);
+                colors.push(getLatencyColor(unscaled, 0.8));
+            } else {
+                colors.push(null);
+            }
+        }
+        return colors;
+    };
+
     const [
         latencyScaled, latencyMinScaled, latencyMaxScaled,
         headDelayScaled, headDelayMinScaled, headDelayMaxScaled,
@@ -233,6 +276,55 @@
         referenceHeadDelayData, referenceSafeDelayData, referenceFinalizedDelayData
     ]);
 
+    // After the legend is drawn, replace the rectangle swatches for "Network Latency" and
+    // "Head Delay P95" with short horizontal lines that mirror the actual chart lines.
+    // The generateLabels callback hides the default boxes for these two items (transparent
+    // fill + no border) so this plugin draws cleanly on the cleared swatch area.
+    // Chart.js populates legendHitBoxes during draw(); each entry has {left, top, width, height}.
+    const LEGEND_LINE_ITEMS = new Set(['Network Latency', 'Head Delay P95']);
+    const latencyLegendGradientPlugin = {
+        id: 'latencyLegendGradient',
+        afterDraw(chart) {
+            const legend = chart.legend;
+            if (!legend || !legend.legendItems || !legend.legendHitBoxes) return;
+            const boxWidth = (legend.options.labels && legend.options.labels.boxWidth) || 40;
+            legend.legendItems.forEach((item, i) => {
+                if (!LEGEND_LINE_ITEMS.has(item.text)) return;
+                const box = legend.legendHitBoxes[i];
+                if (!box) return;
+                const x0 = box.left;
+                const x1 = x0 + boxWidth;
+                const y  = box.top + box.height / 2;
+                const chartCtx = chart.ctx;
+
+                let strokeStyle;
+                if (item.text === 'Network Latency') {
+                    // Full blue → purple → red gradient, accurate to the same breakpoints used
+                    // by the chart line's per-segment colouring.
+                    const grad = chartCtx.createLinearGradient(x0, 0, x1, 0);
+                    grad.addColorStop(0,         getLatencyColor(0,   1.0));  // blue   @ 0 ms
+                    grad.addColorStop(200 / 500, getLatencyColor(200, 1.0));  // purple @ 200 ms
+                    grad.addColorStop(1.0,       getLatencyColor(500, 1.0));  // red    @ 500 ms
+                    strokeStyle = grad;
+                } else {
+                    // Head Delay P95 → solid line in the theme head-delay colour
+                    strokeStyle = theme.headDelay;
+                }
+
+                chartCtx.save();
+                chartCtx.strokeStyle = strokeStyle;
+                chartCtx.lineWidth   = 3; // slightly thicker than the 2 px chart lines
+                chartCtx.lineCap     = 'round';
+                chartCtx.setLineDash([]);
+                chartCtx.beginPath();
+                chartCtx.moveTo(x0, y);
+                chartCtx.lineTo(x1, y);
+                chartCtx.stroke();
+                chartCtx.restore();
+            });
+        }
+    };
+
     const createLineDataset = ({
         label,
         data,
@@ -240,18 +332,52 @@
         color,
         rgb,
         backgroundAlpha,
-        order
-    }) => ({
-        label,
-        data,
-        originalData,
-        borderColor: color,
-        backgroundColor: `rgba(${rgb}, ${backgroundAlpha})`,
-        spanGaps: true,
-        tension: 0.2,
-        yAxisID: 'y',
-        order
-    });
+        order,
+        useLatencyGradient
+    }) => {
+        const dataset = {
+            label,
+            data,
+            originalData,
+            borderColor: color,
+            backgroundColor: `rgba(${rgb}, ${backgroundAlpha})`,
+            spanGaps: true,
+            tension: 0.2,
+            yAxisID: 'y',
+            order,
+            borderWidth: 2
+        };
+
+        if (useLatencyGradient && originalData) {
+            // Chart.js segment context provides p0DataIndex / p1DataIndex (start and end of each
+            // rendered segment) and p0 / p1 (PointElement with pixel x/y coordinates).
+            // We create a horizontal canvas LinearGradient for each segment so the color
+            // transitions smoothly from the value at p0 to the value at p1.
+            dataset.segment = {
+                borderColor: ctx => {
+                    const v0 = originalData[ctx.p0DataIndex];
+                    const v1 = originalData[ctx.p1DataIndex];
+                    // Both null → spanning a full gap, keep line invisible (spanGaps still draws it)
+                    if (v0 == null && v1 == null) return color;
+                    // One side null (leading/trailing gap): use the available value
+                    const eff0 = v0 ?? v1;
+                    const eff1 = v1 ?? v0;
+                    const c0 = getLatencyColor(eff0, 1.0);
+                    const c1 = getLatencyColor(eff1, 1.0);
+                    // Same color zone — skip gradient allocation
+                    if (c0 === c1) return c0;
+                    // Horizontal gradient (along the time axis) so the colour at each x
+                    // accurately reflects the latency at that data point.
+                    const gradient = ctx.chart.ctx.createLinearGradient(ctx.p0.x, 0, ctx.p1.x, 0);
+                    gradient.addColorStop(0, c0);
+                    gradient.addColorStop(1, c1);
+                    return gradient;
+                }
+            };
+        }
+
+        return dataset;
+    };
 
     const createBandDataset = ({ label, data, originalData, rgb }) => ({
         label,

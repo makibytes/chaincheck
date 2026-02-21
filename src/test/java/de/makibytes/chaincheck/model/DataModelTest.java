@@ -158,10 +158,16 @@ class MetricSampleTest {
     @DisplayName("create sample: should construct with all fields")
     void testCreateSample() {
         Instant now = Instant.now();
-        MetricSample sample = new MetricSample(
-            now, MetricSource.HTTP, true, 500, 1000L, now,
-            "0xblock", "0xparent", 100, 50000000L, null, null, null, null
-        );
+        MetricSample sample = MetricSample.builder(now, MetricSource.HTTP)
+            .success(true)
+            .latencyMs(500)
+            .blockNumber(1000L)
+            .blockTimestamp(now)
+            .blockHash("0xblock")
+            .parentHash("0xparent")
+            .transactionCount(100)
+            .gasPriceWei(50000000L)
+            .build();
 
         assertEquals(now, sample.getTimestamp());
         assertEquals(MetricSource.HTTP, sample.getSource());
@@ -177,10 +183,12 @@ class MetricSampleTest {
     @Test
     @DisplayName("failed sample: should represent RPC errors")
     void testFailedSample() {
-        MetricSample sample = new MetricSample(
-            Instant.now(), MetricSource.HTTP, false, -1, null, Instant.now(),
-            null, null, null, null, "Connection timeout", null, null, null
-        );
+        MetricSample sample = MetricSample.builder(Instant.now(), MetricSource.HTTP)
+            .success(false)
+            .latencyMs(-1)
+            .blockTimestamp(Instant.now())
+            .error("Connection timeout")
+            .build();
 
         assertFalse(sample.isSuccess());
         assertEquals(-1, sample.getLatencyMs());
@@ -191,10 +199,16 @@ class MetricSampleTest {
     @Test
     @DisplayName("successful sample: should represent healthy RPC calls")
     void testSuccessfulSample() {
-        MetricSample sample = new MetricSample(
-            Instant.now(), MetricSource.HTTP, true, 100, 1000L, Instant.now(),
-            "0x123", "0x456", 50, 25000000L, null, null, null, null
-        );
+        MetricSample sample = MetricSample.builder(Instant.now(), MetricSource.HTTP)
+            .success(true)
+            .latencyMs(100)
+            .blockNumber(1000L)
+            .blockTimestamp(Instant.now())
+            .blockHash("0x123")
+            .parentHash("0x456")
+            .transactionCount(50)
+            .gasPriceWei(25000000L)
+            .build();
 
         assertTrue(sample.isSuccess());
         assertEquals(100, sample.getLatencyMs());
@@ -205,12 +219,22 @@ class MetricSampleTest {
     @DisplayName("metric sources: should differentiate HTTP and WS samples")
     void testMetricSourceDifferentiation() {
         Instant now = Instant.now();
-        MetricSample httpSample = new MetricSample(
-            now, MetricSource.HTTP, true, 100, 1000L, now, "0x123", "0x456", null, null, null, null, null, null
-        );
-        MetricSample wsSample = new MetricSample(
-            now, MetricSource.WS, true, 50, 1000L, now, "0x123", "0x456", null, null, null, null, null, null
-        );
+        MetricSample httpSample = MetricSample.builder(now, MetricSource.HTTP)
+            .success(true)
+            .latencyMs(100)
+            .blockNumber(1000L)
+            .blockTimestamp(now)
+            .blockHash("0x123")
+            .parentHash("0x456")
+            .build();
+        MetricSample wsSample = MetricSample.builder(now, MetricSource.WS)
+            .success(true)
+            .latencyMs(50)
+            .blockNumber(1000L)
+            .blockTimestamp(now)
+            .blockHash("0x123")
+            .parentHash("0x456")
+            .build();
 
         assertEquals(MetricSource.HTTP, httpSample.getSource());
         assertEquals(MetricSource.WS, wsSample.getSource());

@@ -9,7 +9,8 @@
             color: theme.primary,
             rgb: theme.primaryRgb,
             backgroundAlpha: 0.2,
-            order: 2
+            order: 2,
+            useLatencyGradient: true
         })];
 
         if (hasAggregatedLatencies) {
@@ -341,7 +342,7 @@
                 labels,
                 datasets
             },
-            plugins: [confidenceBandPlugin, errorBarPlugin, scaleIndicatorPlugin],
+            plugins: [confidenceBandPlugin, errorBarPlugin, scaleIndicatorPlugin, latencyLegendGradientPlugin],
             options: {
                 responsive: true,
                 plugins: {
@@ -364,6 +365,13 @@
                                     if (legendItem.text === 'WS Errors') {
                                         legendItem.fillStyle = wsPattern;
                                         legendItem.strokeStyle = 'rgba(0, 0, 0, 0)';
+                                    }
+                                    // Hide the default rectangle; latencyLegendGradientPlugin
+                                    // redraws these as short horizontal lines after the chart is drawn.
+                                    if (legendItem.text === 'Network Latency' || legendItem.text === 'Head Delay P95') {
+                                        legendItem.fillStyle   = 'rgba(0,0,0,0)';
+                                        legendItem.strokeStyle = 'rgba(0,0,0,0)';
+                                        legendItem.lineWidth   = 0;
                                     }
                                 });
 

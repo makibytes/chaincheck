@@ -22,19 +22,21 @@ import org.springframework.stereotype.Component;
  * Health score ranges from 0 (completely unhealthy) to 100 (perfect health).
  * 
  * Score composition:
- * - Uptime: 40% weight
- * - Latency P95: 25% weight  
- * - Head delay P95: 20% weight
- * - Anomaly rate: 15% weight
+ * - Uptime: 30% weight
+ * - Latency P95: 20% weight  
+ * - Head delay P95: 15% weight
+ * - Anomaly rate: 10% weight
+ * - WebSocket connection: 25% weight (if configured)
  */
 @Component
 public class HealthScoreCalculator {
 
     // Score weights (must sum to 100)
-    private static final double UPTIME_WEIGHT = 40.0;
-    private static final double LATENCY_WEIGHT = 25.0;
-    private static final double HEAD_DELAY_WEIGHT = 20.0;
-    private static final double ANOMALY_WEIGHT = 15.0;
+    private static final double UPTIME_WEIGHT = 30.0;
+    private static final double LATENCY_WEIGHT = 20.0;
+    private static final double HEAD_DELAY_WEIGHT = 15.0;
+    private static final double ANOMALY_WEIGHT = 10.0;
+    private static final double WS_WEIGHT = 25.0;
     
     // Thresholds for score degradation
     private static final double LATENCY_THRESHOLD_MS = 2000.0;
@@ -50,10 +52,13 @@ public class HealthScoreCalculator {
      * @param errorCount number of errors
      * @param totalRequests total number of requests
      * @param isCurrentlyDown true if node is currently down
+     * @param wsConfigured true if WebSocket monitoring is configured for this node
+     * @param wsUp true if WebSocket is currently connected
      * @return health score (0-100)
      */
     public int calculateHealthScore(double uptimePercent, double p95LatencyMs, double p95HeadDelayMs, 
-                                    long errorCount, long totalRequests, boolean isCurrentlyDown) {
+                                    long errorCount, long totalRequests, boolean isCurrentlyDown,
+                                    boolean wsConfigured, boolean wsUp) {
         // Node is completely down
         if (isCurrentlyDown || (totalRequests > 0 && uptimePercent <= 0.0)) {
             return 0;
@@ -65,8 +70,19 @@ public class HealthScoreCalculator {
         double headDelayScore = calculateHeadDelayScore(p95HeadDelayMs);
         double anomalyScore = calculateAnomalyScore(errorCount, totalRequests);
         
+        // WebSocket penalty: if configured but down, apply a moderate penalty
+        // A node with good HTTP can still reach 40-45 points even with WS down
+        if (wsConfigured && !wsUp) {
+            double baseScore = uptimeScore + latencyScore + headDelayScore + anomalyScore;
+            // Apply penalty: lose half the WS weight (12.5) instead of full weight
+            return Math.max(0, (int) Math.round(baseScore - (WS_WEIGHT / 2.0)));
+        }
+        
+        // Add full WS score if configured and up
+        double wsScore = wsConfigured && wsUp ? WS_WEIGHT : 0;
+        
         // Combine scores and round to integer
-        double totalScore = uptimeScore + latencyScore + headDelayScore + anomalyScore;
+        double totalScore = uptimeScore + latencyScore + headDelayScore + anomalyScore + wsScore;
         return (int) Math.round(totalScore);
     }
     

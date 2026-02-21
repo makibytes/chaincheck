@@ -15,7 +15,10 @@
       "Bash(mvn clean install 2>&1 | grep \"BUILD\")",
       "Bash(mvn clean install -q 2>&1 | tail -30)",
       "Bash(mvn clean install -q 2>&1 | grep -E \"BUILD|ERROR|FAILURE|Tests run\" | tail -20)",
-      "Bash(mvn clean install 2>&1 | grep -E \"BUILD|Tests run|FAILURE\" | tail -10)"
+      "Bash(mvn clean install 2>&1 | grep -E \"BUILD|Tests run|FAILURE\" | tail -10)",
+      "Bash(mvn clean install -q 2>&1 | tail -20)",
+      "Bash(mvn clean install 2>&1 | grep -E \"BUILD|ERROR|FAILURE|Tests run\" | tail -10)",
+      "Bash(mvn clean install 2>&1 | grep -E \"BUILD|ERROR|FAILURE|Tests run\" | tail -5)"
     ]
   }
 }

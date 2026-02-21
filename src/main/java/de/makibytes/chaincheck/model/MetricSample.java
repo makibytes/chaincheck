@@ -33,6 +33,7 @@ public class MetricSample {
     private final Long gasPriceWei;
     private final String error;
     private final Long headDelayMs;
+    private final Long latestDelayMs;
     private final Long safeDelayMs;
     private final Long finalizedDelayMs;
 
@@ -48,6 +49,7 @@ public class MetricSample {
                         Long gasPriceWei,
                         String error,
                         Long headDelayMs,
+                        Long latestDelayMs,
                         Long safeDelayMs,
                         Long finalizedDelayMs) {
         this.timestamp = timestamp;
@@ -62,6 +64,7 @@ public class MetricSample {
         this.gasPriceWei = gasPriceWei;
         this.error = error;
         this.headDelayMs = headDelayMs;
+        this.latestDelayMs = latestDelayMs;
         this.safeDelayMs = safeDelayMs;
         this.finalizedDelayMs = finalizedDelayMs;
     }
@@ -114,6 +117,10 @@ public class MetricSample {
         return headDelayMs;
     }
 
+    public Long getLatestDelayMs() {
+        return latestDelayMs;
+    }
+
     public Long getSafeDelayMs() {
         return safeDelayMs;
     }
@@ -138,8 +145,7 @@ public class MetricSample {
         private Integer transactionCount;
         private Long gasPriceWei;
         private String error;
-        private Long headDelayMs;
-        private Long safeDelayMs;
+        private Long headDelayMs;        private Long latestDelayMs;        private Long safeDelayMs;
         private Long finalizedDelayMs;
 
         private Builder(Instant timestamp, MetricSource source) {
@@ -157,13 +163,14 @@ public class MetricSample {
         public Builder gasPriceWei(Long gasPriceWei) { this.gasPriceWei = gasPriceWei; return this; }
         public Builder error(String error) { this.error = error; return this; }
         public Builder headDelayMs(Long headDelayMs) { this.headDelayMs = headDelayMs; return this; }
+        public Builder latestDelayMs(Long latestDelayMs) { this.latestDelayMs = latestDelayMs; return this; }
         public Builder safeDelayMs(Long safeDelayMs) { this.safeDelayMs = safeDelayMs; return this; }
         public Builder finalizedDelayMs(Long finalizedDelayMs) { this.finalizedDelayMs = finalizedDelayMs; return this; }
 
         public MetricSample build() {
             return new MetricSample(timestamp, source, success, latencyMs, blockNumber,
                     blockTimestamp, blockHash, parentHash, transactionCount, gasPriceWei,
-                    error, headDelayMs, safeDelayMs, finalizedDelayMs);
+                    error, headDelayMs, latestDelayMs, safeDelayMs, finalizedDelayMs);
         }
     }
 }

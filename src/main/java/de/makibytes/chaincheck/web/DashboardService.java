@@ -72,7 +72,6 @@ public class DashboardService {
     
     // Thresholds
     private static final long STALE_BLOCK_THRESHOLD_MS = 30000; // 30 seconds
-    private static final double SECONDS_PER_MINUTE = 60.0;
     private static final double PERCENT_MULTIPLIER = 100.0;
 
 
@@ -169,9 +168,6 @@ public class DashboardService {
                 + aggregateSamples.stream().mapToLong(SampleAggregate::getHttpCount).sum();
         long wsCount = rawSamples.stream().filter(sample -> sample.getSource() == MetricSource.WS).count()
                 + aggregateSamples.stream().mapToLong(SampleAggregate::getWsCount).sum();
-        double rangeSeconds = Math.max(1, range.getDuration().toSeconds());
-        double httpRps = httpCount / rangeSeconds;
-        double wsEventsPerMinute = (wsCount / rangeSeconds) * SECONDS_PER_MINUTE;
         double uptimePercent = total == 0 ? 0 : (success * PERCENT_MULTIPLIER) / total;
         double errorRatePercent = total == 0 ? 0 : (errors * PERCENT_MULTIPLIER) / total;
 
@@ -610,7 +606,7 @@ public class DashboardService {
                 .filter(s -> s.getSource() == MetricSource.HTTP && s.getTimestamp().isAfter(threeMinAgo) && s.isSuccess())
                 .count();
         boolean isCurrentlyDown = httpConfigured && recentHttp > 0 && recentHttpSuccess == 0;
-        int healthScore = healthScoreCalculator.calculateHealthScore(uptimePercent, p95Latency, newBlockStats.p95(), errors, total, isCurrentlyDown);
+        int healthScore = healthScoreCalculator.calculateHealthScore(uptimePercent, p95Latency, newBlockStats.p95(), errors, total, isCurrentlyDown, wsConfigured, wsUp);
 
         // Last block age
         Instant lastBlockTs = store.getLatestBlockTimestamp(nodeKey);
@@ -629,8 +625,6 @@ public class DashboardService {
             p75Latency,
             p95Latency,
             p99Latency,
-            httpRps,
-            wsEventsPerMinute,
             uptimePercent,
             errorRatePercent,
             newBlockStats.average(),
@@ -760,15 +754,16 @@ public class DashboardService {
                     .filter(s -> s.getSource() == MetricSource.HTTP && s.getTimestamp().isAfter(threeMinAgo) && s.isSuccess())
                     .count();
             boolean isCurrentlyDown = httpConfigured && recentHttp > 0 && recentHttpSuccess == 0;
-            int healthScore = healthScoreCalculator.calculateHealthScore(uptime, p95Lat, p95Head, errors, total, isCurrentlyDown);
+            int healthScore = healthScoreCalculator.calculateHealthScore(uptime, p95Lat, p95Head, errors, total, isCurrentlyDown, wsConfigured, wsUp);
             String healthLabel = FleetNodeSummary.labelForScore(healthScore);
             String sparkline = sparklineBuilder.buildPoints(raw, now);
+            String coloredPaths = sparklineBuilder.buildColoredPaths(raw, now);
 
             summaries.add(new FleetNodeSummary(
                     nk, node.name(), httpConfigured, wsConfigured, httpUp, wsUp,
                     healthScore, healthLabel, uptime, p95Lat, p95Head, blockLag,
                     latestBlock, lastBlockAgeMs, anomalyCount, wsDisconnects,
-                    nk.equals(referenceNodeKey), sparkline));
+                    nk.equals(referenceNodeKey), sparkline, coloredPaths));
         }
 
         return new FleetView(summaries, referenceNodeKey, range, maxBlock);
@@ -890,22 +885,26 @@ public class DashboardService {
         if (event == null) {
             return null;
         }
-        String details = event.getDetails();
-        if (details != null && !details.isBlank()) {
-            return details;
-        }
         List<String> parts = new ArrayList<>();
-        if (event.getMessage() != null && !event.getMessage().isBlank()) {
-            parts.add(event.getMessage());
+        String existingDetails = event.getDetails();
+        if (existingDetails != null && !existingDetails.isBlank()) {
+            parts.add(existingDetails);
+        } else {
+            if (event.getMessage() != null && !event.getMessage().isBlank()) {
+                parts.add(event.getMessage());
+            }
+            if (event.getBlockNumber() != null) {
+                parts.add("Block number: " + event.getBlockNumber());
+            }
+            if (event.getBlockHash() != null && !event.getBlockHash().isBlank()) {
+                parts.add("Block hash: " + event.getBlockHash());
+            }
+            if (event.getParentHash() != null && !event.getParentHash().isBlank()) {
+                parts.add("Parent hash: " + event.getParentHash());
+            }
         }
-        if (event.getBlockNumber() != null) {
-            parts.add("Block number: " + event.getBlockNumber());
-        }
-        if (event.getBlockHash() != null && !event.getBlockHash().isBlank()) {
-            parts.add("Block hash: " + event.getBlockHash());
-        }
-        if (event.getParentHash() != null && !event.getParentHash().isBlank()) {
-            parts.add("Parent hash: " + event.getParentHash());
+        if (event.getDepth() != null) {
+            parts.add("Depth: " + event.getDepth() + " block" + (event.getDepth() == 1 ? "" : "s"));
         }
         return parts.isEmpty() ? null : String.join("\n", parts);
     }

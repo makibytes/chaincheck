@@ -361,21 +361,14 @@ class RpcMonitorServiceTest {
 
         ReflectionTestUtils.invokeMethod(svc, "refreshReferenceFromNodes");
 
-        store.addSample("node-a", new MetricSample(
-                Instant.now().minusSeconds(5),
-                MetricSource.WS,
-                true,
-                -1,
-                100L,
-                null,
-                "0xaaa",
-                "0xparent",
-                null,
-                null,
-                null,
-                null,
-                null,
-                null));
+        MetricSample sample = MetricSample.builder(Instant.now().minusSeconds(5), MetricSource.WS)
+                .success(true)
+                .latencyMs(-1)
+                .blockNumber(100L)
+                .blockHash("0xaaa")
+                .parentHash("0xparent")
+                .build();
+        store.addSample("node-a", sample);
 
         stateA.lastWsBlockHash = "0xaaa";
         stateB.lastWsBlockHash = "0xbbb";

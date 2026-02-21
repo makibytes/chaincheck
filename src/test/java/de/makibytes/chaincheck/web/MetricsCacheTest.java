@@ -39,8 +39,8 @@ class MetricsCacheTest {
                 0, 0, 0, 0, 0,
                 // avgLatencyMs, maxLatencyMs, p5, p25, p75, p95, p99
                 0, 0, 0, 0, 0, 0, 0,
-                // httpRps, wsEventsPerMinute, uptimePercent, errorRatePercent
-                0, 0, 0, 0,
+                // uptimePercent, errorRatePercent
+                0, 0,
                 // avgNew, p95New, p99New, avgSafe, p95Safe, p99Safe, avgFin, p95Fin, p99Fin
                 0, 0, 0, 0, 0, 0, 0, 0, 0,
                 // staleBlockCount, blockLagBlocks

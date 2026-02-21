@@ -42,22 +42,12 @@ class AnomalyDetectorTest {
     @Test
     @DisplayName("detect: should detect RPC errors")
     void testDetect_RPCError() {
-        MetricSample sample = new MetricSample(
-            Instant.now(),
-            MetricSource.HTTP,
-            false,
-            -1,
-            null,
-            Instant.now(),
-            null,
-            null,
-            null,
-            null,
-            "Connection timeout",
-            null,
-            null,
-            null
-        );
+        MetricSample sample = MetricSample.builder(Instant.now(), MetricSource.HTTP)
+            .success(false)
+            .latencyMs(-1)
+            .blockTimestamp(Instant.now())
+            .error("Connection timeout")
+            .build();
 
         var anomalies = detector.detect("node1", sample, 1000, null, null, null);
 
@@ -70,22 +60,12 @@ class AnomalyDetectorTest {
     @DisplayName("detect: should truncate long error messages")
     void testDetect_TruncateLongError() {
         String longError = "a".repeat(100);
-        MetricSample sample = new MetricSample(
-            Instant.now(),
-            MetricSource.HTTP,
-            false,
-            -1,
-            null,
-            Instant.now(),
-            null,
-            null,
-            null,
-            null,
-            longError,
-            null,
-            null,
-            null
-        );
+        MetricSample sample = MetricSample.builder(Instant.now(), MetricSource.HTTP)
+            .success(false)
+            .latencyMs(-1)
+            .blockTimestamp(Instant.now())
+            .error(longError)
+            .build();
 
         var anomalies = detector.detect("node1", sample, 1000, null, null, null);
 
@@ -96,22 +76,14 @@ class AnomalyDetectorTest {
     @Test
     @DisplayName("detect: should detect high latency")
     void testDetect_HighLatency() {
-        MetricSample sample = new MetricSample(
-            Instant.now(),
-            MetricSource.HTTP,
-            true,
-            1500,  // 1500ms latency
-            1234L,
-            Instant.now(),
-            "0xblock",
-            "0xparent",
-            null,
-            null,
-            null,
-            null,
-            null,
-            null
-        );
+        MetricSample sample = MetricSample.builder(Instant.now(), MetricSource.HTTP)
+            .success(true)
+            .latencyMs(1500)
+            .blockNumber(1234L)
+            .blockTimestamp(Instant.now())
+            .blockHash("0xblock")
+            .parentHash("0xparent")
+            .build();
 
         var anomalies = detector.detect("node1", sample, 1000, 1233L, "0xprevblock", null);
 
@@ -122,22 +94,14 @@ class AnomalyDetectorTest {
     @Test
     @DisplayName("detect: should not detect latency below threshold")
     void testDetect_LatencyBelowThreshold() {
-        MetricSample sample = new MetricSample(
-            Instant.now(),
-            MetricSource.HTTP,
-            true,
-            500,  // 500ms latency
-            1234L,
-            Instant.now(),
-            "0xblock",
-            "0xparent",
-            null,
-            null,
-            null,
-            null,
-            null,
-            null
-        );
+        MetricSample sample = MetricSample.builder(Instant.now(), MetricSource.HTTP)
+            .success(true)
+            .latencyMs(500)
+            .blockNumber(1234L)
+            .blockTimestamp(Instant.now())
+            .blockHash("0xblock")
+            .parentHash("0xparent")
+            .build();
 
         var anomalies = detector.detect("node1", sample, 1000, 1233L, "0xprevblock", null);
 
@@ -148,22 +112,14 @@ class AnomalyDetectorTest {
     @Test
     @DisplayName("detect: should detect block reorg (height decreased)")
     void testDetect_BlockReorg() {
-        MetricSample sample = new MetricSample(
-            Instant.now(),
-            MetricSource.HTTP,
-            true,
-            100,
-            1230L,  // Previous was 1233, now 1230
-            Instant.now(),
-            "0xblock",
-            "0xparent",
-            null,
-            null,
-            null,
-            null,
-            null,
-            null
-        );
+        MetricSample sample = MetricSample.builder(Instant.now(), MetricSource.HTTP)
+            .success(true)
+            .latencyMs(100)
+            .blockNumber(1230L)
+            .blockTimestamp(Instant.now())
+            .blockHash("0xblock")
+            .parentHash("0xparent")
+            .build();
 
         var anomalies = detector.detect("node1", sample, 1000, 1233L, "0xprevblock", null);
 
@@ -174,24 +130,16 @@ class AnomalyDetectorTest {
     @Test
     @DisplayName("detect: should detect block gap on WebSocket")
     void testDetect_BlockGap_WebSocket() {
-        MetricSample sample = new MetricSample(
-            Instant.now(),
-            MetricSource.WS,
-            true,
-            100,
-            1235L,  // Node is at 1235
-            Instant.now(),
-            "0xblock",
-            "0xparent",
-            null,
-            null,
-            null,
-            null,
-            null,
-            null
-        );
+        MetricSample sample = MetricSample.builder(Instant.now(), MetricSource.WS)
+            .success(true)
+            .latencyMs(100)
+            .blockNumber(1235L)
+            .blockTimestamp(Instant.now())
+            .blockHash("0xblock")
+            .parentHash("0xparent")
+            .build();
 
-        var anomalies = detector.detect("node1", sample, 1000, 1233L, "0xprevblock", 1240L); // HTTP is at 1240, WS is at 1235 (5 behind)
+        var anomalies = detector.detect("node1", sample, 1000, 1233L, "0xprevblock", 1240L);
 
         assertTrue(anomalies.stream().anyMatch(a -> a.getType() == AnomalyType.BLOCK_GAP),
                 "WebSocket should detect block gap when WS is behind HTTP");
@@ -200,22 +148,14 @@ class AnomalyDetectorTest {
     @Test
     @DisplayName("detect: HTTP should not detect block gap")
     void testDetect_BlockGap_HTTPIgnored() {
-        MetricSample sample = new MetricSample(
-            Instant.now(),
-            MetricSource.HTTP,
-            true,
-            100,
-            1235L,  // Gap of 1 block
-            Instant.now(),
-            "0xblock",
-            "0xparent",
-            null,
-            null,
-            null,
-            null,
-            null,
-            null
-        );
+        MetricSample sample = MetricSample.builder(Instant.now(), MetricSource.HTTP)
+            .success(true)
+            .latencyMs(100)
+            .blockNumber(1235L)
+            .blockTimestamp(Instant.now())
+            .blockHash("0xblock")
+            .parentHash("0xparent")
+            .build();
 
         var anomalies = detector.detect("node1", sample, 1000, 1233L, "0xprevblock", null);
 
@@ -226,22 +166,14 @@ class AnomalyDetectorTest {
     @Test
     @DisplayName("detect: should not generate anomalies for successful normal block")
     void testDetect_SuccessfulNormalBlock() {
-        MetricSample sample = new MetricSample(
-            Instant.now(),
-            MetricSource.HTTP,
-            true,
-            100,
-            1234L,
-            Instant.now(),
-            "0xblock",
-            "0xprevblock",  // parent hash must match the previous block hash
-            null,
-            null,
-            null,
-            null,
-            null,
-            null
-        );
+        MetricSample sample = MetricSample.builder(Instant.now(), MetricSource.HTTP)
+            .success(true)
+            .latencyMs(100)
+            .blockNumber(1234L)
+            .blockTimestamp(Instant.now())
+            .blockHash("0xblock")
+            .parentHash("0xprevblock")
+            .build();
 
         var anomalies = detector.detect("node1", sample, 1000, 1233L, "0xprevblock", null);
 

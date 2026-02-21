@@ -17,14 +17,20 @@
  */
 package de.makibytes.chaincheck.store;
 
-import de.makibytes.chaincheck.model.*;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.BeforeEach;
-
 import java.time.Instant;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+import de.makibytes.chaincheck.model.AnomalyEvent;
+import de.makibytes.chaincheck.model.AnomalyType;
+import de.makibytes.chaincheck.model.MetricSample;
+import de.makibytes.chaincheck.model.MetricSource;
 
 @DisplayName("InMemoryMetricsStore Tests")
 class InMemoryMetricsStoreTest {
@@ -40,10 +46,14 @@ class InMemoryMetricsStoreTest {
     @DisplayName("addSample and getRawSamplesSince: should store and retrieve metric samples")
     void testStoreAndRetrieveSample() {
         Instant now = Instant.now();
-        MetricSample sample = new MetricSample(
-            now, MetricSource.HTTP, true, 100, 1000L,
-            Instant.now(), "0xblock", "0xparent", null, null, null, null, null, null
-        );
+        MetricSample sample = MetricSample.builder(now, MetricSource.HTTP)
+                .success(true)
+                .latencyMs(100)
+                .blockNumber(1000L)
+                .blockTimestamp(Instant.now())
+                .blockHash("0xblock")
+                .parentHash("0xparent")
+                .build();
 
         store.addSample("node1", sample);
         var samples = store.getRawSamplesSince("node1", now.minusSeconds(60));
@@ -120,14 +130,22 @@ class InMemoryMetricsStoreTest {
     @DisplayName("getLatestBlockNumber: should retrieve latest block")
     void testGetLatestBlockNumber() {
         Instant now = Instant.now();
-        MetricSample sample1 = new MetricSample(
-            now.minusSeconds(30), MetricSource.HTTP, true, 100, 1000L,
-            Instant.now(), "0xblock", "0xparent", null, null, null, null, null, null
-        );
-        MetricSample sample2 = new MetricSample(
-            now, MetricSource.HTTP, true, 100, 1001L,
-            Instant.now(), "0xblock2", "0xblock", null, null, null, null, null, null
-        );
+        MetricSample sample1 = MetricSample.builder(now.minusSeconds(30), MetricSource.HTTP)
+                .success(true)
+                .latencyMs(100)
+                .blockNumber(1000L)
+                .blockTimestamp(Instant.now())
+                .blockHash("0xblock")
+                .parentHash("0xparent")
+                .build();
+        MetricSample sample2 = MetricSample.builder(now, MetricSource.HTTP)
+                .success(true)
+                .latencyMs(100)
+                .blockNumber(1001L)
+                .blockTimestamp(Instant.now())
+                .blockHash("0xblock2")
+                .parentHash("0xblock")
+                .build();
 
         store.addSample("node1", sample1);
         store.addSample("node1", sample2);
@@ -141,10 +159,14 @@ class InMemoryMetricsStoreTest {
     void testConcurrentOperations() throws InterruptedException {
         Thread thread1 = new Thread(() -> {
             for (int i = 0; i < 50; i++) {
-                MetricSample sample = new MetricSample(
-                    Instant.now(), MetricSource.HTTP, true, i, (long) i,
-                    Instant.now(), "0xblock", "0xparent", null, null, null, null, null, null
-                );
+                MetricSample sample = MetricSample.builder(Instant.now(), MetricSource.HTTP)
+                        .success(true)
+                        .latencyMs(i)
+                        .blockNumber((long) i)
+                        .blockTimestamp(Instant.now())
+                        .blockHash("0xblock")
+                        .parentHash("0xparent")
+                        .build();
                 store.addSample("node1", sample);
             }
         });

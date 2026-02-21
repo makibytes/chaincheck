@@ -5,6 +5,7 @@
             <label id="toggleBoundsLabel" class="chart-control-label" th:if="${view.hasAggregatedLatencies || view.hasAggregatedDelays}">
                 <input type="checkbox" id="toggleBounds" />
                 <span>P5–P99 band</span>
+                <span class="hint" data-hint="Show the P5 (5th percentile) and P99 (99th percentile) confidence bounds for each metric. The band indicates the range where 90% of observations fall, helping identify outliers and variability.">?</span>
             </label>
 <label id="referenceToggleLabel" class="chart-control-label" th:if="${referenceNodeKey != null && !view.referenceNode}">
                 <input type="checkbox" id="toggleReferenceLines" />

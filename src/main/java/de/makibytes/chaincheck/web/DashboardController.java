@@ -151,6 +151,13 @@ public class DashboardController {
         }
         NodeDefinition selectedNode = nodeRegistry.getNode(event.getNodeKey());
         String nodeName = selectedNode == null ? "Node" : selectedNode.name();
+        String detailsStr = event.getDetails();
+        if (event.getDepth() != null) {
+            String depthLine = "Depth: " + event.getDepth() + " block" + (event.getDepth() == 1 ? "" : "s");
+            detailsStr = (detailsStr != null && !detailsStr.isBlank())
+                    ? detailsStr + "\n" + depthLine
+                    : depthLine;
+        }
         AnomalyDetails details = new AnomalyDetails(
                 event.getId(),
                 event.getNodeKey(),
@@ -162,7 +169,7 @@ public class DashboardController {
                 event.getBlockNumber(),
                 event.getBlockHash(),
                 event.getParentHash(),
-                event.getDetails());
+                detailsStr);
         return ResponseEntity.ok(details);
     }
 }
