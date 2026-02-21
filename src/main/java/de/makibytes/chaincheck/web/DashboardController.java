@@ -30,9 +30,9 @@ import org.springframework.web.bind.annotation.ResponseBody;
 import de.makibytes.chaincheck.config.ChainCheckProperties;
 import de.makibytes.chaincheck.model.AnomalyEvent;
 import de.makibytes.chaincheck.model.TimeRange;
+import de.makibytes.chaincheck.monitor.RpcMonitorService;
 import de.makibytes.chaincheck.monitor.NodeRegistry;
 import de.makibytes.chaincheck.monitor.NodeRegistry.NodeDefinition;
-import de.makibytes.chaincheck.monitor.RpcMonitorService;
 
 @Controller
 public class DashboardController {
@@ -40,22 +40,50 @@ public class DashboardController {
     private final DashboardService dashboardService;
     private final NodeRegistry nodeRegistry;
     private final ChainCheckProperties properties;
-    private final RpcMonitorService rpcMonitorService;
+    private final RpcMonitorService nodeMonitorService;
     private final AppVersionProvider appVersionProvider;
 
     public DashboardController(DashboardService dashboardService,
                                NodeRegistry nodeRegistry,
                                ChainCheckProperties properties,
-                               RpcMonitorService rpcMonitorService,
+                               RpcMonitorService nodeMonitorService,
                                AppVersionProvider appVersionProvider) {
         this.dashboardService = dashboardService;
         this.nodeRegistry = nodeRegistry;
         this.properties = properties;
-        this.rpcMonitorService = rpcMonitorService;
+        this.nodeMonitorService = nodeMonitorService;
         this.appVersionProvider = appVersionProvider;
     }
 
-    @GetMapping({"/", "/dashboard"})
+    @GetMapping("/")
+    public String fleet(@RequestParam(name = "range", required = false) String rangeKey,
+                        @RequestParam(name = "end", required = false) Long endEpochMs,
+                        Model model) {
+        TimeRange range = TimeRange.fromKey(rangeKey);
+        Instant now = Instant.now();
+        Instant end = endEpochMs == null ? now : Instant.ofEpochMilli(endEpochMs);
+        if (end.isAfter(now)) {
+            end = now;
+        }
+        Instant oldestEnd = now.minus(TimeRange.MONTH_1.getDuration());
+        if (end.isBefore(oldestEnd)) {
+            end = oldestEnd;
+        }
+
+        FleetView fleetView = dashboardService.getFleetView(range, end);
+
+        model.addAttribute("appName", "ChainCheck");
+        model.addAttribute("appTitle", properties.getTitle());
+        model.addAttribute("appTitleColor", properties.getTitleColor());
+        model.addAttribute("ranges", TimeRange.values());
+        model.addAttribute("range", range);
+        model.addAttribute("endParam", endEpochMs);
+        model.addAttribute("fleetView", fleetView);
+        model.addAttribute("appVersion", appVersionProvider.getVersion());
+        return "fleet";
+    }
+
+    @GetMapping("/dashboard")
     public String dashboard(@RequestParam(name = "range", required = false) String rangeKey,
                             @RequestParam(name = "node", required = false) String nodeKey,
                             @RequestParam(name = "end", required = false) Long endEpochMs,
@@ -87,7 +115,7 @@ public class DashboardController {
         model.addAttribute("nodeName", selectedNode == null ? "Node" : selectedNode.name());
         model.addAttribute("nodeKey", selectedKey);
         model.addAttribute("nodes", nodeRegistry.getNodes());
-        model.addAttribute("referenceNodeKey", rpcMonitorService.getReferenceNodeKey());
+        model.addAttribute("referenceNodeKey", nodeMonitorService.getReferenceNodeKey());
         model.addAttribute("range", range);
         model.addAttribute("ranges", TimeRange.values());
         model.addAttribute("endParam", endEpochMs);
@@ -123,6 +151,7 @@ public class DashboardController {
         }
         NodeDefinition selectedNode = nodeRegistry.getNode(event.getNodeKey());
         String nodeName = selectedNode == null ? "Node" : selectedNode.name();
+        String detailsStr = dashboardService.resolveAnomalyDetails(event);
         AnomalyDetails details = new AnomalyDetails(
                 event.getId(),
                 event.getNodeKey(),
@@ -134,7 +163,7 @@ public class DashboardController {
                 event.getBlockNumber(),
                 event.getBlockHash(),
                 event.getParentHash(),
-                event.getDetails());
+                detailsStr);
         return ResponseEntity.ok(details);
     }
 }

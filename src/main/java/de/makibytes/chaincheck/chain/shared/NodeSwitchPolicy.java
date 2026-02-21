@@ -15,36 +15,48 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-package de.makibytes.chaincheck.monitor;
+package de.makibytes.chaincheck.chain.shared;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
 
-final class ReferenceSelectionPolicy {
+/**
+ * Policy for managing reference node switches with hysteresis.
+ * Prevents rapid switching between nodes.
+ */
+public class NodeSwitchPolicy {
+
+    /**
+     * Default window size for tracking recent selections.
+     */
+    public static final int DEFAULT_WINDOW_SIZE = 20;
+
+    /**
+     * Default threshold for allowing a node switch.
+     */
+    public static final int DEFAULT_SWITCH_THRESHOLD = 15;
 
     private final int windowSize;
     private final int switchThreshold;
     private final Deque<String> selections = new ArrayDeque<>();
 
-    ReferenceSelectionPolicy(int windowSize, int switchThreshold) {
+    public NodeSwitchPolicy() {
+        this(DEFAULT_WINDOW_SIZE, DEFAULT_SWITCH_THRESHOLD);
+    }
+
+    public NodeSwitchPolicy(int windowSize, int switchThreshold) {
         this.windowSize = Math.max(1, windowSize);
         this.switchThreshold = Math.max(1, switchThreshold);
     }
 
-    void registerSelection(String nodeKey) {
-        if (nodeKey == null) {
-            return;
-        }
+    public void registerSelection(String nodeKey) {
         selections.addLast(nodeKey);
         while (selections.size() > windowSize) {
             selections.removeFirst();
         }
     }
 
-    boolean shouldSwitchTo(String nodeKey) {
-        if (nodeKey == null) {
-            return false;
-        }
+    public boolean shouldSwitchTo(String nodeKey) {
         int count = 0;
         for (String key : selections) {
             if (nodeKey.equals(key)) {
@@ -54,7 +66,21 @@ final class ReferenceSelectionPolicy {
         return count >= switchThreshold;
     }
 
-    void reset() {
+    public void reset() {
         selections.clear();
+    }
+
+    /**
+     * Gets the current window size.
+     */
+    public int getWindowSize() {
+        return windowSize;
+    }
+
+    /**
+     * Gets the current switch threshold.
+     */
+    public int getSwitchThreshold() {
+        return switchThreshold;
     }
 }

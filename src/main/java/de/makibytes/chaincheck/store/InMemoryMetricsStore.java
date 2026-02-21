@@ -17,19 +17,26 @@
  */
 package de.makibytes.chaincheck.store;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.Deque;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.function.Predicate;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -58,6 +65,7 @@ public class InMemoryMetricsStore {
     private final Map<Long, AnomalyEvent> anomalyById = new ConcurrentHashMap<>();
     private final Map<String, Long> latestHttpBlockNumber = new ConcurrentHashMap<>();
     private final Map<String, Long> latestBlockNumber = new ConcurrentHashMap<>();
+    private final Map<String, Instant> latestBlockTimestampByNode = new ConcurrentHashMap<>();
     private final Duration rawRetention = Duration.ofHours(2);
     private final Duration minutelyRetention = Duration.ofDays(3);
     private final Duration aggregateRetention = TimeRange.MONTH_1.getDuration();
@@ -96,6 +104,10 @@ public class InMemoryMetricsStore {
                 latestHttpBlockNumber.put(nodeKey, sample.getBlockNumber());
             }
         }
+        if (sample.getBlockTimestamp() != null) {
+            latestBlockTimestampByNode.merge(nodeKey, sample.getBlockTimestamp(),
+                    (existing, incoming) -> incoming.isAfter(existing) ? incoming : existing);
+        }
     }
 
     public void addAnomaly(String nodeKey, AnomalyEvent event) {
@@ -103,32 +115,23 @@ public class InMemoryMetricsStore {
         anomalyById.put(event.getId(), event);
     }
 
-    public void closeLastAnomaly(String nodeKey, de.makibytes.chaincheck.model.MetricSource source) {
-        java.util.Deque<AnomalyEvent> anomalies = rawAnomaliesByNode.get(nodeKey);
-        if (anomalies == null || anomalies.isEmpty()) {
-            return;
-        }
-        java.util.Iterator<AnomalyEvent> it = anomalies.descendingIterator();
-        while (it.hasNext()) {
-            AnomalyEvent event = it.next();
-            if (event.getSource() == source) {
-                if (!event.isClosed()) {
-                    event.setClosed(true);
-                }
-                break;
-            }
-        }
+    public void closeLastAnomaly(String nodeKey, MetricSource source) {
+        closeLastAnomaly(nodeKey, event -> event.getSource() == source);
     }
 
     public void closeLastAnomaly(String nodeKey, MetricSource source, AnomalyType type) {
-        java.util.Deque<AnomalyEvent> anomalies = rawAnomaliesByNode.get(nodeKey);
+        closeLastAnomaly(nodeKey, event -> event.getSource() == source && event.getType() == type);
+    }
+
+    private void closeLastAnomaly(String nodeKey, Predicate<AnomalyEvent> filter) {
+        Deque<AnomalyEvent> anomalies = rawAnomaliesByNode.get(nodeKey);
         if (anomalies == null || anomalies.isEmpty()) {
             return;
         }
-        java.util.Iterator<AnomalyEvent> it = anomalies.descendingIterator();
+        Iterator<AnomalyEvent> it = anomalies.descendingIterator();
         while (it.hasNext()) {
             AnomalyEvent event = it.next();
-            if (event.getSource() == source && event.getType() == type) {
+            if (filter.test(event)) {
                 if (!event.isClosed()) {
                     event.setClosed(true);
                 }
@@ -142,13 +145,9 @@ public class InMemoryMetricsStore {
         if (samples == null || samples.isEmpty()) {
             return Collections.emptyList();
         }
-        List<MetricSample> result = new ArrayList<>();
-        for (MetricSample sample : samples) {
-            if (!sample.getTimestamp().isBefore(since)) {
-                result.add(sample);
-            }
-        }
-        return result;
+        return samples.stream()
+                .filter(sample -> !sample.getTimestamp().isBefore(since))
+                .toList();
     }
 
     public List<SampleAggregate> getAggregatedSamplesSince(String nodeKey, Instant since) {
@@ -165,7 +164,7 @@ public class InMemoryMetricsStore {
         if (dailyAggregates != null && !dailyAggregates.isEmpty()) {
             result.addAll(dailyAggregates.tailMap(since, true).values());
         }
-        result.sort(java.util.Comparator.comparing(SampleAggregate::getBucketStart));
+        result.sort(Comparator.comparing(SampleAggregate::getBucketStart));
         return result;
     }
 
@@ -174,13 +173,9 @@ public class InMemoryMetricsStore {
         if (anomalies == null || anomalies.isEmpty()) {
             return Collections.emptyList();
         }
-        List<AnomalyEvent> result = new ArrayList<>();
-        for (AnomalyEvent event : anomalies) {
-            if (!event.getTimestamp().isBefore(since)) {
-                result.add(event);
-            }
-        }
-        return result;
+        return anomalies.stream()
+                .filter(event -> !event.getTimestamp().isBefore(since))
+                .toList();
     }
 
     public List<AnomalyAggregate> getAggregatedAnomaliesSince(String nodeKey, Instant since) {
@@ -197,24 +192,18 @@ public class InMemoryMetricsStore {
         if (dailyAggregates != null && !dailyAggregates.isEmpty()) {
             result.addAll(dailyAggregates.tailMap(since, true).values());
         }
-        result.sort(java.util.Comparator.comparing(AnomalyAggregate::getBucketStart));
+        result.sort(Comparator.comparing(AnomalyAggregate::getBucketStart));
         return result;
     }
 
     public Instant getOldestAggregateTimestamp(String nodeKey) {
-        NavigableMap<Instant, SampleAggregate> hourlyAggregates = sampleAggregatesByNode.get(nodeKey);
-        NavigableMap<Instant, SampleAggregate> dailyAggregates = sampleDailyAggregatesByNode.get(nodeKey);
-        Instant oldest = null;
-        if (hourlyAggregates != null && !hourlyAggregates.isEmpty()) {
-            oldest = hourlyAggregates.firstKey();
-        }
-        if (dailyAggregates != null && !dailyAggregates.isEmpty()) {
-            Instant dailyOldest = dailyAggregates.firstKey();
-            if (oldest == null || dailyOldest.isBefore(oldest)) {
-                oldest = dailyOldest;
-            }
-        }
-        return oldest;
+        NavigableMap<Instant, SampleAggregate> minutely = sampleAggregatesByNode.get(nodeKey);
+        NavigableMap<Instant, SampleAggregate> daily = sampleDailyAggregatesByNode.get(nodeKey);
+        Instant minutelyOldest = (minutely != null && !minutely.isEmpty()) ? minutely.firstKey() : null;
+        Instant dailyOldest = (daily != null && !daily.isEmpty()) ? daily.firstKey() : null;
+        if (minutelyOldest == null) return dailyOldest;
+        if (dailyOldest == null) return minutelyOldest;
+        return minutelyOldest.isBefore(dailyOldest) ? minutelyOldest : dailyOldest;
     }
 
     public AnomalyEvent getAnomaly(long id) {
@@ -227,6 +216,10 @@ public class InMemoryMetricsStore {
 
     public Long getLatestKnownBlockNumber(String nodeKey) {
         return latestBlockNumber.get(nodeKey);
+    }
+
+    public Instant getLatestBlockTimestamp(String nodeKey) {
+        return latestBlockTimestampByNode.get(nodeKey);
     }
 
     @Scheduled(fixedDelay = 5000)
@@ -249,7 +242,12 @@ public class InMemoryMetricsStore {
         Instant minutelyCutoff = now.minus(minutelyRetention);
         Instant aggregateCutoff = now.minus(aggregateRetention);
 
-        for (String nodeKey : rawSamplesByNode.keySet()) {
+        Set<String> allNodeKeys = new HashSet<>(rawSamplesByNode.keySet());
+        allNodeKeys.addAll(rawAnomaliesByNode.keySet());
+        allNodeKeys.addAll(sampleAggregatesByNode.keySet());
+        allNodeKeys.addAll(anomalyAggregatesByNode.keySet());
+
+        for (String nodeKey : allNodeKeys) {
             Deque<MetricSample> samples = rawSamplesByNode.get(nodeKey);
             if (samples != null) {
                 while (true) {
@@ -352,7 +350,7 @@ public class InMemoryMetricsStore {
                 latestHttpBlockNumber.putAll(snapshot.latestHttpBlockNumber());
             }
             aggregateOldData();
-        } catch (java.io.IOException ex) {
+        } catch (IOException ex) {
             // Persistence is optional; log as warning
             logger.warn("Failed to load persistence snapshot: {}", ex.getMessage());
         }
@@ -363,26 +361,26 @@ public class InMemoryMetricsStore {
             Snapshot snapshot = new Snapshot(
                     toMetricListCopy(rawSamplesByNode),
                     toAnomalyListCopy(rawAnomaliesByNode),
-                    new ConcurrentHashMap<>(latestBlockNumber),
-                    new ConcurrentHashMap<>(latestHttpBlockNumber));
+                    new HashMap<>(latestBlockNumber),
+                    new HashMap<>(latestHttpBlockNumber));
             byte[] bytes = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsBytes(snapshot);
             if (persistenceFile.getParent() != null) {
                 Files.createDirectories(persistenceFile.getParent());
             }
-            Files.writeString(persistenceFile, new String(bytes, java.nio.charset.StandardCharsets.UTF_8));
-        } catch (java.io.IOException ex) {
+            Files.write(persistenceFile, bytes);
+        } catch (IOException ex) {
             logger.warn("Failed to write persistence snapshot: {}", ex.getMessage());
         }
     }
 
     private Map<String, List<MetricSample>> toMetricListCopy(Map<String, Deque<MetricSample>> source) {
-        Map<String, List<MetricSample>> copy = new ConcurrentHashMap<>();
+        Map<String, List<MetricSample>> copy = new HashMap<>();
         source.forEach((node, deque) -> copy.put(node, new ArrayList<>(deque)));
         return copy;
     }
 
     private Map<String, List<AnomalyEvent>> toAnomalyListCopy(Map<String, Deque<AnomalyEvent>> source) {
-        Map<String, List<AnomalyEvent>> copy = new ConcurrentHashMap<>();
+        Map<String, List<AnomalyEvent>> copy = new HashMap<>();
         source.forEach((node, deque) -> copy.put(node, new ArrayList<>(deque)));
         return copy;
     }

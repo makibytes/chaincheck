@@ -59,6 +59,7 @@ public class DashboardView {
     private final boolean httpConfigured;
     private final boolean wsConfigured;
     private final boolean safeBlocksEnabled;
+    private final boolean finalizedBlocksEnabled;
     private final boolean httpUp;
     private final boolean wsUp;
     private final Long latestBlockNumber;
@@ -76,6 +77,8 @@ public class DashboardView {
     private final Instant generatedAt;
     private final ReferenceComparison referenceComparison;
     private final boolean isReferenceNode;
+    private final Long lastBlockAgeMs;
+    private final boolean multiNodeConfigured;
 
     private DashboardView(TimeRange range,
                           DashboardSummary summary,
@@ -94,6 +97,7 @@ public class DashboardView {
                           boolean httpConfigured,
                           boolean wsConfigured,
                           boolean safeBlocksEnabled,
+                          boolean finalizedBlocksEnabled,
                           boolean httpUp,
                           boolean wsUp,
                           Long latestBlockNumber,
@@ -110,7 +114,9 @@ public class DashboardView {
                           boolean hasOlderAggregates,
                           Instant generatedAt,
                           ReferenceComparison referenceComparison,
-                          boolean isReferenceNode) {
+                          boolean isReferenceNode,
+                          Long lastBlockAgeMs,
+                          boolean multiNodeConfigured) {
         this.range = range;
         this.summary = summary;
         this.anomalies = anomalies;
@@ -144,6 +150,7 @@ public class DashboardView {
         this.httpConfigured = httpConfigured;
         this.wsConfigured = wsConfigured;
         this.safeBlocksEnabled = safeBlocksEnabled;
+        this.finalizedBlocksEnabled = finalizedBlocksEnabled;
         this.httpUp = httpUp;
         this.wsUp = wsUp;
         this.latestBlockNumber = latestBlockNumber;
@@ -161,6 +168,8 @@ public class DashboardView {
         this.generatedAt = generatedAt;
         this.referenceComparison = referenceComparison;
         this.isReferenceNode = isReferenceNode;
+        this.lastBlockAgeMs = lastBlockAgeMs;
+        this.multiNodeConfigured = multiNodeConfigured;
     }
 
     static DashboardView create(TimeRange range,
@@ -180,6 +189,7 @@ public class DashboardView {
                                 boolean httpConfigured,
                                 boolean wsConfigured,
                                 boolean safeBlocksEnabled,
+                                boolean finalizedBlocksEnabled,
                                 boolean httpUp,
                                 boolean wsUp,
                                 Long latestBlockNumber,
@@ -196,18 +206,21 @@ public class DashboardView {
                                 boolean hasOlderAggregates,
                                 Instant generatedAt,
                                 ReferenceComparison referenceComparison,
-                                boolean isReferenceNode) {
+                                boolean isReferenceNode,
+                                Long lastBlockAgeMs,
+                                boolean multiNodeConfigured) {
         return new DashboardView(range, summary, anomalies, anomalyRows, sampleRows,
                 chartData, delayChartData,
                 chartReferenceHeadDelays, chartReferenceSafeDelays, chartReferenceFinalizedDelays,
                 hasAggregatedLatencies, hasAggregatedDelays,
                 httpErrorOngoing, wsErrorOngoing,
-                httpConfigured, wsConfigured, safeBlocksEnabled,
+                httpConfigured, wsConfigured, safeBlocksEnabled, finalizedBlocksEnabled,
                 httpUp, wsUp, latestBlockNumber, httpStatus, wsStatus,
                 totalPages, pageSize, totalSamples,
                 anomalyTotalPages, anomalyPageSize, totalAnomalies,
                 scaleChangeMs, scaleMaxMs, hasOlderAggregates,
-                generatedAt, referenceComparison, isReferenceNode);
+                generatedAt, referenceComparison, isReferenceNode,
+                lastBlockAgeMs, multiNodeConfigured);
     }
 
     public TimeRange getRange() {
@@ -342,6 +355,10 @@ public class DashboardView {
         return safeBlocksEnabled;
     }
 
+    public boolean isFinalizedBlocksEnabled() {
+        return finalizedBlocksEnabled;
+    }
+
     public boolean isHttpUp() {
         return httpUp;
     }
@@ -408,5 +425,13 @@ public class DashboardView {
 
     public boolean isReferenceNode() {
         return isReferenceNode;
+    }
+
+    public Long getLastBlockAgeMs() {
+        return lastBlockAgeMs;
+    }
+
+    public boolean isMultiNodeConfigured() {
+        return multiNodeConfigured;
     }
 }

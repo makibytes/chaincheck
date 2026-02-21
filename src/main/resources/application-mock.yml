@@ -11,7 +11,9 @@ server:
 rpc:
   title: "Mock RPC"
   title-color: "#777777"
-  reference:
+  get-safe-blocks: true
+  get-finalized-blocks: true
+  consensus:
     node-key: "mock-node-two"
   nodes:
     - name: Mock Node
@@ -20,11 +22,9 @@ rpc:
       poll-interval-ms: 60000
       anomaly-detection:
         high-latency: 2000
-      safe-blocks-enabled: false
     - name: Mock Node Two
       http: "http://mock-two.local"
       ws: "ws://mock-two.local"
       poll-interval-ms: 60000
       anomaly-detection:
         high-latency: 2600
-      safe-blocks-enabled: true

@@ -208,59 +208,40 @@ public class MockMetricsStoreSeeded extends InMemoryMetricsStore {
         Long safeDelayMs = safeSample ? safeDelayBaseMs + (blockNumber % 4000) : null;
         Long finalizedDelayMs = safeSample ? null : finalizedDelayBaseMs + (blockNumber % 4500);
 
-        addSample(nodeKey, new MetricSample(
-                timestamp,
-                MetricSource.HTTP,
-                success,
-                latencyMs,
-                blockNumber,
-                blockTimestamp,
-                blockHash,
-                parentHash,
-                transactionCount,
-                gasPriceWei,
-                null,
-                null,
-                safeDelayMs,
-                finalizedDelayMs));
+        MetricSample sample = MetricSample.builder(timestamp, MetricSource.HTTP)
+                .success(success)
+                .latencyMs(latencyMs)
+                .blockNumber(blockNumber)
+                .blockTimestamp(blockTimestamp)
+                .blockHash(blockHash)
+                .parentHash(parentHash)
+                .transactionCount(transactionCount)
+                .gasPriceWei(gasPriceWei)
+                .safeDelayMs(safeDelayMs)
+                .finalizedDelayMs(finalizedDelayMs)
+                .build();
+        addSample(nodeKey, sample);
     }
 
     private void addHttpErrorSample(String nodeKey, Instant timestamp, long blockNumber, String errorMessage) {
-        addSample(nodeKey, new MetricSample(
-                timestamp,
-                MetricSource.HTTP,
-                false,
-                -1,
-                blockNumber,
-                null,
-                null,
-                null,
-                null,
-                null,
-                errorMessage,
-                null,
-                null,
-                null));
+        MetricSample sample = MetricSample.builder(timestamp, MetricSource.HTTP)
+                .success(false)
+                .latencyMs(-1)
+                .blockNumber(blockNumber)
+                .error(errorMessage)
+                .build();
+        addSample(nodeKey, sample);
     }
 
     private void addWsSample(String nodeKey, Instant timestamp, long baseDelayMs) {
         long latencyMs = 0;
         Long headDelayMs = baseDelayMs + (timestamp.getEpochSecond() % 4000);
-        addSample(nodeKey, new MetricSample(
-                timestamp,
-                MetricSource.WS,
-                true,
-                latencyMs,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                headDelayMs,
-                null,
-                null));
+        MetricSample sample = MetricSample.builder(timestamp, MetricSource.WS)
+                .success(true)
+                .latencyMs(latencyMs)
+                .headDelayMs(headDelayMs)
+                .build();
+        addSample(nodeKey, sample);
     }
 
     private void seedAnomalies(Instant now, String nodeKey, long startingId) {

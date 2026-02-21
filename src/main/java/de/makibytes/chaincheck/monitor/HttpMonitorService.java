@@ -18,11 +18,11 @@
 package de.makibytes.chaincheck.monitor;
 
 import java.io.IOException;
-import java.math.BigInteger;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.net.http.HttpTimeoutException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -37,18 +37,19 @@ import org.slf4j.LoggerFactory;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import de.makibytes.chaincheck.chain.shared.Confidence;
 import de.makibytes.chaincheck.config.ChainCheckProperties;
 import de.makibytes.chaincheck.model.AnomalyEvent;
 import de.makibytes.chaincheck.model.AnomalyType;
 import de.makibytes.chaincheck.model.MetricSample;
 import de.makibytes.chaincheck.model.MetricSource;
 import de.makibytes.chaincheck.monitor.NodeRegistry.NodeDefinition;
-import de.makibytes.chaincheck.monitor.ReferenceBlocks.Confidence;
 import de.makibytes.chaincheck.store.InMemoryMetricsStore;
 
 public class HttpMonitorService {
 
     private static final String JSONRPC_VERSION = "2.0";
+    private static final String CONNECT_ERROR_HOST_DOWN = "Connect error: Host is down";
     private static final Logger logger = LoggerFactory.getLogger(HttpMonitorService.class);
 
     private final RpcMonitorService monitor;
@@ -85,6 +86,9 @@ public class HttpMonitorService {
             if (node.http() == null || node.http().isBlank()) {
                 continue;
             }
+            if (!monitor.shouldPollExecutionHttp(node.key())) {
+                continue;
+            }
             RpcMonitorService.NodeState state = nodeStates.computeIfAbsent(node.key(), key -> new RpcMonitorService.NodeState());
             if (now - state.lastPollEpochMs < node.pollIntervalMs()) {
                 continue;
@@ -105,36 +109,15 @@ public class HttpMonitorService {
             }
 
             // Detect dead websocket connections using event timestamp
-            if (node.ws() != null && !node.ws().isBlank()) {
-                if (state.webSocketRef.get() != null) {
-                    Long previousHttpBlock = state.lastHttpBlockNumber;
-                    Instant lastWsEvent = state.lastWsEventReceivedAt;
-
-                    // If HTTP block advanced (meaning new blocks are being produced)
-                    if (previousHttpBlock != null && blockNumber > previousHttpBlock) {
-                        // Check if WS is receiving events
-                        if (lastWsEvent == null) {
-                            // Never received any WS event - dead from beginning
-                            monitor.recordFailure(node, MetricSource.WS, monitor.wsNoNewHeadsSinceConnectionMessage());
-                        } else {
-                            // Check if last WS event is too old
-                            long secondsSinceLastEvent = Duration.between(lastWsEvent, Instant.now()).toSeconds();
-                            if (secondsSinceLastEvent > RpcMonitorService.WS_DEAD_SECONDS) {
-                                monitor.recordFailure(node, MetricSource.WS, monitor.wsNoNewHeadsForSecondsMessage(secondsSinceLastEvent));
-                                monitor.closeWebSocket(node, state, "stale subscription");
-                            } else {
-                                // WS is healthy (receiving events recently), treat as update to close potential previous errors
-                                monitor.checkAndCloseAnomaly(node, null, MetricSource.WS);
-                            }
-                        }
-                    }
-                }
-            }
+            checkWebSocketHealth(node, state, blockNumber);
 
             RpcMonitorService.BlockInfo safeBlock = null;
             RpcMonitorService.BlockInfo finalizedBlock = null;
+            RpcMonitorService.BlockInfo latestBlock = null;
+            boolean safeEnabled = node.safeBlocksEnabled();
+            boolean finalizedEnabled = node.finalizedBlocksEnabled();
             if (node.ws() == null || node.ws().isBlank()) {
-                if (node.safeBlocksEnabled()) {
+                if (safeEnabled) {
                     safeBlock = fetchBlockByTag(node, "safe");
                     if (safeBlock == null) {
                         monitor.recordFailure(node, MetricSource.HTTP, "safe block not found");
@@ -148,53 +131,74 @@ public class HttpMonitorService {
 
                 if (shouldFetchLatest(state, timestamp, node.pollIntervalMs())) {
                     state.lastLatestFetchAt = timestamp;
-                    RpcMonitorService.BlockInfo latestBlock = fetchBlockByTag(node, "latest");
+                    latestBlock = fetchBlockByTag(node, "latest");
                     if (latestBlock != null) {
                         handleLatestBlock(node, state, latestBlock);
                     }
                 }
 
-                finalizedBlock = fetchBlockByTag(node, "finalized");
-                if (finalizedBlock == null) {
-                    monitor.recordFailure(node, MetricSource.HTTP, "finalized block not found");
-                    return;
+                if (finalizedEnabled) {
+                    finalizedBlock = fetchBlockByTag(node, "finalized");
+                    if (finalizedBlock == null) {
+                        monitor.recordFailure(node, MetricSource.HTTP, "finalized block not found");
+                        return;
+                    }
+                    recordFinalizedReorgIfNeeded(node, state, finalizedBlock, timestamp);
+                    state.lastFinalizedBlockNumber = finalizedBlock.blockNumber();
+                    state.lastFinalizedBlockHash = finalizedBlock.blockHash();
+                    state.lastFinalizedFetchAt = timestamp;
+                    trackFinalizedChainAndCloseReorg(node, state, finalizedBlock);
+                    monitor.maybeCompareToReference(node, "finalized", finalizedBlock);
+                    monitor.recordBlock(node.key(), finalizedBlock.blockNumber(), finalizedBlock.blockHash(), Confidence.FINALIZED);
                 }
-                recordFinalizedReorgIfNeeded(node, state, finalizedBlock, timestamp);
-                state.lastFinalizedBlockNumber = finalizedBlock.blockNumber();
-                state.lastFinalizedBlockHash = finalizedBlock.blockHash();
-                state.lastFinalizedFetchAt = timestamp;
-                trackFinalizedChainAndCloseReorg(node, state, finalizedBlock);
-                monitor.maybeCompareToReference(node, "finalized", finalizedBlock);
-                monitor.recordBlock(node.key(), finalizedBlock.blockNumber(), finalizedBlock.blockHash(), Confidence.FINALIZED);
             } else {
                 String blockTag;
-                if (node.safeBlocksEnabled()) {
+                if (safeEnabled && finalizedEnabled) {
                     state.pollCounter++;
                     blockTag = (state.pollCounter % 2 == 1) ? "safe" : "finalized";
-                } else {
+                } else if (safeEnabled) {
+                    blockTag = "safe";
+                } else if (finalizedEnabled) {
                     blockTag = "finalized";
+                } else {
+                    blockTag = "latest";
                 }
 
+                logger.debug("HTTP poll ({}) pollCounter={} blockTag={}", node.name(), state.pollCounter, blockTag);
                 RpcMonitorService.BlockInfo checkpointBlock = fetchBlockByTag(node, blockTag);
                 if (checkpointBlock == null) {
                     monitor.recordFailure(node, MetricSource.HTTP, blockTag + " block not found");
                     return;
                 }
+                if ("safe".equals(blockTag)) {
+                    logger.debug("HTTP poll ({}) safe block: number={} hash={} timestamp={}",
+                            node.name(), checkpointBlock.blockNumber(), checkpointBlock.blockHash(), checkpointBlock.blockTimestamp());
+                }
 
                 if ("safe".equals(blockTag)) {
                     state.lastSafeBlockNumber = checkpointBlock.blockNumber();
                     state.lastSafeBlockHash = checkpointBlock.blockHash();
-                } else {
+                } else if ("finalized".equals(blockTag)) {
                     recordFinalizedReorgIfNeeded(node, state, checkpointBlock, timestamp);
                     state.lastFinalizedBlockNumber = checkpointBlock.blockNumber();
                     state.lastFinalizedBlockHash = checkpointBlock.blockHash();
                     trackFinalizedChainAndCloseReorg(node, state, checkpointBlock);
+                } else {
+                    latestBlock = checkpointBlock;
                 }
 
-                monitor.maybeCompareToReference(node, blockTag, checkpointBlock);
-                Confidence conf = "safe".equals(blockTag) ? Confidence.SAFE : Confidence.FINALIZED;
+                if (!"latest".equals(blockTag)) {
+                    monitor.maybeCompareToReference(node, blockTag, checkpointBlock);
+                }
+                Confidence conf = "safe".equals(blockTag)
+                        ? Confidence.SAFE
+                        : ("finalized".equals(blockTag) ? Confidence.FINALIZED : Confidence.NEW);
                 monitor.recordBlock(node.key(), checkpointBlock.blockNumber(), checkpointBlock.blockHash(), conf);
-                finalizedBlock = checkpointBlock;
+                if ("safe".equals(blockTag)) {
+                    safeBlock = checkpointBlock;
+                } else if ("finalized".equals(blockTag)) {
+                    finalizedBlock = checkpointBlock;
+                }
             }
 
             // Successfully fetched all data - this counts as a success sample for HTTP
@@ -218,36 +222,63 @@ public class HttpMonitorService {
                 headDelayMs = Duration.between(state.lastWsBlockTimestamp, timestamp).toMillis();
             }
 
-            if (finalizedBlock != null && finalizedBlock.blockTimestamp() != null) {
-                long checkpointDelay = Duration.between(finalizedBlock.blockTimestamp(), timestamp).toMillis();
-                if (checkpointDelay >= 0) {
-                    finalizedDelayMs = checkpointDelay;
+            if (safeBlock != null) {
+                Instant safeObservedAt = monitor.getReferenceObservedAt(Confidence.SAFE,
+                        safeBlock.blockNumber(), safeBlock.blockHash());
+                Instant safeBaseline = safeObservedAt != null ? safeObservedAt : safeBlock.blockTimestamp();
+                if (safeBaseline != null) {
+                    long safeDelay = Duration.between(safeBaseline, timestamp).toMillis();
+                    if (safeDelay >= 0) {
+                        safeDelayMs = safeDelay;
+                    }
                 }
             }
 
-            MetricSample sample = new MetricSample(
-                    timestamp,
-                    MetricSource.HTTP,
-                    true,
-                    latencyMs,
-                    blockNumber,
-                        finalizedBlock == null ? null : finalizedBlock.blockTimestamp(),
-                        finalizedBlock == null ? null : finalizedBlock.blockHash(),
-                        finalizedBlock == null ? null : finalizedBlock.parentHash(),
-                        finalizedBlock == null ? null : finalizedBlock.transactionCount(),
-                        finalizedBlock == null ? null : finalizedBlock.gasPriceWei(),
-                    null,
-                    headDelayMs,
-                    safeDelayMs,
-                    finalizedDelayMs);
-            store.addSample(node.key(), sample);
+            if (finalizedBlock != null) {
+                Instant finalizedObservedAt = monitor.getReferenceObservedAt(Confidence.FINALIZED,
+                        finalizedBlock.blockNumber(), finalizedBlock.blockHash());
+                Instant finalizedBaseline = finalizedObservedAt != null ? finalizedObservedAt : finalizedBlock.blockTimestamp();
+                if (finalizedBaseline != null) {
+                    long checkpointDelay = Duration.between(finalizedBaseline, timestamp).toMillis();
+                    if (checkpointDelay >= 0) {
+                        finalizedDelayMs = checkpointDelay;
+                    }
+                }
+            }
+
+            if (safeDelayMs != null || finalizedDelayMs != null) {
+                logger.debug("HTTP poll ({}) delays: safeDelayMs={} finalizedDelayMs={} blockHash={}",
+                        node.name(), safeDelayMs, finalizedDelayMs,
+                        (safeBlock != null ? safeBlock.blockHash() : (finalizedBlock != null ? finalizedBlock.blockHash() : null)));
+            }
+            RpcMonitorService.BlockInfo metadataBlock = finalizedBlock != null
+                    ? finalizedBlock
+                    : (safeBlock != null ? safeBlock : latestBlock);
             state.lastHttpBlockNumber = blockNumber;
-                    state.lastHttpBlockHash = finalizedBlock == null ? null : finalizedBlock.blockHash();
+            state.lastHttpBlockHash = metadataBlock == null ? null : metadataBlock.blockHash();
+
+            if (monitor.isWarmupComplete()) {
+                MetricSample.Builder sampleBuilder = MetricSample.builder(timestamp, MetricSource.HTTP)
+                        .success(true)
+                        .latencyMs(latencyMs)
+                        .blockNumber(blockNumber)
+                        .headDelayMs(headDelayMs)
+                        .safeDelayMs(safeDelayMs)
+                        .finalizedDelayMs(finalizedDelayMs);
+                if (metadataBlock != null) {
+                    sampleBuilder.blockTimestamp(metadataBlock.blockTimestamp())
+                            .blockHash(metadataBlock.blockHash())
+                            .parentHash(metadataBlock.parentHash())
+                            .transactionCount(metadataBlock.transactionCount())
+                            .gasPriceWei(metadataBlock.gasPriceWei());
+                }
+                store.addSample(node.key(), sampleBuilder.build());
+            }
         } catch (HttpStatusException ex) {
             logger.error("HTTP RPC failure ({} / http): status {} ({})", node.name(), ex.getStatusCode(), ex.getMessage());
             monitor.recordFailure(node, MetricSource.HTTP, monitor.classifyError(ex));
         } catch (IOException | InterruptedException ex) {
-            monitor.recordFailure(node, MetricSource.HTTP, monitor.classifyError(ex));
+            monitor.recordFailure(node, MetricSource.HTTP, classifyHttpErrorForNode(state, ex));
         } catch (RuntimeException ex) {
             logger.error("HTTP RPC failure ({}): {}", node.name(), ex.getMessage());
             monitor.recordFailure(node, MetricSource.HTTP, ex.getMessage());
@@ -278,11 +309,53 @@ public class HttpMonitorService {
         if (result == null || result.isNull()) {
             return null;
         }
-        return parseHexLong(result.asText());
+        return EthHex.parseLong(result.asText());
     }
 
     private RpcMonitorService.BlockInfo fetchBlockByTag(NodeDefinition node, String blockTag) throws IOException, InterruptedException {
         return fetchBlockByTag(node.http(), node.readTimeoutMs(), node.headers(), node.maxRetries(), node.retryBackoffMs(), node.connectTimeoutMs(), blockTag);
+    }
+
+    RpcMonitorService.BlockInfo fetchBlockByNumber(NodeDefinition node, long blockNumber) throws IOException, InterruptedException {
+        String hex = formatBlockNumberHex(blockNumber);
+        return fetchBlockByTag(node.http(), node.readTimeoutMs(), node.headers(), node.maxRetries(), node.retryBackoffMs(), node.connectTimeoutMs(), hex);
+    }
+
+    RpcMonitorService.BlockInfo fetchBlockByHash(NodeDefinition node, String blockHash) throws IOException, InterruptedException {
+        JsonNode params = mapper.createArrayNode()
+                .add(blockHash)
+                .add(false);
+        JsonNode response = sendRpcWithRetry(node.http(), node.headers(), node.readTimeoutMs(), 
+                node.maxRetries(), node.retryBackoffMs(), node.connectTimeoutMs(), "eth_getBlockByHash", params);
+        if (response.has("error")) {
+            throw new IOException(response.get("error").toString());
+        }
+        return EthHex.parseBlockFields(response.get("result"));
+    }
+
+    private void checkWebSocketHealth(NodeDefinition node, RpcMonitorService.NodeState state, Long blockNumber) {
+        if (node.ws() == null || node.ws().isBlank()) {
+            return;
+        }
+        if (state.webSocketRef.get() == null) {
+            return;
+        }
+        Long previousHttpBlock = state.lastHttpBlockNumber;
+        Instant lastWsEvent = state.lastWsEventReceivedAt;
+
+        if (previousHttpBlock != null && blockNumber > previousHttpBlock) {
+            if (lastWsEvent == null) {
+                monitor.recordFailure(node, MetricSource.WS, monitor.wsNoNewHeadsSinceConnectionMessage());
+            } else {
+                long secondsSinceLastEvent = Duration.between(lastWsEvent, Instant.now()).toSeconds();
+                if (secondsSinceLastEvent > RpcMonitorService.WS_DEAD_SECONDS) {
+                    monitor.recordFailure(node, MetricSource.WS, monitor.wsNoNewHeadsForSecondsMessage(secondsSinceLastEvent));
+                    monitor.closeWebSocket(node, state, "stale subscription");
+                } else {
+                    monitor.checkAndCloseAnomaly(node, null, MetricSource.WS);
+                }
+            }
+        }
     }
 
     private RpcMonitorService.BlockInfo fetchBlockByTag(String httpUrl,
@@ -299,32 +372,11 @@ public class HttpMonitorService {
         if (response.has("error")) {
             throw new IOException(response.get("error").toString());
         }
-        JsonNode result = response.get("result");
-        if (result == null || result.isNull()) {
-            return null;
-        }
-        Long blockNumber = parseHexLong(result.path("number").asText(null));
-        String blockHash = result.path("hash").asText(null);
-        String parentHash = result.path("parentHash").asText(null);
-        Instant blockTimestamp = null;
-        String timestampHex = result.path("timestamp").asText(null);
-        if (timestampHex != null && !timestampHex.isBlank()) {
-            Long timestampSeconds = parseHexLong(timestampHex);
-            if (timestampSeconds != null) {
-                blockTimestamp = Instant.ofEpochSecond(timestampSeconds);
-            }
-        }
-        Long gasPriceWei = null;
-        String baseFeeHex = result.path("baseFeePerGas").asText(null);
-        if (baseFeeHex != null && !baseFeeHex.isBlank()) {
-            gasPriceWei = parseHexLong(baseFeeHex);
-        }
-        Integer txCount = null;
-        JsonNode transactions = result.path("transactions");
-        if (transactions.isArray()) {
-            txCount = transactions.size();
-        }
-        return new RpcMonitorService.BlockInfo(blockNumber, blockHash, parentHash, txCount, gasPriceWei, blockTimestamp);
+        return EthHex.parseBlockFields(response.get("result"));
+    }
+
+    private String formatBlockNumberHex(long blockNumber) {
+        return "0x" + Long.toHexString(blockNumber);
     }
 
     private JsonNode sendRpcWithRetry(String httpUrl,
@@ -346,6 +398,9 @@ public class HttpMonitorService {
                 }
                 sleepBackoff(retryBackoffMs, attempt);
             } catch (IOException | InterruptedException ioEx) {
+                if (isHostDownConnectError(ioEx)) {
+                    throw ioEx;
+                }
                 lastIo = ioEx instanceof IOException ? (IOException) ioEx : new IOException(ioEx);
                 if (attempt == attempts) {
                     throw ioEx;
@@ -397,15 +452,40 @@ public class HttpMonitorService {
         return mapper.readTree(response.body());
     }
 
-    private Long parseHexLong(String hex) {
-        if (hex == null) {
-            return null;
+    private String classifyHttpErrorForNode(RpcMonitorService.NodeState state, Throwable error) {
+        if (isHostDownConnectError(error)) {
+            return CONNECT_ERROR_HOST_DOWN;
         }
-        String normalized = hex.startsWith("0x") ? hex.substring(2) : hex;
-        if (normalized.isBlank()) {
-            return null;
+        if (isTimeoutError(error) && isHostDownMessage(state != null ? state.lastHttpError : null)) {
+            return CONNECT_ERROR_HOST_DOWN;
         }
-        return new BigInteger(normalized, 16).longValue();
+        return monitor.classifyError(error);
+    }
+
+    private boolean isHostDownConnectError(Throwable error) {
+        return error != null && isHostDownMessage(error.getMessage());
+    }
+
+    private boolean isTimeoutError(Throwable error) {
+        if (error == null) {
+            return false;
+        }
+        if (error instanceof HttpTimeoutException) {
+            return true;
+        }
+        String message = error.getMessage();
+        if (message == null) {
+            return false;
+        }
+        String lower = message.toLowerCase();
+        return lower.contains("timeout") || lower.contains("timed out");
+    }
+
+    private boolean isHostDownMessage(String message) {
+        if (message == null) {
+            return false;
+        }
+        return message.toLowerCase().contains("host is down");
     }
 
     private void handleLatestBlock(NodeDefinition node, RpcMonitorService.NodeState state, RpcMonitorService.BlockInfo latestBlock) {
@@ -414,41 +494,44 @@ public class HttpMonitorService {
         state.wsNewHeadCount++;
 
         Long headDelayMs = null;
-        if (latestBlock.blockTimestamp() != null) {
+        Instant referenceHeadObservedAt = monitor.getReferenceObservedAt(Confidence.NEW,
+                latestBlock.blockNumber(), latestBlock.blockHash());
+        if (referenceHeadObservedAt != null) {
+            headDelayMs = Duration.between(referenceHeadObservedAt, now).toMillis();
+        } else if (latestBlock.blockTimestamp() != null) {
             headDelayMs = Duration.between(latestBlock.blockTimestamp(), now).toMillis();
             state.lastWsBlockTimestamp = latestBlock.blockTimestamp();
         }
 
-        MetricSample sample = new MetricSample(
-            now,
-            MetricSource.HTTP,
-                true,
-                -1,
-                latestBlock.blockNumber(),
-                latestBlock.blockTimestamp(),
-                latestBlock.blockHash(),
-                latestBlock.parentHash(),
-                latestBlock.transactionCount(),
-                latestBlock.gasPriceWei(),
-                null,
-                headDelayMs,
-                null,
-                null);
-        store.addSample(node.key(), sample);
+        MetricSample sample = MetricSample.builder(now, MetricSource.HTTP)
+                .success(true)
+                .blockNumber(latestBlock.blockNumber())
+                .blockTimestamp(latestBlock.blockTimestamp())
+                .blockHash(latestBlock.blockHash())
+                .parentHash(latestBlock.parentHash())
+                .transactionCount(latestBlock.transactionCount())
+                .gasPriceWei(latestBlock.gasPriceWei())
+                .headDelayMs(headDelayMs)
+                .build();
+        if (monitor.isWarmupComplete()) {
+            store.addSample(node.key(), sample);
+        }
 
         if (latestBlock.blockNumber() != null && latestBlock.blockHash() != null) {
             monitor.recordBlock(node.key(), latestBlock.blockNumber(), latestBlock.blockHash(), Confidence.NEW);
         }
 
-        List<AnomalyEvent> anomalies = detector.detect(
-                node.key(),
-                sample,
-                node.anomalyDelayMs(),
-                null,
-                null,
-                sample.getBlockNumber());
-        for (AnomalyEvent anomaly : anomalies) {
-            store.addAnomaly(node.key(), anomaly);
+        if (monitor.isWarmupComplete()) {
+            List<AnomalyEvent> anomalies = detector.detect(
+                    node.key(),
+                    sample,
+                    node.anomalyDelayMs(),
+                    null,
+                    null,
+                    sample.getBlockNumber());
+            for (AnomalyEvent anomaly : anomalies) {
+                store.addAnomaly(node.key(), anomaly);
+            }
         }
     }
 
@@ -470,30 +553,27 @@ public class HttpMonitorService {
             return;
         }
 
-        MetricSample sample = new MetricSample(
-                timestamp,
-                MetricSource.HTTP,
-                true,
-                0,
-                currentNumber,
-                finalizedBlock.blockTimestamp(),
-                currentHash,
-                finalizedBlock.parentHash(),
-                finalizedBlock.transactionCount(),
-                finalizedBlock.gasPriceWei(),
-                null,
-                null,
-                null,
-                null);
-        List<AnomalyEvent> anomalies = detector.detect(
-                node.key(),
-                sample,
-                node.anomalyDelayMs(),
-                previousNumber,
-                previousHash,
-                sample.getBlockNumber());
-        for (AnomalyEvent anomaly : anomalies) {
-            store.addAnomaly(node.key(), anomaly);
+        MetricSample sample = MetricSample.builder(timestamp, MetricSource.HTTP)
+                .success(true)
+                .latencyMs(0)
+                .blockNumber(currentNumber)
+                .blockTimestamp(finalizedBlock.blockTimestamp())
+                .blockHash(currentHash)
+                .parentHash(finalizedBlock.parentHash())
+                .transactionCount(finalizedBlock.transactionCount())
+                .gasPriceWei(finalizedBlock.gasPriceWei())
+                .build();
+        if (monitor.isWarmupComplete()) {
+            List<AnomalyEvent> anomalies = detector.detect(
+                    node.key(),
+                    sample,
+                    node.anomalyDelayMs(),
+                    previousNumber,
+                    previousHash,
+                    sample.getBlockNumber());
+            for (AnomalyEvent anomaly : anomalies) {
+                store.addAnomaly(node.key(), anomaly);
+            }
         }
     }
 

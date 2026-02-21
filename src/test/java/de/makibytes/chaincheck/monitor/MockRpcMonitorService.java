@@ -46,8 +46,8 @@ public class MockRpcMonitorService extends RpcMonitorService {
 
     @Override
     public String getReferenceNodeKey() {
-        String configured = properties.getReference() != null
-                ? properties.getReference().getNodeKey()
+        String configured = properties.getConsensus() != null
+            ? properties.getConsensus().getNodeKey()
                 : null;
         if (configured != null && nodeRegistry.getNode(configured) != null) {
             return configured;

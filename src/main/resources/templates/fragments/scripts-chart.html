@@ -9,19 +9,20 @@
             color: theme.primary,
             rgb: theme.primaryRgb,
             backgroundAlpha: 0.2,
-            order: 2
+            order: 2,
+            useLatencyGradient: true
         })];
 
         if (hasAggregatedLatencies) {
             datasets.push(createBandDataset({
-                label: 'Network Latency (Low)',
+                label: 'Network Latency (P5)',
                 data: latencyMinScaled,
                 originalData: latencyMinData,
                 rgb: theme.primaryRgb
             }));
 
             datasets.push(createBandDataset({
-                label: 'Network Latency (High)',
+                label: 'Network Latency (P99)',
                 data: latencyMaxScaled,
                 originalData: latencyMaxData,
                 rgb: theme.primaryRgb
@@ -83,16 +84,24 @@
 
                 const drawBars = (series, pattern, ongoing) => {
                     const errorMask = buildErrorMask(series);
+                    
+                    const hasAnyError = errorMask.some(e => e);
+                    if (!hasAnyError) {
+                        return;
+                    }
+                    
                     if (ongoing) {
-                        let lastErrorIndex = -1;
-                        for (let i = errorMask.length - 1; i >= 0; i -= 1) {
-                            if (errorMask[i]) {
-                                lastErrorIndex = i;
+                        let lastKnownIndex = -1;
+                        for (let i = series.length - 1; i >= 0; i -= 1) {
+                            if (series[i] != null) {
+                                lastKnownIndex = i;
                                 break;
                             }
                         }
-                        if (lastErrorIndex >= 0) {
-                            for (let i = lastErrorIndex; i < errorMask.length; i += 1) {
+
+                        const latestKnownIsError = lastKnownIndex >= 0 && series[lastKnownIndex] > 0;
+                        if (latestKnownIsError) {
+                            for (let i = lastKnownIndex + 1; i < errorMask.length; i += 1) {
                                 errorMask[i] = true;
                             }
                         }
@@ -177,29 +186,50 @@
         };
 
         // Helper function to add delay datasets
-        function addDelayDatasets(datasets, type, color, rgb, data, minData, maxData, refData) {
+        function addDelayDatasets(datasets, config) {
+            const {
+                type,
+                color,
+                rgb,
+                data,
+                minData,
+                maxData,
+                refData,
+                originalData,
+                originalMinData,
+                originalMaxData,
+                referenceOriginalData,
+                pointRadius = 0,
+                pointHoverRadius = 3
+            } = config;
+
             datasets.push(createLineDataset({
-                label: `${type} Delay`,
+                label: `${type} Delay P95`,
                 data: data,
-                originalData: eval(`${type.toLowerCase()}DelayData`),
+                originalData: originalData,
                 color: color,
                 rgb: rgb,
                 backgroundAlpha: 0.2,
                 order: 2
             }));
 
+            const lineDataset = datasets[datasets.length - 1];
+            lineDataset.borderDash = [];
+            lineDataset.pointRadius = pointRadius;
+            lineDataset.pointHoverRadius = pointHoverRadius;
+
             if (hasAggregatedDelays) {
                 datasets.push(createBandDataset({
-                    label: `${type} Delay (Low)`,
+                    label: `${type} Delay (P5)`,
                     data: minData,
-                    originalData: eval(`${type.toLowerCase()}DelayMinData`),
+                    originalData: originalMinData,
                     rgb: rgb
                 }));
 
                 datasets.push(createBandDataset({
-                    label: `${type} Delay (High)`,
+                    label: `${type} Delay (P99)`,
                     data: maxData,
-                    originalData: eval(`${type.toLowerCase()}DelayMaxData`),
+                    originalData: originalMaxData,
                     rgb: rgb
                 }));
             }
@@ -208,7 +238,7 @@
                 datasets.push(createReferenceDataset({
                     label: `${type} Delay (Reference)`,
                     data: refData,
-                    originalData: eval(`reference${type}DelayData`),
+                    originalData: referenceOriginalData,
                     color: color,
                     rgb: rgb
                 }));
@@ -216,13 +246,55 @@
         }
 
         if (delayChartsAvailable) {
-            addDelayDatasets(datasets, 'Head', theme.headDelay, theme.headDelayRgb, headDelayScaled, headDelayMinScaled, headDelayMaxScaled, referenceHeadDelayScaled);
-
-            if (safeBlocksEnabled) {
-                addDelayDatasets(datasets, 'Safe', theme.safeDelay, theme.safeDelayRgb, safeDelayScaled, safeDelayMinScaled, safeDelayMaxScaled, referenceSafeDelayScaled);
+            if (hasHeadDelaySeries) {
+                addDelayDatasets(datasets, {
+                    type: 'Head',
+                    color: theme.headDelay,
+                    rgb: theme.headDelayRgb,
+                    data: headDelayScaled,
+                    minData: headDelayMinScaled,
+                    maxData: headDelayMaxScaled,
+                    refData: referenceHeadDelayScaled,
+                    originalData: headDelayData,
+                    originalMinData: headDelayMinData,
+                    originalMaxData: headDelayMaxData,
+                    referenceOriginalData: referenceHeadDelayData
+                });
             }
 
-            addDelayDatasets(datasets, 'Finalized', theme.success, theme.successRgb, finalizedDelayScaled, finalizedDelayMinScaled, finalizedDelayMaxScaled, referenceFinalizedDelayScaled);
+            if (hasSafeDelaySeries) {
+                addDelayDatasets(datasets, {
+                    type: 'Safe',
+                    color: theme.safeDelay,
+                    rgb: theme.safeDelayRgb,
+                    data: safeDelayScaled,
+                    minData: safeDelayMinScaled,
+                    maxData: safeDelayMaxScaled,
+                    refData: referenceSafeDelayScaled,
+                    originalData: safeDelayData,
+                    originalMinData: safeDelayMinData,
+                    originalMaxData: safeDelayMaxData,
+                    referenceOriginalData: referenceSafeDelayData,
+                    pointRadius: 2,
+                    pointHoverRadius: 4
+                });
+            }
+
+            if (hasFinalizedDelaySeries) {
+                addDelayDatasets(datasets, {
+                    type: 'Finalized',
+                    color: theme.success,
+                    rgb: theme.successRgb,
+                    data: finalizedDelayScaled,
+                    minData: finalizedDelayMinScaled,
+                    maxData: finalizedDelayMaxScaled,
+                    refData: referenceFinalizedDelayScaled,
+                    originalData: finalizedDelayData,
+                    originalMinData: finalizedDelayMinData,
+                    originalMaxData: finalizedDelayMaxData,
+                    referenceOriginalData: referenceFinalizedDelayData
+                });
+            }
         }
 
         datasets.push({
@@ -247,13 +319,30 @@
             });
         }
 
+        const hasAnyErrorRate = errorRateData.some(v => v != null && v > 0);
+        if (hasAnyErrorRate) {
+            datasets.push({
+                label: 'Error rate %',
+                data: errorRateData,
+                borderColor: `rgba(${theme.dangerRgb}, 0.6)`,
+                backgroundColor: `rgba(${theme.dangerRgb}, 0.0)`,
+                borderWidth: 1,
+                borderDash: [4, 4],
+                pointRadius: 0,
+                spanGaps: true,
+                tension: 0.2,
+                yAxisID: 'yError',
+                order: 0
+            });
+        }
+
         const chartInstance = new Chart(ctx, {
             type: 'line',
             data: {
                 labels,
                 datasets
             },
-            plugins: [confidenceBandPlugin, errorBarPlugin, scaleIndicatorPlugin],
+            plugins: [confidenceBandPlugin, errorBarPlugin, scaleIndicatorPlugin, latencyLegendGradientPlugin],
             options: {
                 responsive: true,
                 plugins: {
@@ -276,6 +365,13 @@
                                     if (legendItem.text === 'WS Errors') {
                                         legendItem.fillStyle = wsPattern;
                                         legendItem.strokeStyle = 'rgba(0, 0, 0, 0)';
+                                    }
+                                    // Hide the default rectangle; latencyLegendGradientPlugin
+                                    // redraws these as short horizontal lines after the chart is drawn.
+                                    if (legendItem.text === 'Network Latency' || legendItem.text === 'Head Delay P95') {
+                                        legendItem.fillStyle   = 'rgba(0,0,0,0)';
+                                        legendItem.strokeStyle = 'rgba(0,0,0,0)';
+                                        legendItem.lineWidth   = 0;
                                     }
                                 });
 
@@ -331,6 +427,17 @@
                             callback: (value) => `${inverseScale(value)} ms`
                         },
                         grid: { color: theme.grid }
+                    },
+                    yError: {
+                        display: hasAnyErrorRate,
+                        position: 'right',
+                        min: 0,
+                        max: 100,
+                        ticks: {
+                            color: theme.textSubtle,
+                            callback: (value) => value + '%'
+                        },
+                        grid: { drawOnChartArea: false }
                     }
                 }
             }
@@ -359,6 +466,7 @@
                 chartInstance.update();
             });
         }
+
     }
 </script>
 </th:block>

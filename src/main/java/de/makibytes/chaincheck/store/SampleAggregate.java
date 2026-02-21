@@ -52,6 +52,10 @@ public class SampleAggregate {
     private long finalizedDelayCount;
     private long minFinalizedDelayMs = Long.MAX_VALUE;
     private long maxFinalizedDelayMs;
+    private long[] latencyHistogram;
+    private long[] headDelayHistogram;
+    private long[] safeDelayHistogram;
+    private long[] finalizedDelayHistogram;
 
     public SampleAggregate(Instant bucketStart) {
         this.bucketStart = bucketStart;
@@ -65,14 +69,12 @@ public class SampleAggregate {
             errorCount++;
         }
         if (sample.getLatencyMs() >= 0) {
-            latencySumMs += sample.getLatencyMs();
+            long lat = sample.getLatencyMs();
+            latencySumMs += lat;
             latencyCount++;
-            if (sample.getLatencyMs() < minLatencyMs) {
-                minLatencyMs = sample.getLatencyMs();
-            }
-            if (sample.getLatencyMs() > maxLatencyMs) {
-                maxLatencyMs = sample.getLatencyMs();
-            }
+            minLatencyMs = Math.min(minLatencyMs, lat);
+            maxLatencyMs = Math.max(maxLatencyMs, lat);
+            latencyHistogram = recordToHistogram(latencyHistogram, lat);
         }
         if (sample.getSource() == MetricSource.HTTP) {
             httpCount++;
@@ -96,34 +98,28 @@ public class SampleAggregate {
             }
         }
         if (sample.getSource() == MetricSource.WS && sample.getHeadDelayMs() != null) {
-            headDelaySumMs += sample.getHeadDelayMs();
+            long hd = sample.getHeadDelayMs();
+            headDelaySumMs += hd;
             headDelayCount++;
-            if (sample.getHeadDelayMs() < minHeadDelayMs) {
-                minHeadDelayMs = sample.getHeadDelayMs();
-            }
-            if (sample.getHeadDelayMs() > maxHeadDelayMs) {
-                maxHeadDelayMs = sample.getHeadDelayMs();
-            }
+            minHeadDelayMs = Math.min(minHeadDelayMs, hd);
+            maxHeadDelayMs = Math.max(maxHeadDelayMs, hd);
+            headDelayHistogram = recordToHistogram(headDelayHistogram, hd);
         }
         if (sample.getSafeDelayMs() != null) {
-            safeDelaySumMs += sample.getSafeDelayMs();
+            long sd = sample.getSafeDelayMs();
+            safeDelaySumMs += sd;
             safeDelayCount++;
-            if (sample.getSafeDelayMs() < minSafeDelayMs) {
-                minSafeDelayMs = sample.getSafeDelayMs();
-            }
-            if (sample.getSafeDelayMs() > maxSafeDelayMs) {
-                maxSafeDelayMs = sample.getSafeDelayMs();
-            }
+            minSafeDelayMs = Math.min(minSafeDelayMs, sd);
+            maxSafeDelayMs = Math.max(maxSafeDelayMs, sd);
+            safeDelayHistogram = recordToHistogram(safeDelayHistogram, sd);
         }
         if (sample.getFinalizedDelayMs() != null) {
-            finalizedDelaySumMs += sample.getFinalizedDelayMs();
+            long fd = sample.getFinalizedDelayMs();
+            finalizedDelaySumMs += fd;
             finalizedDelayCount++;
-            if (sample.getFinalizedDelayMs() < minFinalizedDelayMs) {
-                minFinalizedDelayMs = sample.getFinalizedDelayMs();
-            }
-            if (sample.getFinalizedDelayMs() > maxFinalizedDelayMs) {
-                maxFinalizedDelayMs = sample.getFinalizedDelayMs();
-            }
+            minFinalizedDelayMs = Math.min(minFinalizedDelayMs, fd);
+            maxFinalizedDelayMs = Math.max(maxFinalizedDelayMs, fd);
+            finalizedDelayHistogram = recordToHistogram(finalizedDelayHistogram, fd);
         }
     }
 
@@ -162,6 +158,10 @@ public class SampleAggregate {
             minFinalizedDelayMs = Math.min(minFinalizedDelayMs, aggregate.minFinalizedDelayMs);
         }
         maxFinalizedDelayMs = Math.max(maxFinalizedDelayMs, aggregate.maxFinalizedDelayMs);
+        latencyHistogram = mergeHistograms(latencyHistogram, aggregate.latencyHistogram);
+        headDelayHistogram = mergeHistograms(headDelayHistogram, aggregate.headDelayHistogram);
+        safeDelayHistogram = mergeHistograms(safeDelayHistogram, aggregate.safeDelayHistogram);
+        finalizedDelayHistogram = mergeHistograms(finalizedDelayHistogram, aggregate.finalizedDelayHistogram);
     }
 
     public Instant getBucketStart() {
@@ -270,5 +270,44 @@ public class SampleAggregate {
 
     public long getMaxFinalizedDelayMs() {
         return maxFinalizedDelayMs;
+    }
+
+    public long[] getLatencyHistogram() {
+        return latencyHistogram;
+    }
+
+    public long[] getHeadDelayHistogram() {
+        return headDelayHistogram;
+    }
+
+    public long[] getSafeDelayHistogram() {
+        return safeDelayHistogram;
+    }
+
+    public long[] getFinalizedDelayHistogram() {
+        return finalizedDelayHistogram;
+    }
+
+    private static long[] recordToHistogram(long[] histogram, long value) {
+        if (histogram == null) {
+            histogram = new long[HistogramAccumulator.BUCKET_COUNT];
+        }
+        HistogramAccumulator.recordInto(histogram, value);
+        return histogram;
+    }
+
+    private static long[] mergeHistograms(long[] target, long[] source) {
+        if (source == null) {
+            return target;
+        }
+        if (target == null) {
+            long[] copy = new long[source.length];
+            System.arraycopy(source, 0, copy, 0, source.length);
+            return copy;
+        }
+        for (int i = 0; i < target.length && i < source.length; i++) {
+            target[i] += source[i];
+        }
+        return target;
     }
 }

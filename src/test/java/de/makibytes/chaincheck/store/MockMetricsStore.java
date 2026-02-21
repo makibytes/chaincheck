@@ -139,41 +139,30 @@ public class MockMetricsStore extends InMemoryMetricsStore {
         Long safeDelayMs = safeSample ? 2000L + (blockNumber % 4000) : null;
         Long finalizedDelayMs = safeSample ? null : 2500L + (blockNumber % 4500);
 
-        addSample(NODE_KEY, new MetricSample(
-                timestamp,
-                MetricSource.HTTP,
-                success,
-                latencyMs,
-                blockNumber,
-                blockTimestamp,
-                blockHash,
-                parentHash,
-                transactionCount,
-                gasPriceWei,
-                null,
-                null,
-                safeDelayMs,
-                finalizedDelayMs));
+        MetricSample sample = MetricSample.builder(timestamp, MetricSource.HTTP)
+                .success(success)
+                .latencyMs(latencyMs)
+                .blockNumber(blockNumber)
+                .blockTimestamp(blockTimestamp)
+                .blockHash(blockHash)
+                .parentHash(parentHash)
+                .transactionCount(transactionCount)
+                .gasPriceWei(gasPriceWei)
+                .safeDelayMs(safeDelayMs)
+                .finalizedDelayMs(finalizedDelayMs)
+                .build();
+        addSample(NODE_KEY, sample);
     }
 
     private void addWsSample(Instant timestamp) {
         long latencyMs = 0;
         Long headDelayMs = 1000L + (timestamp.getEpochSecond() % 4000);
-        addSample(NODE_KEY, new MetricSample(
-                timestamp,
-                MetricSource.WS,
-                true,
-                latencyMs,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                headDelayMs,
-                null,
-                null));
+        MetricSample sample = MetricSample.builder(timestamp, MetricSource.WS)
+                .success(true)
+                .latencyMs(latencyMs)
+                .headDelayMs(headDelayMs)
+                .build();
+        addSample(NODE_KEY, sample);
     }
 
     private void seedAnomalies(Instant now) {

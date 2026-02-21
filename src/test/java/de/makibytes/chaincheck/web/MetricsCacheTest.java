@@ -35,17 +35,29 @@ class MetricsCacheTest {
 
     private static DashboardView createView(Instant generatedAt) {
         DashboardSummary summary = new DashboardSummary(
-                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+                // totalSamples, httpSamples, wsSamples, successCount, errorCount
+                0, 0, 0, 0, 0,
+                // avgLatencyMs, maxLatencyMs, p5, p25, p75, p95, p99
+                0, 0, 0, 0, 0, 0, 0,
+                // uptimePercent, errorRatePercent
+                0, 0,
+                // avgNew, p95New, p99New, avgSafe, p95Safe, p99Safe, avgFin, p95Fin, p99Fin
+                0, 0, 0, 0, 0, 0, 0, 0, 0,
+                // staleBlockCount, blockLagBlocks
+                0, 0,
+                // delayCount, reorgCount, blockGapCount, rateLimitCount, timeoutCount, wrongHeadCount, conflictCount
+                0, 0, 0, 0, 0, 0, 0,
+                // canonicalRatePercent, invalidBlockCount, wrongHeadRatePercent, maxReorgDepth, maxGapSize, avgFirstSeenDeltaMs, p95FirstSeenDeltaMs, healthScore
+                100.0, 0, 0.0, 0, 0, 0.0, 0.0, 0);
         return DashboardView.create(
                 TimeRange.HOURS_2, summary, List.of(), List.of(), List.of(),
                 ChartBuilder.ChartData.empty(), ChartBuilder.DelayChartData.empty(),
                 List.of(), List.of(), List.of(),
-                false, false, false, false, false, false, false,
+                false, false, false, false, false, false, false, false,
                 false, false, null, null, null,
                 1, 50, 0, 1, 50, 0,
                 500, 30000, false,
-                generatedAt, null, false);
+                generatedAt, null, false, null, false);
     }
 
     @Test

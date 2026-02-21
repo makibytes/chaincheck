@@ -57,6 +57,8 @@ server:
 rpc:
   title: "Polygon Mainnet"
   title-color: "#8247e5"
+  get-safe-blocks: false
+  get-finalized-blocks: false
   anomaly-detection:
     high-latency-ms: 2000
   nodes:
@@ -64,7 +66,6 @@ rpc:
       http: https://polygon-rpc.com
       ws: wss://polygon-rpc.com
       poll-interval-ms: 1000
-      safe-blocks-enabled: false
 ```
 
 ### Minimal Configuration
@@ -169,6 +170,8 @@ To monitor multiple nodes, add them to your configuration:
 
 ```yaml
 rpc:
+  get-safe-blocks: false
+  get-finalized-blocks: false
   nodes:
     - name: Node 1
       http: https://rpc1.example.com
@@ -176,14 +179,12 @@ rpc:
       poll-interval-ms: 1000
       anomaly-detection:
         high-latency: 2000
-      safe-blocks-enabled: false
       
     - name: Node 2
       http: https://rpc2.example.com
       poll-interval-ms: 1500
       anomaly-detection:
         high-latency: 3000
-      safe-blocks-enabled: false
 ```
 
 Use the dropdown in the dashboard to switch between nodes.

@@ -60,15 +60,20 @@ public class NodeRegistry {
             long retryBackoffMs = node.getRetryBackoffMs() > 0 ? node.getRetryBackoffMs() : defaults.getRetryBackoffMs();
             Map<String, String> headers = new HashMap<>(defaults.getHeaders());
             headers.putAll(node.getHeaders());
+            boolean wsGapRecoveryEnabled = node.getWsGapRecoveryEnabled() != null
+                    ? node.getWsGapRecoveryEnabled()
+                    : properties.isWsGapRecoveryEnabled();
+            int wsGapRecoveryMaxBlocks = node.getWsGapRecoveryMaxBlocks() != null
+                    ? node.getWsGapRecoveryMaxBlocks()
+                    : properties.getWsGapRecoveryMaxBlocks();
                 long nodeHighLatencyMs = node.getAnomalyDetection() != null
                     ? node.getAnomalyDetection().getHighLatencyMs()
                     : -1;
                 long anomalyDelayMs = nodeHighLatencyMs > 0
                     ? nodeHighLatencyMs
                     : properties.getAnomalyDetection().getHighLatencyMs();
-            boolean safeBlocksEnabled = node.getSafeBlocksEnabled() != null
-                    ? node.getSafeBlocksEnabled()
-                    : properties.isSafeBlocksEnabled();
+            boolean safeBlocksEnabled = properties.isGetSafeBlocks();
+            boolean finalizedBlocksEnabled = properties.isGetFinalizedBlocks();
             String nodeName = node.getName() == null || node.getName().isBlank()
                     ? "Node " + index
                     : node.getName();
@@ -80,11 +85,14 @@ public class NodeRegistry {
                     node.getPollIntervalMs(),
                     anomalyDelayMs,
                     safeBlocksEnabled,
+                    finalizedBlocksEnabled,
                     connectTimeoutMs,
                     readTimeoutMs,
                     maxRetries,
                     retryBackoffMs,
-                    Map.copyOf(headers));
+                    Map.copyOf(headers),
+                    wsGapRecoveryEnabled,
+                    wsGapRecoveryMaxBlocks);
             temp.add(definition);
             byKey.put(key, definition);
             if (node.getWs() != null && !node.getWs().isBlank()) {
@@ -128,10 +136,13 @@ public class NodeRegistry {
                                  long pollIntervalMs,
                                  long anomalyDelayMs,
                                  boolean safeBlocksEnabled,
+                                 boolean finalizedBlocksEnabled,
                                  long connectTimeoutMs,
                                  long readTimeoutMs,
                                  int maxRetries,
                                  long retryBackoffMs,
-                                 Map<String, String> headers) {
+                                 Map<String, String> headers,
+                                 boolean wsGapRecoveryEnabled,
+                                 int wsGapRecoveryMaxBlocks) {
     }
 }

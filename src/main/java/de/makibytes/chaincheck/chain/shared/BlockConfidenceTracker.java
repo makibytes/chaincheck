@@ -15,20 +15,16 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-package de.makibytes.chaincheck.monitor;
+package de.makibytes.chaincheck.chain.shared;
 
 import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Represents the reference blocks determined by voting across all nodes.
+ * Tracks block confidence levels and their corresponding hashes.
  * Maps block numbers to confidence levels and their voted hashes.
  */
-public class ReferenceBlocks {
-
-    public enum Confidence {
-        NEW, SAFE, FINALIZED
-    }
+public class BlockConfidenceTracker {
 
     private final Map<Long, Map<Confidence, String>> blocks = new HashMap<>();
 
@@ -48,14 +44,14 @@ public class ReferenceBlocks {
     }
 
     /**
-     * Checks if reference blocks are established (have at least some blocks).
+     * Checks if confidence blocks are established (have at least some blocks).
      */
     public boolean isEstablished() {
         return !blocks.isEmpty();
     }
 
     /**
-     * Clears all reference blocks.
+     * Clears all confidence blocks.
      */
     public void clear() {
         blocks.clear();

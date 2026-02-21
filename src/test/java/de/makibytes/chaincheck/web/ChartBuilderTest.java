@@ -40,20 +40,36 @@ import de.makibytes.chaincheck.store.SampleAggregate;
 class ChartBuilderTest {
 
     private static MetricSample httpSample(Instant timestamp, long latencyMs, Long blockNumber) {
-        return new MetricSample(timestamp, MetricSource.HTTP, true, latencyMs,
-                blockNumber, timestamp.minus(Duration.ofSeconds(1)),
-                "0xhash", "0xparent", null, null, null, null, null, null);
+        return MetricSample.builder(timestamp, MetricSource.HTTP)
+                .success(true)
+                .latencyMs(latencyMs)
+                .blockNumber(blockNumber)
+                .blockTimestamp(timestamp.minus(Duration.ofSeconds(1)))
+                .blockHash("0xhash")
+                .parentHash("0xparent")
+                .build();
     }
 
     private static MetricSample httpError(Instant timestamp) {
-        return new MetricSample(timestamp, MetricSource.HTTP, false, -1,
-                null, null, null, null, null, null, "error", null, null, null);
+        return MetricSample.builder(timestamp, MetricSource.HTTP)
+                .success(false)
+                .latencyMs(-1)
+                .error("error")
+                .build();
     }
 
     private static MetricSample wsSample(Instant timestamp, Long headDelayMs, Long safeDelayMs, Long finalizedDelayMs) {
-        return new MetricSample(timestamp, MetricSource.WS, true, -1,
-                100L, timestamp, "0xhash", "0xparent", null, null, null,
-                headDelayMs, safeDelayMs, finalizedDelayMs);
+        return MetricSample.builder(timestamp, MetricSource.WS)
+                .success(true)
+                .latencyMs(-1)
+                .blockNumber(100L)
+                .blockTimestamp(timestamp)
+                .blockHash("0xhash")
+                .parentHash("0xparent")
+                .headDelayMs(headDelayMs)
+                .safeDelayMs(safeDelayMs)
+                .finalizedDelayMs(finalizedDelayMs)
+                .build();
     }
 
     @Nested

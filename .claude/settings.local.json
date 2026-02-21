@@ -4,7 +4,28 @@
       "Bash(wc:*)",
       "Bash(mvn compile:*)",
       "Bash(mvn test:*)",
-      "Bash(mvn clean test:*)"
+      "Bash(mvn clean test:*)",
+      "Bash(find:*)",
+      "WebSearch",
+      "WebFetch(domain:ethereum.github.io)",
+      "Bash(grep:*)",
+      "Bash(mvn clean install -q 2>&1 | tail -5)",
+      "Bash(mvn clean install 2>&1 | grep -E \"\\(BUILD|Tests run:.*Failures|FAILED\\)\" | tail -5)",
+      "Bash(mvn clean install -q 2>&1 | grep -E \"BUILD \\(SUCCESS|FAILURE\\)\")",
+      "Bash(mvn clean install 2>&1 | grep \"BUILD\")",
+      "Bash(mvn clean install -q 2>&1 | tail -30)",
+      "Bash(mvn clean install -q 2>&1 | grep -E \"BUILD|ERROR|FAILURE|Tests run\" | tail -20)",
+      "Bash(mvn clean install 2>&1 | grep -E \"BUILD|Tests run|FAILURE\" | tail -10)",
+      "Bash(mvn clean install -q 2>&1 | tail -20)",
+      "Bash(mvn clean install 2>&1 | grep -E \"BUILD|ERROR|FAILURE|Tests run\" | tail -10)",
+      "Bash(mvn clean install 2>&1 | grep -E \"BUILD|ERROR|FAILURE|Tests run\" | tail -5)",
+      "Bash(for f in /Users/torti/src/maki/chaincheck/src/main/java/de/makibytes/chaincheck/**/*.java)",
+      "Bash(do wc -l \"$f\")",
+      "Bash(sort -k1 -rn)",
+      "Bash(mvn clean install -q 2>&1)",
+      "Bash(mvn clean install 2>&1 | tail -30)",
+      "Bash(ls /Users/torti/src/maki/chaincheck/*.md 2>/dev/null; ls /Users/torti/src/maki/chaincheck/CHANGELOG* 2>/dev/null || echo \"no changelog\")",
+      "Bash(git -C /Users/torti/src/maki/chaincheck log --oneline -20)"
     ]
   }
 }

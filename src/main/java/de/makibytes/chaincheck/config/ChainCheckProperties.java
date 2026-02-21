@@ -18,23 +18,43 @@
 package de.makibytes.chaincheck.config;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties(prefix = "rpc")
 public class ChainCheckProperties {
 
+    public enum Mode {
+        ETHEREUM,
+        COSMOS
+    }
+
     private String title = "";
     private String titleColor = "white";
-    private boolean safeBlocksEnabled = false;
+    private Mode mode = Mode.COSMOS;
+    private boolean getSafeBlocks = false;
+    private boolean getFinalizedBlocks = false;
+    private boolean wsGapRecoveryEnabled = false;
+    private int wsGapRecoveryMaxBlocks = 5;
     private int scaleChangeMs = 500;
     private int scaleMaxMs = 30000;
-    private ReferenceNode reference = new ReferenceNode();
+    private long blockVerificationDelayMs = 5000;
+    private Consensus consensus = new Consensus();
     private Defaults defaults = new Defaults();
     private Persistence persistence = new Persistence();
     private AnomalyDetection anomalyDetection = new AnomalyDetection();
     private List<RpcNodeProperties> nodes = new ArrayList<>();
+
+    public Mode getMode() {
+        return mode;
+    }
+
+    public void setMode(Mode mode) {
+        this.mode = mode;
+    }
 
     public String getTitle() {
         return title;
@@ -52,12 +72,36 @@ public class ChainCheckProperties {
         this.titleColor = titleColor;
     }
 
-    public boolean isSafeBlocksEnabled() {
-        return safeBlocksEnabled;
+    public boolean isGetSafeBlocks() {
+        return getSafeBlocks;
     }
 
-    public void setSafeBlocksEnabled(boolean safeBlocksEnabled) {
-        this.safeBlocksEnabled = safeBlocksEnabled;
+    public void setGetSafeBlocks(boolean getSafeBlocks) {
+        this.getSafeBlocks = getSafeBlocks;
+    }
+
+    public boolean isGetFinalizedBlocks() {
+        return getFinalizedBlocks;
+    }
+
+    public void setGetFinalizedBlocks(boolean getFinalizedBlocks) {
+        this.getFinalizedBlocks = getFinalizedBlocks;
+    }
+
+    public boolean isWsGapRecoveryEnabled() {
+        return wsGapRecoveryEnabled;
+    }
+
+    public void setWsGapRecoveryEnabled(boolean wsGapRecoveryEnabled) {
+        this.wsGapRecoveryEnabled = wsGapRecoveryEnabled;
+    }
+
+    public int getWsGapRecoveryMaxBlocks() {
+        return wsGapRecoveryMaxBlocks;
+    }
+
+    public void setWsGapRecoveryMaxBlocks(int wsGapRecoveryMaxBlocks) {
+        this.wsGapRecoveryMaxBlocks = wsGapRecoveryMaxBlocks;
     }
 
     public int getScaleChangeMs() {
@@ -76,12 +120,20 @@ public class ChainCheckProperties {
         this.scaleMaxMs = scaleMaxMs;
     }
 
-    public ReferenceNode getReference() {
-        return reference;
+    public long getBlockVerificationDelayMs() {
+        return blockVerificationDelayMs;
     }
 
-    public void setReference(ReferenceNode reference) {
-        this.reference = reference;
+    public void setBlockVerificationDelayMs(long blockVerificationDelayMs) {
+        this.blockVerificationDelayMs = blockVerificationDelayMs;
+    }
+
+    public Consensus getConsensus() {
+        return consensus;
+    }
+
+    public void setConsensus(Consensus consensus) {
+        this.consensus = consensus;
     }
 
     public Defaults getDefaults() {
@@ -123,12 +175,13 @@ public class ChainCheckProperties {
         private String ws;
         private long pollIntervalMs = 3000;
         private AnomalyDetection anomalyDetection = new AnomalyDetection();
-        private Boolean safeBlocksEnabled;
         private long connectTimeoutMs = -1;
         private long readTimeoutMs = -1;
         private int maxRetries = -1;
         private long retryBackoffMs = -1;
-        private java.util.Map<String, String> headers = new java.util.HashMap<>();
+        private Map<String, String> headers = new HashMap<>();
+        private Boolean wsGapRecoveryEnabled;
+        private Integer wsGapRecoveryMaxBlocks;
 
         public String getName() {
             return name;
@@ -170,14 +223,6 @@ public class ChainCheckProperties {
             this.anomalyDetection = anomalyDetection;
         }
 
-        public Boolean getSafeBlocksEnabled() {
-            return safeBlocksEnabled;
-        }
-
-        public void setSafeBlocksEnabled(Boolean safeBlocksEnabled) {
-            this.safeBlocksEnabled = safeBlocksEnabled;
-        }
-
         public long getConnectTimeoutMs() {
             return connectTimeoutMs;
         }
@@ -210,12 +255,28 @@ public class ChainCheckProperties {
             this.retryBackoffMs = retryBackoffMs;
         }
 
-        public java.util.Map<String, String> getHeaders() {
+        public Map<String, String> getHeaders() {
             return headers;
         }
 
-        public void setHeaders(java.util.Map<String, String> headers) {
+        public void setHeaders(Map<String, String> headers) {
             this.headers = headers;
+        }
+
+        public Boolean getWsGapRecoveryEnabled() {
+            return wsGapRecoveryEnabled;
+        }
+
+        public void setWsGapRecoveryEnabled(Boolean wsGapRecoveryEnabled) {
+            this.wsGapRecoveryEnabled = wsGapRecoveryEnabled;
+        }
+
+        public Integer getWsGapRecoveryMaxBlocks() {
+            return wsGapRecoveryMaxBlocks;
+        }
+
+        public void setWsGapRecoveryMaxBlocks(Integer wsGapRecoveryMaxBlocks) {
+            this.wsGapRecoveryMaxBlocks = wsGapRecoveryMaxBlocks;
         }
     }
 
@@ -224,7 +285,7 @@ public class ChainCheckProperties {
         private long readTimeoutMs = 4000;
         private int maxRetries = 1;
         private long retryBackoffMs = 200;
-        private java.util.Map<String, String> headers = new java.util.HashMap<>();
+        private Map<String, String> headers = new HashMap<>();
 
         public long getConnectTimeoutMs() {
             return connectTimeoutMs;
@@ -258,19 +319,29 @@ public class ChainCheckProperties {
             this.retryBackoffMs = retryBackoffMs;
         }
 
-        public java.util.Map<String, String> getHeaders() {
+        public Map<String, String> getHeaders() {
             return headers;
         }
 
-        public void setHeaders(java.util.Map<String, String> headers) {
+        public void setHeaders(Map<String, String> headers) {
             this.headers = headers;
         }
     }
 
-    public static class ReferenceNode {
+    public static class Consensus {
         private String nodeKey;
+        private String displayName = "consensus";
         private String http;
+        private String eventsPath = "/eth/v1/events?topics=head&topics=finalized_checkpoint";
+        private String finalityCheckpointsPath = "/eth/v1/beacon/states/head/finality_checkpoints";
+        private Long safePollIntervalMs;
+        private Long finalizedPollIntervalMs;
         private long timeoutMs = 2000;
+        private boolean attestationsEnabled = false;
+        private String attestationsPath = "/eth/v1/beacon/blocks/{slot}/attestations";
+        private String committeesPath = "/eth/v1/beacon/states/head/committees";
+        private long attestationTrackingIntervalMs = 3000;
+        private int attestationTrackingMaxAttempts = 100;
 
         public String getNodeKey() {
             return nodeKey;
@@ -278,6 +349,14 @@ public class ChainCheckProperties {
 
         public void setNodeKey(String nodeKey) {
             this.nodeKey = nodeKey;
+        }
+
+        public String getDisplayName() {
+            return displayName;
+        }
+
+        public void setDisplayName(String displayName) {
+            this.displayName = displayName;
         }
 
         public String getHttp() {
@@ -288,12 +367,89 @@ public class ChainCheckProperties {
             this.http = http;
         }
 
+        public String getEventsPath() {
+            return eventsPath;
+        }
+
+        public void setEventsPath(String eventsPath) {
+            this.eventsPath = eventsPath;
+        }
+
+        public String getFinalityCheckpointsPath() {
+            return finalityCheckpointsPath;
+        }
+
+        public void setFinalityCheckpointsPath(String finalityCheckpointsPath) {
+            this.finalityCheckpointsPath = finalityCheckpointsPath;
+        }
+
+        public Long getSafePollIntervalMs() {
+            return safePollIntervalMs;
+        }
+
+        public void setSafePollIntervalMs(Long safePollIntervalMs) {
+            this.safePollIntervalMs = safePollIntervalMs;
+        }
+
+        public Long getFinalizedPollIntervalMs() {
+            return finalizedPollIntervalMs;
+        }
+
+        public void setFinalizedPollIntervalMs(Long finalizedPollIntervalMs) {
+            this.finalizedPollIntervalMs = finalizedPollIntervalMs;
+        }
+
         public long getTimeoutMs() {
             return timeoutMs;
         }
 
         public void setTimeoutMs(long timeoutMs) {
             this.timeoutMs = timeoutMs;
+        }
+
+        public boolean isAttestationsEnabled() {
+            return attestationsEnabled;
+        }
+
+        public void setAttestationsEnabled(boolean attestationsEnabled) {
+            this.attestationsEnabled = attestationsEnabled;
+        }
+
+        public String getAttestationsPath() {
+            return attestationsPath;
+        }
+
+        public void setAttestationsPath(String attestationsPath) {
+            this.attestationsPath = attestationsPath;
+        }
+
+        public String getCommitteesPath() {
+            return committeesPath;
+        }
+
+        public void setCommitteesPath(String committeesPath) {
+            this.committeesPath = committeesPath;
+        }
+
+        public long getAttestationTrackingIntervalMs() {
+            return attestationTrackingIntervalMs;
+        }
+
+        public void setAttestationTrackingIntervalMs(long attestationTrackingIntervalMs) {
+            this.attestationTrackingIntervalMs = attestationTrackingIntervalMs;
+        }
+
+        public int getAttestationTrackingMaxAttempts() {
+            return attestationTrackingMaxAttempts;
+        }
+
+        public void setAttestationTrackingMaxAttempts(int attestationTrackingMaxAttempts) {
+            this.attestationTrackingMaxAttempts = attestationTrackingMaxAttempts;
+        }
+
+        public boolean hasConfiguredReferenceNode() {
+            return (nodeKey != null && !nodeKey.isBlank())
+                    || (http != null && !http.isBlank());
         }
     }
 

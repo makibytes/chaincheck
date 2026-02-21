@@ -19,22 +19,28 @@ package de.makibytes.chaincheck.web;
 
 import java.util.List;
 
-public class SampleRow {
-
-    private final String time;
-    private final List<String> sources;
-    private final String status;
-    private final Long latencyMs;
-    private final Long blockNumber;
-    private final String blockHash;
-    private final String parentHash;
-    private final String blockTime;
-    private final boolean safe;
-    private final boolean finalized;
-    private final boolean invalid;
-    private final boolean conflict;
-    private final Integer transactionCount;
-    private final Long gasPriceWei;
+public record SampleRow(
+    String time,
+    List<String> sources,
+    String status,
+    Long latencyMs,
+    Long blockNumber,
+    String blockHash,
+    String parentHash,
+    String blockTime,
+    boolean safe,
+    boolean finalized,
+    boolean invalid,
+    boolean conflict,
+    Integer transactionCount,
+    Long gasPriceWei,
+    Double attestationConfidence,
+    Long attestationSlot,
+    Long firstSeenDeltaMs
+) {
+    public SampleRow {
+        sources = sources != null ? List.copyOf(sources) : List.of();
+    }
 
     public SampleRow(String time,
                      List<String> sources,
@@ -50,75 +56,55 @@ public class SampleRow {
                      boolean conflict,
                      Integer transactionCount,
                      Long gasPriceWei) {
-        this.time = time;
-        this.sources = sources;
-        this.status = status;
-        this.latencyMs = latencyMs;
-        this.blockNumber = blockNumber;
-        this.blockHash = blockHash;
-        this.parentHash = parentHash;
-        this.blockTime = blockTime;
-        this.safe = safe;
-        this.finalized = finalized;
-        this.invalid = invalid;
-        this.conflict = conflict;
-        this.transactionCount = transactionCount;
-        this.gasPriceWei = gasPriceWei;
+        this(time, sources, status, latencyMs, blockNumber, blockHash, parentHash,
+             blockTime, safe, finalized, invalid, conflict, transactionCount, gasPriceWei, null, null, null);
     }
 
-    public String getTime() {
-        return time;
+    public SampleRow withStatus(String newStatus) {
+        return new SampleRow(
+            time, sources, newStatus, latencyMs, blockNumber, blockHash, parentHash,
+            blockTime, safe, finalized, invalid, conflict, transactionCount, gasPriceWei,
+            attestationConfidence, attestationSlot, firstSeenDeltaMs
+        );
     }
 
-    public List<String> getSources() {
-        return sources;
+    public SampleRow withFinalized(boolean newFinalized) {
+        return new SampleRow(
+            time, sources, status, latencyMs, blockNumber, blockHash, parentHash,
+            blockTime, safe, newFinalized, invalid, conflict, transactionCount, gasPriceWei,
+            attestationConfidence, attestationSlot, firstSeenDeltaMs
+        );
     }
 
-    public String getStatus() {
-        return status;
+    public SampleRow withSafe(boolean newSafe) {
+        return new SampleRow(
+            time, sources, status, latencyMs, blockNumber, blockHash, parentHash,
+            blockTime, newSafe, finalized, invalid, conflict, transactionCount, gasPriceWei,
+            attestationConfidence, attestationSlot, firstSeenDeltaMs
+        );
     }
 
-    public Long getLatencyMs() {
-        return latencyMs;
+    public SampleRow withConflict(boolean newConflict) {
+        return new SampleRow(
+            time, sources, status, latencyMs, blockNumber, blockHash, parentHash,
+            blockTime, safe, finalized, invalid, newConflict, transactionCount, gasPriceWei,
+            attestationConfidence, attestationSlot, firstSeenDeltaMs
+        );
     }
 
-    public Long getBlockNumber() {
-        return blockNumber;
+    public SampleRow withInvalid(boolean newInvalid) {
+        return new SampleRow(
+            time, sources, status, latencyMs, blockNumber, blockHash, parentHash,
+            blockTime, safe, finalized, newInvalid, conflict, transactionCount, gasPriceWei,
+            attestationConfidence, attestationSlot, firstSeenDeltaMs
+        );
     }
 
-    public String getBlockHash() {
-        return blockHash;
-    }
-
-    public String getParentHash() {
-        return parentHash;
-    }
-
-    public String getBlockTime() {
-        return blockTime;
-    }
-
-    public boolean isSafe() {
-        return safe;
-    }
-
-    public boolean isFinalized() {
-        return finalized;
-    }
-
-    public boolean isInvalid() {
-        return invalid;
-    }
-
-    public boolean isConflict() {
-        return conflict;
-    }
-
-    public Integer getTransactionCount() {
-        return transactionCount;
-    }
-
-    public Long getGasPriceWei() {
-        return gasPriceWei;
+    public SampleRow withFirstSeenDeltaMs(Long newDelta) {
+        return new SampleRow(
+            time, sources, status, latencyMs, blockNumber, blockHash, parentHash,
+            blockTime, safe, finalized, invalid, conflict, transactionCount, gasPriceWei,
+            attestationConfidence, attestationSlot, newDelta
+        );
     }
 }

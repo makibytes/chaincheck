@@ -31,6 +31,7 @@ public class AnomalyEvent {
     private final String blockHash;
     private final String parentHash;
     private final String details;
+    private final Long depth;
     private volatile boolean closed = false;
 
     public AnomalyEvent(long id,
@@ -43,6 +44,20 @@ public class AnomalyEvent {
                         String blockHash,
                         String parentHash,
                         String details) {
+        this(id, nodeKey, timestamp, source, type, message, blockNumber, blockHash, parentHash, details, null);
+    }
+
+    public AnomalyEvent(long id,
+                        String nodeKey,
+                        Instant timestamp,
+                        MetricSource source,
+                        AnomalyType type,
+                        String message,
+                        Long blockNumber,
+                        String blockHash,
+                        String parentHash,
+                        String details,
+                        Long depth) {
         this.id = id;
         this.nodeKey = nodeKey;
         this.timestamp = timestamp;
@@ -53,6 +68,7 @@ public class AnomalyEvent {
         this.blockHash = blockHash;
         this.parentHash = parentHash;
         this.details = details;
+        this.depth = depth;
     }
 
     public long getId() {
@@ -93,6 +109,10 @@ public class AnomalyEvent {
 
     public String getDetails() {
         return details;
+    }
+
+    public Long getDepth() {
+        return depth;
     }
 
     public boolean isClosed() {

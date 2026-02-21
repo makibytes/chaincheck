@@ -11,9 +11,10 @@
             <thead>
                 <tr>
                     <th>Time</th>
-                    <th>Source</th>
-                    <th>Status</th>
-                    <th>Latency</th>
+                    <th>Source <span class="hint" data-hint="HTTP = polling call · WS = WebSocket new-head event.">?</span></th>
+                    <th>Status <span class="hint" data-hint="NEW = fresh block · SAFE = consensus-confirmed · FINALIZED = irreversible · ERROR = request failed.">?</span></th>
+                    <th>Latency <span class="hint" data-hint="Round-trip time for the HTTP call that retrieved this block.">?</span></th>
+                    <th th:if="${view.multiNodeConfigured}">Δ First <span class="hint" data-hint="Milliseconds after the first node to see this block that this node reported it. 'FIRST' = this node was fastest.">?</span></th>
                     <th>Block</th>
                     <th>Transactions</th>
                     <th>Gas Price (gwei)</th>

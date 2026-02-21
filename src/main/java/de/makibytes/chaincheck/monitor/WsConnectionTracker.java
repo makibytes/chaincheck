@@ -18,6 +18,7 @@
 package de.makibytes.chaincheck.monitor;
 
 import java.time.Instant;
+import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -29,6 +30,7 @@ public class WsConnectionTracker {
     private final AtomicReference<Instant> connectedSince = new AtomicReference<>();
     private final AtomicReference<Instant> lastDisconnectedAt = new AtomicReference<>();
     private final AtomicReference<String> lastError = new AtomicReference<>();
+    private final ConcurrentLinkedDeque<Instant> disconnectTimestamps = new ConcurrentLinkedDeque<>();
 
     public void onConnect() {
         connectCount.incrementAndGet();
@@ -51,7 +53,15 @@ public class WsConnectionTracker {
     public void onDisconnect() {
         disconnectCount.incrementAndGet();
         connectedSince.set(null);
-        lastDisconnectedAt.set(Instant.now());
+        Instant now = Instant.now();
+        lastDisconnectedAt.set(now);
+        disconnectTimestamps.add(now);
+        
+        // Clean up old timestamps (keep last 30 days to limit memory)
+        Instant cutoff = now.minusSeconds(30L * 24 * 60 * 60);
+        while (!disconnectTimestamps.isEmpty() && disconnectTimestamps.peekFirst().isBefore(cutoff)) {
+            disconnectTimestamps.pollFirst();
+        }
     }
 
     public void onConnectFailure(Throwable error) {
@@ -73,6 +83,12 @@ public class WsConnectionTracker {
 
     public long getDisconnectCount() {
         return disconnectCount.get();
+    }
+
+    public long getDisconnectCountSince(Instant since) {
+        return disconnectTimestamps.stream()
+                .filter(timestamp -> timestamp.isAfter(since))
+                .count();
     }
 
     public long getConnectFailureCount() {

@@ -1,0 +1,33 @@
+<th:block th:fragment="scripts-hints">
+<script>
+    (function () {
+        const tooltip = document.createElement('div');
+        tooltip.className = 'hint-tooltip';
+        tooltip.hidden = true;
+        document.body.appendChild(tooltip);
+
+        document.addEventListener('mouseover', function (e) {
+            const el = e.target.closest('[data-hint]');
+            if (!el) { tooltip.hidden = true; return; }
+            tooltip.textContent = el.dataset.hint;
+            tooltip.hidden = false;
+            const r = el.getBoundingClientRect();
+            const ttW = tooltip.offsetWidth || 240;
+            const ttH = tooltip.offsetHeight || 60;
+            // Prefer above; flip below when near the top of the viewport
+            let top = r.top - ttH - 8 + window.scrollY;
+            if (r.top - ttH - 8 < 8) top = r.bottom + 8 + window.scrollY;
+            let left = r.left + r.width / 2 - ttW / 2 + window.scrollX;
+            left = Math.max(8 + window.scrollX, Math.min(left, window.scrollX + window.innerWidth - ttW - 8));
+            tooltip.style.top = top + 'px';
+            tooltip.style.left = left + 'px';
+        });
+
+        document.addEventListener('mouseout', function (e) {
+            if (!e.relatedTarget || !e.relatedTarget.closest('[data-hint]')) {
+                tooltip.hidden = true;
+            }
+        });
+    })();
+</script>
+</th:block>

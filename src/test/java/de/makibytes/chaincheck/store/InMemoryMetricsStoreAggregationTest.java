@@ -121,39 +121,26 @@ class InMemoryMetricsStoreAggregationTest {
     }
 
     private MetricSample sampleAt(Instant timestamp) {
-        return new MetricSample(
-                timestamp,
-                MetricSource.HTTP,
-                true,
-                120,
-                1000L,
-                timestamp.minusSeconds(12),
-                "0xblock",
-                "0xparent",
-                null,
-                null,
-                null,
-                null,
-                2000L,
-                2500L);
+        return MetricSample.builder(timestamp, MetricSource.HTTP)
+                .success(true)
+                .latencyMs(120)
+                .blockNumber(1000L)
+                .blockTimestamp(timestamp.minusSeconds(12))
+                .blockHash("0xblock")
+                .parentHash("0xparent")
+                .safeDelayMs(2000L)
+                .finalizedDelayMs(2500L)
+                .build();
     }
 
     private MetricSample sampleAt(Instant timestamp, long latencyMs, Long headDelayMs, Long safeDelayMs, Long finalizedDelayMs) {
-        return new MetricSample(
-                timestamp,
-                MetricSource.WS,
-                true,
-                latencyMs,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                headDelayMs,
-                safeDelayMs,
-                finalizedDelayMs);
+        return MetricSample.builder(timestamp, MetricSource.WS)
+                .success(true)
+                .latencyMs(latencyMs)
+                .headDelayMs(headDelayMs)
+                .safeDelayMs(safeDelayMs)
+                .finalizedDelayMs(finalizedDelayMs)
+                .build();
     }
 
     private AnomalyEvent anomalyAt(Instant timestamp, long id) {

@@ -15,7 +15,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-package de.makibytes.chaincheck.monitor;
+package de.makibytes.chaincheck.chain.cosmos;
 
 import java.util.Map;
 import java.util.Set;
@@ -23,7 +23,8 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import org.springframework.stereotype.Service;
 
-import de.makibytes.chaincheck.monitor.ReferenceBlocks.Confidence;
+import de.makibytes.chaincheck.chain.shared.BlockConfidenceTracker;
+import de.makibytes.chaincheck.chain.shared.Confidence;
 
 /**
  * Service responsible for collecting block votes from nodes and determining reference blocks through voting.
@@ -32,7 +33,7 @@ import de.makibytes.chaincheck.monitor.ReferenceBlocks.Confidence;
 public class BlockVotingService {
 
     private final Map<Long, Map<Confidence, Map<String, Set<String>>>> blockVotes = new ConcurrentHashMap<>();
-    private final ReferenceBlocks referenceBlocks = new ReferenceBlocks();
+    private final BlockConfidenceTracker blockConfidenceTracker = new BlockConfidenceTracker();
 
     /**
      * Records a vote for a block hash at a given confidence level from a node.
@@ -49,7 +50,7 @@ public class BlockVotingService {
      * Gives bonus votes to the current reference node.
      */
     public void performVoting(String currentReferenceNodeKey) {
-        referenceBlocks.clear();
+        blockConfidenceTracker.clear();
         for (Map.Entry<Long, Map<Confidence, Map<String, Set<String>>>> blockEntry : blockVotes.entrySet()) {
             long blockNumber = blockEntry.getKey();
             for (Map.Entry<Confidence, Map<String, Set<String>>> confEntry : blockEntry.getValue().entrySet()) {
@@ -70,7 +71,7 @@ public class BlockVotingService {
                     }
                 }
                 if (winningHash != null) {
-                    referenceBlocks.setHash(blockNumber, confidence, winningHash);
+                    blockConfidenceTracker.setHash(blockNumber, confidence, winningHash);
                 }
             }
         }
@@ -86,8 +87,8 @@ public class BlockVotingService {
     /**
      * Gets the reference blocks determined by voting.
      */
-    public ReferenceBlocks getReferenceBlocks() {
-        return referenceBlocks;
+    public BlockConfidenceTracker getBlockConfidenceTracker() {
+        return blockConfidenceTracker;
     }
 
     /**

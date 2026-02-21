@@ -17,6 +17,8 @@
  */
 package de.makibytes.chaincheck.monitor;
 
+import java.time.Instant;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import org.junit.jupiter.api.Test;
@@ -44,5 +46,26 @@ class WsConnectionTrackerTest {
 
         tracker.setLastError(" ");
         assertNull(tracker.getLastError());
+    }
+
+    @Test
+    void tracksDisconnectsWithinTimeWindow() {
+        WsConnectionTracker tracker = new WsConnectionTracker();
+        
+        // Record some disconnects
+        tracker.onDisconnect();
+        tracker.onDisconnect();
+        tracker.onDisconnect();
+        
+        // Should count all disconnects
+        assertEquals(3, tracker.getDisconnectCount());
+        
+        // Should count all recent disconnects (within the last minute)
+        Instant oneMinuteAgo = Instant.now().minusSeconds(60);
+        assertEquals(3, tracker.getDisconnectCountSince(oneMinuteAgo));
+        
+        // Should not count disconnects from the future
+        Instant future = Instant.now().plusSeconds(60);
+        assertEquals(0, tracker.getDisconnectCountSince(future));
     }
 }

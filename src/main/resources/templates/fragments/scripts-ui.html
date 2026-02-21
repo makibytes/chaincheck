@@ -159,21 +159,51 @@
         if (!sample || !sampleContent) {
             return;
         }
-        const blockBadge = sample.conflict
+        const lifecycleBadge = sample.finalized
+            ? '<span class="tag tag-finalized">finalized</span>'
+            : (sample.safe
+                ? '<span class="tag tag-safe">safe</span>'
+                : (sample.status === 'NEW' ? '<span class="tag tag-new">new</span>' : ''));
+
+        const resolutionBadge = sample.conflict
             ? '<span class="tag tag-conflict">conflict</span>'
-            : (sample.invalid
-                ? '<span class="tag tag-invalid">invalid</span>'
-                : (sample.finalized
-                    ? '<span class="tag tag-finalized">finalized</span>'
-                    : (sample.safe ? '<span class="tag tag-safe">safe</span>' : '')));
-        const blockDisplay = `${sample.blockNumber ?? '-'}${blockBadge ? ' ' + blockBadge : ''}`;
+            : (sample.invalid ? '<span class="tag tag-invalid">invalid</span>' : '');
+
+        const statusBadgeFragments = [];
+        if (lifecycleBadge) {
+            statusBadgeFragments.push(lifecycleBadge);
+        }
+        if (resolutionBadge) {
+            statusBadgeFragments.push(resolutionBadge);
+        }
+        const statusBadgeHtml = statusBadgeFragments.join(' ');
+        const blockDisplay = `${sample.blockNumber ?? '-'}`;
+        const statusText = sample.status === 'NEW' ? '' : (sample.status ?? '-');
+        const statusDisplay = statusBadgeHtml
+            ? (statusText ? `${statusText} ${statusBadgeHtml}` : statusBadgeHtml)
+            : statusText;
+        const attestationDisplay = sample.attestationConfidence != null
+            ? `${sample.attestationSlot ?? 0}/3 rounds (${sample.attestationConfidence.toFixed(1)}%)`
+            : 'n/a';
+        const firstSeenDisplay = multiNodeConfigured
+            ? (sample.firstSeenDeltaMs === 0
+                ? '<span class="delta-first">First</span>'
+                : (sample.firstSeenDeltaMs != null && sample.firstSeenDeltaMs > 0
+                    ? `<span class="delta-behind">+${sample.firstSeenDeltaMs} ms behind</span>`
+                    : 'n/a'))
+            : null;
+        const firstSeenRow = firstSeenDisplay != null
+            ? `<div><span class="label">First Seen δ</span><span>${firstSeenDisplay}</span></div>`
+            : '';
         sampleContent.innerHTML = `
             <div class="detail-grid">
                 <div><span class="label">Block</span><span>${blockDisplay}</span></div>
                 <div><span class="label">Block Time</span><span>${sample.blockTime ?? '-'}</span></div>
                 <div><span class="label">Sources</span><span>${(sample.sources || []).join(', ') || '-'}</span></div>
-                <div><span class="label">Status</span><span>${sample.status ?? '-'}</span></div>
+                <div><span class="label">Status</span><span>${statusDisplay}</span></div>
                 <div><span class="label">Latency</span><span>${sample.latencyMs != null ? sample.latencyMs + ' ms' : 'n/a'}</span></div>
+                ${firstSeenRow}
+                <div><span class="label">Attestation</span><span>${attestationDisplay}</span></div>
                 <div><span class="label">Transactions</span><span>${sample.transactionCount ?? 'n/a'}</span></div>
                 <div><span class="label">Block Hash</span><span class="hash-container">${formatHash(sample.blockHash)} ${copyBtn(sample.blockHash)}</span></div>
                 <div><span class="label">Parent Hash</span><span class="hash-container">${formatHash(sample.parentHash)} ${copyBtn(sample.parentHash)}</span></div>
