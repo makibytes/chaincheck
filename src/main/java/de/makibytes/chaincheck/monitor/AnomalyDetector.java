@@ -112,21 +112,20 @@ public class AnomalyDetector {
     }
 
     private AnomalyEvent createErrorAnomaly(String nodeKey, MetricSample sample, Instant now) {
-        String shortError = sample.getError() != null && sample.getError().length() > 50
-                ? sample.getError().substring(0, 50) + "..."
-                : sample.getError();
-        AnomalyType errorType = classifyErrorType(sample.getError());
-        String details = sample.getError();
-        if (details == null || details.isBlank()) {
-            details = shortError == null ? "RPC error" : shortError;
-        }
+        String rawError = sample.getError();
+        String shortError = rawError != null && rawError.length() > 50
+                ? rawError.substring(0, 50) + "..."
+                : rawError;
+        String effectiveMessage = (shortError == null || shortError.isBlank()) ? "RPC error" : shortError;
+        String details = (rawError == null || rawError.isBlank()) ? effectiveMessage : rawError;
+        AnomalyType errorType = classifyErrorType(rawError);
         return new AnomalyEvent(
                 idSequence.getAndIncrement(),
                 nodeKey,
                 now,
                 sample.getSource(),
                 errorType,
-                shortError == null ? "RPC error" : shortError,
+                effectiveMessage,
                 sample.getBlockNumber(),
                 sample.getBlockHash(),
                 sample.getParentHash(),

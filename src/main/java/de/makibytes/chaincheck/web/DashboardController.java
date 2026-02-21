@@ -151,13 +151,7 @@ public class DashboardController {
         }
         NodeDefinition selectedNode = nodeRegistry.getNode(event.getNodeKey());
         String nodeName = selectedNode == null ? "Node" : selectedNode.name();
-        String detailsStr = event.getDetails();
-        if (event.getDepth() != null) {
-            String depthLine = "Depth: " + event.getDepth() + " block" + (event.getDepth() == 1 ? "" : "s");
-            detailsStr = (detailsStr != null && !detailsStr.isBlank())
-                    ? detailsStr + "\n" + depthLine
-                    : depthLine;
-        }
+        String detailsStr = dashboardService.resolveAnomalyDetails(event);
         AnomalyDetails details = new AnomalyDetails(
                 event.getId(),
                 event.getNodeKey(),

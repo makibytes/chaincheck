@@ -18,7 +18,6 @@
 package de.makibytes.chaincheck.store;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -27,10 +26,13 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.Deque;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.ConcurrentSkipListMap;
@@ -240,7 +242,12 @@ public class InMemoryMetricsStore {
         Instant minutelyCutoff = now.minus(minutelyRetention);
         Instant aggregateCutoff = now.minus(aggregateRetention);
 
-        for (String nodeKey : rawSamplesByNode.keySet()) {
+        Set<String> allNodeKeys = new HashSet<>(rawSamplesByNode.keySet());
+        allNodeKeys.addAll(rawAnomaliesByNode.keySet());
+        allNodeKeys.addAll(sampleAggregatesByNode.keySet());
+        allNodeKeys.addAll(anomalyAggregatesByNode.keySet());
+
+        for (String nodeKey : allNodeKeys) {
             Deque<MetricSample> samples = rawSamplesByNode.get(nodeKey);
             if (samples != null) {
                 while (true) {
@@ -354,26 +361,26 @@ public class InMemoryMetricsStore {
             Snapshot snapshot = new Snapshot(
                     toMetricListCopy(rawSamplesByNode),
                     toAnomalyListCopy(rawAnomaliesByNode),
-                    new ConcurrentHashMap<>(latestBlockNumber),
-                    new ConcurrentHashMap<>(latestHttpBlockNumber));
+                    new HashMap<>(latestBlockNumber),
+                    new HashMap<>(latestHttpBlockNumber));
             byte[] bytes = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsBytes(snapshot);
             if (persistenceFile.getParent() != null) {
                 Files.createDirectories(persistenceFile.getParent());
             }
-            Files.writeString(persistenceFile, new String(bytes, StandardCharsets.UTF_8));
+            Files.write(persistenceFile, bytes);
         } catch (IOException ex) {
             logger.warn("Failed to write persistence snapshot: {}", ex.getMessage());
         }
     }
 
     private Map<String, List<MetricSample>> toMetricListCopy(Map<String, Deque<MetricSample>> source) {
-        Map<String, List<MetricSample>> copy = new ConcurrentHashMap<>();
+        Map<String, List<MetricSample>> copy = new HashMap<>();
         source.forEach((node, deque) -> copy.put(node, new ArrayList<>(deque)));
         return copy;
     }
 
     private Map<String, List<AnomalyEvent>> toAnomalyListCopy(Map<String, Deque<AnomalyEvent>> source) {
-        Map<String, List<AnomalyEvent>> copy = new ConcurrentHashMap<>();
+        Map<String, List<AnomalyEvent>> copy = new HashMap<>();
         source.forEach((node, deque) -> copy.put(node, new ArrayList<>(deque)));
         return copy;
     }

@@ -145,7 +145,9 @@ public class MetricSample {
         private Integer transactionCount;
         private Long gasPriceWei;
         private String error;
-        private Long headDelayMs;        private Long latestDelayMs;        private Long safeDelayMs;
+        private Long headDelayMs;
+        private Long latestDelayMs;
+        private Long safeDelayMs;
         private Long finalizedDelayMs;
 
         private Builder(Instant timestamp, MetricSource source) {

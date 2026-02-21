@@ -23,6 +23,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -73,6 +74,9 @@ public class DashboardService {
     // Thresholds
     private static final long STALE_BLOCK_THRESHOLD_MS = 30000; // 30 seconds
     private static final double PERCENT_MULTIPLIER = 100.0;
+
+    private static final DateTimeFormatter TIMESTAMP_FORMATTER =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.systemDefault());
 
 
     public DashboardService(InMemoryMetricsStore store,
@@ -184,26 +188,21 @@ public class DashboardService {
         DelayStats finalizedStats = computeDelayStats(rawSamples, aggregateSamples,
                 MetricSample::getFinalizedDelayMs, SampleAggregate::getFinalizedDelaySumMs, SampleAggregate::getFinalizedDelayCount);
 
-        List<Long> propagationValues = new ArrayList<>(propagationDelays);
-        for (SampleAggregate aggregate : aggregateSamples) {
-            if (aggregate.getPropagationDelayCount() > 0) {
-                propagationValues.add(Math.round((double) aggregate.getPropagationDelaySumMs() / aggregate.getPropagationDelayCount()));
-            }
-        }
-        long staleBlockCount = propagationValues.stream().filter(delay -> delay > STALE_BLOCK_THRESHOLD_MS).count()
+        long staleBlockCount = propagationDelays.stream().filter(delay -> delay > STALE_BLOCK_THRESHOLD_MS).count()
                 + aggregateSamples.stream().mapToLong(SampleAggregate::getStaleBlockCount).sum();
 
         Map<AnomalyType, Long> anomalyCounts = anomalies.stream()
-                .collect(Collectors.groupingBy(AnomalyEvent::getType, Collectors.counting()));
+                .collect(Collectors.groupingBy(AnomalyEvent::getType,
+                        () -> new EnumMap<>(AnomalyType.class), Collectors.counting()));
         aggregatedAnomalies.forEach(aggregate -> {
-            anomalyCounts.merge(AnomalyType.DELAY, aggregate.getDelayCount(), (a, b) -> a + b);
-            anomalyCounts.merge(AnomalyType.REORG, aggregate.getReorgCount(), (a, b) -> a + b);
-            anomalyCounts.merge(AnomalyType.CONFLICT, aggregate.getConflictCount(), (a, b) -> a + b);
-            anomalyCounts.merge(AnomalyType.BLOCK_GAP, aggregate.getBlockGapCount(), (a, b) -> a + b);
-            anomalyCounts.merge(AnomalyType.ERROR, aggregate.getErrorCount(), (a, b) -> a + b);
-            anomalyCounts.merge(AnomalyType.RATE_LIMIT, aggregate.getRateLimitCount(), (a, b) -> a + b);
-            anomalyCounts.merge(AnomalyType.TIMEOUT, aggregate.getTimeoutCount(), (a, b) -> a + b);
-            anomalyCounts.merge(AnomalyType.WRONG_HEAD, aggregate.getWrongHeadCount(), (a, b) -> a + b);
+            anomalyCounts.merge(AnomalyType.DELAY, aggregate.getDelayCount(), Long::sum);
+            anomalyCounts.merge(AnomalyType.REORG, aggregate.getReorgCount(), Long::sum);
+            anomalyCounts.merge(AnomalyType.CONFLICT, aggregate.getConflictCount(), Long::sum);
+            anomalyCounts.merge(AnomalyType.BLOCK_GAP, aggregate.getBlockGapCount(), Long::sum);
+            anomalyCounts.merge(AnomalyType.ERROR, aggregate.getErrorCount(), Long::sum);
+            anomalyCounts.merge(AnomalyType.RATE_LIMIT, aggregate.getRateLimitCount(), Long::sum);
+            anomalyCounts.merge(AnomalyType.TIMEOUT, aggregate.getTimeoutCount(), Long::sum);
+            anomalyCounts.merge(AnomalyType.WRONG_HEAD, aggregate.getWrongHeadCount(), Long::sum);
         });
 
         long maxBlockNumber = nodeRegistry.getNodes().stream()
@@ -225,8 +224,8 @@ public class DashboardService {
         boolean hasAggregatedLatencies = chartData.hasBounds();
         boolean hasAggregatedDelays = delayChartData.hasBounds();
 
-        Set<String> consensusSafeHashes = Set.of();
-        Set<String> consensusFinalizedHashes = Set.of();
+        final Set<String> consensusSafeHashes;
+        final Set<String> consensusFinalizedHashes;
         if (nodeMonitorService.hasConfiguredReferenceMode()) {
             List<MetricSample> consensusReferenceSamples = nodeMonitorService.getConfiguredReferenceDelaySamplesSince(since);
             consensusSafeHashes = consensusReferenceSamples.stream()
@@ -239,9 +238,10 @@ public class DashboardService {
                 .map(MetricSample::getBlockHash)
                 .filter(hash -> hash != null && !hash.isBlank())
                 .collect(Collectors.toSet());
+        } else {
+            consensusSafeHashes = Set.of();
+            consensusFinalizedHashes = Set.of();
         }
-            final Set<String> effectiveConsensusSafeHashes = consensusSafeHashes;
-            final Set<String> effectiveConsensusFinalizedHashes = consensusFinalizedHashes;
 
         Map<String, AttestationConfidence> attestationConfidences = nodeMonitorService.getRecentAttestationConfidences();
 
@@ -271,8 +271,6 @@ public class DashboardService {
         Map<String, List<MetricSample>> samplesByHash = allExecutionNodeSamples.stream()
                 .filter(s -> s.getBlockHash() != null && !s.getBlockHash().isBlank())
                 .collect(Collectors.groupingBy(MetricSample::getBlockHash));
-
-        DateTimeFormatter rowFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.systemDefault());
 
         // First pass: create intermediate rows
         List<SampleRow> intermediateRows = samplesByHash.entrySet().stream()
@@ -308,9 +306,9 @@ public class DashboardService {
                     // Determine if this block is safe/finalized either from node-local queries
                     // or from configured consensus reference observations.
                     boolean hasFinalized = samples.stream().anyMatch(s -> s.getFinalizedDelayMs() != null)
-                            || (blockHash != null && effectiveConsensusFinalizedHashes.contains(blockHash));
+                            || (blockHash != null && consensusFinalizedHashes.contains(blockHash));
                     boolean hasSafe = samples.stream().anyMatch(s -> s.getSafeDelayMs() != null)
-                            || (blockHash != null && effectiveConsensusSafeHashes.contains(blockHash));
+                            || (blockHash != null && consensusSafeHashes.contains(blockHash));
                     String parentHash = samples.stream()
                             .map(MetricSample::getParentHash)
                             .filter(h -> h != null && !h.isBlank())
@@ -321,7 +319,7 @@ public class DashboardService {
                             .filter(Objects::nonNull)
                             .findFirst()
                             .orElse(null);
-                        String blockTime = blockTimestamp == null ? null : rowFormatter.format(blockTimestamp);
+                        String blockTime = blockTimestamp == null ? null : TIMESTAMP_FORMATTER.format(blockTimestamp);
                     Integer transactionCount = samples.stream()
                             .map(MetricSample::getTransactionCount)
                             .filter(tc -> tc != null)
@@ -354,7 +352,7 @@ public class DashboardService {
                     }
 
                     return new SampleRow(
-                            rowFormatter.format(first.getTimestamp()),
+                            TIMESTAMP_FORMATTER.format(first.getTimestamp()),
                             sources,
                             allSuccess ? "NEW" : "ERROR",
                             avgLatencyForRow,
@@ -502,8 +500,6 @@ public class DashboardService {
                 && event.getSource() == MetricSource.WS
                 && ERROR_ANOMALY_TYPES.contains(event.getType()));
 
-        DateTimeFormatter anomalyFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.systemDefault());
-        
         // Group consecutive anomalies of the same type
         List<AnomalyRow> anomalyRows = new ArrayList<>();
         EnumSet<MetricSource> ongoingSources = EnumSet.noneOf(MetricSource.class);
@@ -525,7 +521,7 @@ public class DashboardService {
                 } else {
                     // Different type or source or previous closed - finish current group and start new one
                     boolean isFirstRowForSource = ongoingSources.add(firstInGroup.getSource());
-                    anomalyRows.add(createAnomalyRow(firstInGroup, lastInGroup, groupCount, anomalyFormatter, isFirstRowForSource));
+                    anomalyRows.add(createAnomalyRow(firstInGroup, lastInGroup, groupCount, isFirstRowForSource));
                     firstInGroup = current;
                     lastInGroup = current;
                     groupCount = 1;
@@ -533,7 +529,7 @@ public class DashboardService {
             }
             // Add the last group
             boolean isFirstRowForSource = ongoingSources.add(firstInGroup.getSource());
-            anomalyRows.add(createAnomalyRow(firstInGroup, lastInGroup, groupCount, anomalyFormatter, isFirstRowForSource));
+            anomalyRows.add(createAnomalyRow(firstInGroup, lastInGroup, groupCount, isFirstRowForSource));
         }
 
         int totalAnomalies = anomalyRows.size();
@@ -844,13 +840,13 @@ public class DashboardService {
         }
     }
 
-    private AnomalyRow createAnomalyRow(AnomalyEvent firstEvent, AnomalyEvent lastEvent, int count, DateTimeFormatter formatter, boolean isFirstRowForSource) {
+    private AnomalyRow createAnomalyRow(AnomalyEvent firstEvent, AnomalyEvent lastEvent, int count, boolean isFirstRowForSource) {
         String details = resolveAnomalyDetails(lastEvent);
         if (count == 1) {
             // Single anomaly - use standard format
             return new AnomalyRow(
                     firstEvent.getId(),
-                    formatter.format(firstEvent.getTimestamp()),
+                    TIMESTAMP_FORMATTER.format(firstEvent.getTimestamp()),
                     firstEvent.getType().name(),
                     firstEvent.getSource().name(),
                     firstEvent.getMessage(),
@@ -861,10 +857,10 @@ public class DashboardService {
         } else {
             // Multiple anomalies - show time range and use newest ID
             // Only show "(ongoing)" for the first row per source if not closed
-                String endLabel = (isFirstRowForSource && !lastEvent.isClosed())
+            String endLabel = (isFirstRowForSource && !lastEvent.isClosed())
                     ? "(ongoing)"
-                    : formatter.format(firstEvent.getTimestamp());
-                String timeRange = formatter.format(lastEvent.getTimestamp()) + " ↔ " + endLabel;
+                    : TIMESTAMP_FORMATTER.format(firstEvent.getTimestamp());
+            String timeRange = TIMESTAMP_FORMATTER.format(lastEvent.getTimestamp()) + " ↔ " + endLabel;
             String message = lastEvent.getMessage(); // Use the latest message
             return new AnomalyRow(
                     lastEvent.getId(), // Use newest ID for details link
@@ -881,7 +877,7 @@ public class DashboardService {
         }
     }
 
-    private String resolveAnomalyDetails(AnomalyEvent event) {
+    String resolveAnomalyDetails(AnomalyEvent event) {
         if (event == null) {
             return null;
         }
@@ -911,14 +907,13 @@ public class DashboardService {
 
     private static Map<String, String> buildChildByParentMap(Set<String> hashes,
                                                               Map<String, String> parentMap) {
-        Map<String, String> result = new HashMap<>();
-        for (String hash : hashes) {
-            String parent = parentMap.get(hash);
-            if (parent != null) {
-                result.putIfAbsent(parent, hash);
-            }
-        }
-        return result;
+        return hashes.stream()
+                .filter(parentMap::containsKey)
+                .collect(Collectors.toMap(
+                        parentMap::get,
+                        hash -> hash,
+                        (existing, ignored) -> existing,
+                        HashMap::new));
     }
 
     @SafeVarargs
