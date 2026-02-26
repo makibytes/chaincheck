@@ -72,6 +72,37 @@ class InMemoryMetricsStoreAggregationTest {
     }
 
     @Test
+    @DisplayName("aggregateOldData: raw anomalies persist for 30 days while samples only 2 hours")
+    void retainsRawAnomaliesForThirtyDays() {
+        InMemoryMetricsStore store = new InMemoryMetricsStore();
+        Instant now = Instant.now();
+        Instant anomalyTime = now.minus(Duration.ofDays(2)).minus(Duration.ofHours(1));
+
+        store.addAnomaly(NODE_KEY, anomalyAt(anomalyTime, 1L));
+        store.aggregateOldData();
+
+        // Raw anomalies should still be available after 2 hours (unlike samples)
+        List<AnomalyEvent> rawAnomalies = store.getRawAnomaliesSince(NODE_KEY, now.minus(Duration.ofDays(10)));
+        assertEquals(1, rawAnomalies.size(), "Raw anomalies should persist beyond 2 hours");
+        assertEquals(1L, rawAnomalies.get(0).getId());
+    }
+
+    @Test
+    @DisplayName("aggregateOldData: raw anomalies older than 30 days are purged")
+    void purgesRawAnomaliesAfterThirtyDays() {
+        InMemoryMetricsStore store = new InMemoryMetricsStore();
+        Instant now = Instant.now();
+        Instant anomalyTime = now.minus(Duration.ofDays(31));
+
+        store.addAnomaly(NODE_KEY, anomalyAt(anomalyTime, 1L));
+        store.aggregateOldData();
+
+        List<AnomalyEvent> rawAnomalies = store.getRawAnomaliesSince(NODE_KEY, now.minus(Duration.ofDays(60)));
+        assertTrue(rawAnomalies.isEmpty(), "Raw anomalies older than 30 days should be purged");
+        assertNull(store.getAnomaly(1L), "Old anomaly IDs should be removed from index");
+    }
+
+    @Test
     @DisplayName("aggregateOldData: data older than 1 month is deleted")
     void deletesAggregatesAfterOneMonth() {
         InMemoryMetricsStore store = new InMemoryMetricsStore();
@@ -89,7 +120,7 @@ class InMemoryMetricsStoreAggregationTest {
         List<AnomalyAggregate> anomalyAggregates = store.getAggregatedAnomaliesSince(NODE_KEY, now.minus(Duration.ofDays(60)));
         assertTrue(anomalyAggregates.isEmpty(), "Anomaly aggregates older than 1 month should be deleted");
 
-        assertNull(store.getAnomaly(1L), "Old anomalies should be purged from index");
+        assertNull(store.getAnomaly(1L), "Old anomalies should be purged from index after 30 days");
     }
 
     @Test

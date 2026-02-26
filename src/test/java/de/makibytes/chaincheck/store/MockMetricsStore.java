@@ -71,8 +71,9 @@ public class MockMetricsStore extends InMemoryMetricsStore {
 
             if (!isInRange(minute, httpOutageStart, httpOutageEnd)) {
                 boolean staleBlock = minute % 720 == 0;
-                addHttpSample(timestamp, blockBase + minute, true, staleBlock);
-                addHttpSample(timestamp.plusSeconds(10), blockBase + minute, false, staleBlock);
+                addHttpSample(timestamp, blockBase + minute, true, false);
+                addHttpSample(timestamp.plusSeconds(10), blockBase + minute, false, false);
+                addLatestHttpSample(timestamp.plusSeconds(20), blockBase + minute, staleBlock);
             }
 
             if (!isInAnyRange(minute, wsOutages)) {
@@ -154,6 +155,24 @@ public class MockMetricsStore extends InMemoryMetricsStore {
         addSample(NODE_KEY, sample);
     }
 
+    private void addLatestHttpSample(Instant timestamp, long blockNumber, boolean staleBlock) {
+        long latencyMs = 30 + (blockNumber % 120);
+        Instant blockTimestamp = staleBlock ? timestamp.minusSeconds(90) : timestamp.minusSeconds(12);
+        String blockHash = "0x" + Long.toHexString(blockNumber);
+        String parentHash = "0x" + Long.toHexString(blockNumber - 1);
+        MetricSample sample = MetricSample.builder(timestamp, MetricSource.HTTP)
+                .success(true)
+                .latencyMs(latencyMs)
+                .blockNumber(blockNumber)
+                .blockTimestamp(blockTimestamp)
+                .blockHash(blockHash)
+                .parentHash(parentHash)
+                .transactionCount((int) (blockNumber % 350))
+                .gasPriceWei(1_000_000_000L + (blockNumber % 500_000))
+                .build();
+        addSample(NODE_KEY, sample);
+    }
+
     private void addWsSample(Instant timestamp) {
         long latencyMs = 0;
         Long headDelayMs = 1000L + (timestamp.getEpochSecond() % 4000);
@@ -173,7 +192,7 @@ public class MockMetricsStore extends InMemoryMetricsStore {
                 Instant timestamp = now
                         .minus(Duration.ofDays(2 + (i * 4L)))
                         .minus(Duration.ofMinutes(type.ordinal() * 10L));
-                MetricSource source = type == AnomalyType.ERROR || type == AnomalyType.DELAY
+                MetricSource source = type == AnomalyType.ERROR || type == AnomalyType.DELAY || type == AnomalyType.STALE
                         ? MetricSource.HTTP
                         : MetricSource.WS;
                 addAnomaly(NODE_KEY, new AnomalyEvent(

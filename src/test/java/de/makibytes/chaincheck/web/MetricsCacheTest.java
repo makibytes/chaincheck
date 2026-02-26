@@ -20,6 +20,7 @@ package de.makibytes.chaincheck.web;
 import java.time.Instant;
 import java.util.List;
 
+import de.makibytes.chaincheck.config.ChainCheckProperties.ChartGradientMode;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -45,8 +46,8 @@ class MetricsCacheTest {
                 0, 0, 0, 0, 0, 0, 0, 0, 0,
                 // staleBlockCount, blockLagBlocks
                 0, 0,
-                // delayCount, reorgCount, blockGapCount, rateLimitCount, timeoutCount, wrongHeadCount, conflictCount
-                0, 0, 0, 0, 0, 0, 0,
+                // delayCount, reorgCount, blockGapCount, rateLimitCount, timeoutCount, wrongHeadCount, conflictCount, errorAnomalyCount
+                0, 0, 0, 0, 0, 0, 0, 0,
                 // canonicalRatePercent, invalidBlockCount, wrongHeadRatePercent, maxReorgDepth, maxGapSize, avgFirstSeenDeltaMs, p95FirstSeenDeltaMs, healthScore
                 100.0, 0, 0.0, 0, 0, 0.0, 0.0, 0);
         return DashboardView.create(
@@ -57,7 +58,8 @@ class MetricsCacheTest {
                 false, false, null, null, null,
                 1, 50, 0, 1, 50, 0,
                 500, 30000, false,
-                generatedAt, null, false, null, false);
+                generatedAt, null, false, null, false,
+                ChartGradientMode.NONE);
     }
 
     @Test

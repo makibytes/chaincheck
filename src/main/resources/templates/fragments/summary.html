@@ -20,49 +20,51 @@
     </div>
     <div class="card anomalies-card">
         <h3>Anomalies</h3>
-        <div class="card-row">
-            <span class="card-label muted">Delay: <span class="hint" data-hint="New-head blocks that arrived significantly later than expected (head delay exceeded the configured threshold).">?</span></span>
-            <span class="card-value" th:text="${view.summary.delayCount}">0</span>
+        <div class="anomaly-grid">
+            <div class="card-row">
+                <span class="card-label muted">Delay: <span class="hint" data-hint="High-latency or slow-sync anomalies: HTTP round-trip exceeded the configured threshold, or the node was behind the reference head.">?</span></span>
+                <span class="card-value" th:text="${view.summary.delayCount}">0</span>
+            </div>
+            <div class="card-row">
+                <span class="card-label muted">Reorg: <span class="hint" data-hint="Chain reorganizations: a new head whose parent hash did not extend the previous canonical tip.">?</span></span>
+                <span class="card-value" th:text="${view.summary.reorgCount}">0</span>
+            </div>
+            <div class="card-row" th:if="${view.summary.maxReorgDepth > 0}">
+                <span class="card-label muted">Max Reorg Depth: <span class="hint" data-hint="Deepest reorganization observed — how many blocks were rolled back in a single reorg.">?</span></span>
+                <span class="card-value" th:text="${view.summary.maxReorgDepth} + ' blk'">0</span>
+            </div>
+            <div class="card-row">
+                <span class="card-label muted">Timeout: <span class="hint" data-hint="HTTP requests that did not receive a response within the configured timeout.">?</span></span>
+                <span class="card-value" th:text="${view.summary.timeoutCount}">0</span>
+            </div>
+            <div class="card-row">
+                <span class="card-label muted">Rate Limit: <span class="hint" data-hint="HTTP 429 or similar rate-limit responses received from the node.">?</span></span>
+                <span class="card-value" th:text="${view.summary.rateLimitCount}">0</span>
+            </div>
+            <div class="card-row">
+                <span class="card-label muted">Block Gap: <span class="hint" data-hint="One or more consecutive block numbers were missing, indicating dropped WebSocket events or a stalled node.">?</span></span>
+                <span class="card-value" th:text="${view.summary.blockGapCount}">0</span>
+            </div>
+            <div class="card-row" th:if="${view.summary.maxGapSize > 0}">
+                <span class="card-label muted">Max Gap Size: <span class="hint" data-hint="Largest number of consecutive blocks missing in a single gap event.">?</span></span>
+                <span class="card-value" th:text="${view.summary.maxGapSize} + ' blk'">0</span>
+            </div>
+            <div class="card-row">
+                <span class="card-label muted">Error: <span class="hint" data-hint="Generic RPC failures not classified as Timeout or Rate Limit (e.g. connection refused, unexpected HTTP status).">?</span></span>
+                <span class="card-value" th:text="${view.summary.errorAnomalyCount}">0</span>
+            </div>
+            <div class="card-row">
+                <span class="card-label muted">Stale: <span class="hint" data-hint="HTTP polls that found a block whose age (block timestamp → poll time) exceeded the stale-block threshold.">?</span></span>
+                <span class="card-value" th:text="${view.summary.staleBlockCount}">0</span>
+            </div>
         </div>
-        <div class="card-row">
-            <span class="card-label muted">Reorg: <span class="hint" data-hint="Chain reorganizations: a new head whose parent hash did not extend the previous canonical tip.">?</span></span>
-            <span class="card-value" th:text="${view.summary.reorgCount}">0</span>
-        </div>
-        <div class="card-row" th:if="${view.summary.maxReorgDepth > 0}">
-            <span class="card-label muted">Max Reorg Depth: <span class="hint" data-hint="Deepest reorganization observed — how many blocks were rolled back in a single reorg.">?</span></span>
-            <span class="card-value" th:text="${view.summary.maxReorgDepth} + ' blk'">0</span>
-        </div>
-        <div class="card-row">
-            <span class="card-label muted">Timeout: <span class="hint" data-hint="HTTP requests that did not receive a response within the configured timeout.">?</span></span>
-            <span class="card-value" th:text="${view.summary.timeoutCount}">0</span>
-        </div>
-        <div class="card-row">
-            <span class="card-label muted">Rate Limit: <span class="hint" data-hint="HTTP 429 or similar rate-limit responses received from the node.">?</span></span>
-            <span class="card-value" th:text="${view.summary.rateLimitCount}">0</span>
-        </div>
-        <div class="card-row">
-            <span class="card-label muted">Block Gap: <span class="hint" data-hint="One or more consecutive block numbers were missing, indicating dropped WebSocket events or a stalled node.">?</span></span>
-            <span class="card-value" th:text="${view.summary.blockGapCount}">0</span>
-        </div>
-        <div class="card-row" th:if="${view.summary.maxGapSize > 0}">
-            <span class="card-label muted">Max Gap Size: <span class="hint" data-hint="Largest number of consecutive blocks missing in a single gap event.">?</span></span>
-            <span class="card-value" th:text="${view.summary.maxGapSize} + ' blk'">0</span>
-        </div>
-        <div class="card-row">
-            <span class="card-label muted">Wrong Head: <span class="hint" data-hint="Times this node's latest block hash disagreed with the consensus (reference) head.">?</span></span>
+        <div class="card-row anomalies-card-row-full">
+            <span class="card-label muted">Wrong Head (percentage): <span class="hint" data-hint="Times this node's latest block hash disagreed with the consensus (reference) head.">?</span></span>
             <span class="card-value">
                 <span th:text="${view.summary.wrongHeadCount}">0</span>
                 <span th:if="${view.summary.wrongHeadRatePercent > 0}" class="muted card-unit"
                     th:text="'(' + ${#numbers.formatDecimal(view.summary.wrongHeadRatePercent, 1, 1)} + '%)'"></span>
             </span>
-        </div>
-        <div class="card-row">
-            <span class="card-label muted">Conflict: <span class="hint" data-hint="Competing canonical blocks at the same height where neither was yet resolved (legacy metric, always 0).">?</span></span>
-            <span class="card-value" th:text="${view.summary.conflictCount}">0</span>
-        </div>
-        <div class="card-row">
-            <span class="card-label muted">Stale: <span class="hint" data-hint="Blocks whose propagation delay (block timestamp → seen time) exceeded 30 seconds.">?</span></span>
-            <span class="card-value" th:text="${view.summary.staleBlockCount}">0</span>
         </div>
     </div>
     <div class="card metric-card">

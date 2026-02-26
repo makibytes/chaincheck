@@ -30,6 +30,7 @@ import de.makibytes.chaincheck.chain.shared.BlockConfidenceTracker;
 import de.makibytes.chaincheck.chain.shared.NodeSwitchPolicy;
 import de.makibytes.chaincheck.model.MetricSample;
 import de.makibytes.chaincheck.monitor.RpcMonitorService;
+import de.makibytes.chaincheck.store.AnomalyAggregate;
 import de.makibytes.chaincheck.store.InMemoryMetricsStore;
 
 /**
@@ -123,8 +124,17 @@ public class ReferenceNodeSelector {
         // Matching score: points from agreement with reference
         double matchingScore = tracker.getPoints(nodeKey);
 
+        // Wrong head penalty: significant penalty for nodes that frequently disagree with majority
+        // Each wrong head reduces score by 200 points (10 wrong heads = -2000, effectively disqualifying)
+        List<AnomalyAggregate> anomalyAggregates = store.getAggregatedAnomaliesSince(nodeKey, now.minusSeconds(300));
+        long wrongHeadCount = anomalyAggregates.stream()
+                .mapToLong(AnomalyAggregate::getWrongHeadCount)
+                .sum();
+        double wrongHeadPenalty = wrongHeadCount * 200.0;
+
         // Total score: block delays are now the dominant factor, WS health is secondary, latency is least important
-        return wsScore + latencyScore + headDelayScore + safeDelayScore + finalizedDelayScore + matchingScore;
+        // Wrong heads are penalized heavily to prevent unreliable nodes from becoming reference
+        return wsScore + latencyScore + headDelayScore + safeDelayScore + finalizedDelayScore + matchingScore - wrongHeadPenalty;
     }
 
     private boolean isWsHealthy(RpcMonitorService.NodeState state, Instant now) {

@@ -255,46 +255,26 @@ public class RpcMonitorService {
     @Scheduled(fixedDelayString = "#{${rpc.consensus.finalized-poll-interval-ms:999999999}}",
             initialDelayString = "#{${rpc.consensus.finalized-poll-interval-ms:999999999}}")
     public void pollConfiguredFinalizedBlock() {
-        try {
-            if (!isConfiguredReferenceMode()) {
-                return;
-            }
-            if (!configuredSource.isConsensusNodeEnabled()) {
-                return;
-            }
-            Long finalizedPollIntervalMs = configuredSource.getFinalizedPollIntervalMs();
-            if (finalizedPollIntervalMs == null) {
-                return;
-            }
-            configuredSource.ensureEventStream();
-            if (configuredSource.refreshCheckpoints(false, true)) {
-                refreshReferenceFromNodes();
-            }
-        } catch (RuntimeException ex) {
-            logger.error("Scheduled task pollConfiguredFinalizedBlock failed: {}", ex.getMessage());
-        }
+        pollConfiguredBlock(false, true, configuredSource.getFinalizedPollIntervalMs(), "pollConfiguredFinalizedBlock");
     }
 
     @Scheduled(fixedDelayString = "#{${rpc.consensus.safe-poll-interval-ms:999999999}}",
             initialDelayString = "#{${rpc.consensus.safe-poll-interval-ms:999999999} / 2}")
     public void pollConfiguredSafeBlock() {
+        pollConfiguredBlock(true, false, configuredSource.getSafePollIntervalMs(), "pollConfiguredSafeBlock");
+    }
+
+    private void pollConfiguredBlock(boolean refreshSafe, boolean refreshFinalized, Long pollIntervalMs, String taskName) {
         try {
-            if (!isConfiguredReferenceMode()) {
-                return;
-            }
-            if (!configuredSource.isConsensusNodeEnabled()) {
-                return;
-            }
-            Long safePollIntervalMs = configuredSource.getSafePollIntervalMs();
-            if (safePollIntervalMs == null) {
+            if (!isConfiguredReferenceMode() || !configuredSource.isConsensusNodeEnabled() || pollIntervalMs == null) {
                 return;
             }
             configuredSource.ensureEventStream();
-            if (configuredSource.refreshCheckpoints(true, false)) {
+            if (configuredSource.refreshCheckpoints(refreshSafe, refreshFinalized)) {
                 refreshReferenceFromNodes();
             }
         } catch (RuntimeException ex) {
-            logger.error("Scheduled task pollConfiguredSafeBlock failed: {}", ex.getMessage());
+            logger.error("Scheduled task {} failed: {}", taskName, ex.getMessage());
         }
     }
 
@@ -337,6 +317,7 @@ public class RpcMonitorService {
                 node.key(),
                 sample,
                 node.anomalyDelayMs(),
+                properties.getAnomalyDetection().getStaleBlockThresholdMs(),
                 lastBlock,
                 lastHash,
                 state != null ? state.lastHttpBlockNumber : null);

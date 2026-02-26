@@ -23,7 +23,9 @@ import java.util.List;
 
 import org.springframework.stereotype.Component;
 
+import de.makibytes.chaincheck.config.ChainCheckProperties.SparklineDataSource;
 import de.makibytes.chaincheck.model.MetricSample;
+import de.makibytes.chaincheck.model.MetricSource;
 
 /**
  * Builds SVG sparkline point data from metric samples.
@@ -40,12 +42,25 @@ public class SparklineBuilder {
 
     /**
      * Builds SVG polyline points from latency samples over a 1-hour window.
+     * Defaults to latency data source.
      * 
      * @param rawSamples metric samples to visualize
      * @param now current timestamp
      * @return SVG polyline points string (e.g., "1.0,5.2 2.0,8.7 ...")
      */
     public String buildPoints(List<MetricSample> rawSamples, Instant now) {
+        return buildPoints(rawSamples, now, SparklineDataSource.LATENCY);
+    }
+
+    /**
+     * Builds SVG polyline points from samples over a 1-hour window using specified data source.
+     * 
+     * @param rawSamples metric samples to visualize
+     * @param now current timestamp
+     * @param dataSource which metric to use (LATENCY or NEWHEAD)
+     * @return SVG polyline points string (e.g., "1.0,5.2 2.0,8.7 ...")
+     */
+    public String buildPoints(List<MetricSample> rawSamples, Instant now, SparklineDataSource dataSource) {
         int numBuckets = SPARKLINE_BUCKETS;
         long windowSecs = SPARKLINE_WINDOW_SECONDS;
         long bucketSecs = windowSecs / numBuckets;
@@ -56,12 +71,13 @@ public class SparklineBuilder {
 
         // Aggregate samples into time buckets
         for (MetricSample s : rawSamples) {
-            if (s.getLatencyMs() < 0) continue;
+            long valueMs = getValueForDataSource(s, dataSource);
+            if (valueMs < 0) continue;
             long offset = Duration.between(start, s.getTimestamp()).toSeconds();
             if (offset < 0 || offset >= windowSecs) continue;
             int idx = (int) (offset / bucketSecs);
             if (idx >= numBuckets) idx = numBuckets - 1;
-            bucketSum[idx] += s.getLatencyMs();
+            bucketSum[idx] += valueMs;
             bucketCount[idx]++;
         }
 
@@ -95,12 +111,26 @@ public class SparklineBuilder {
     /**
      * Builds SVG path segments with color strokes based on latency values.
      * Each segment uses a gradient color: blue < 200ms -> purple < 500ms -> red > 500ms
+     * Defaults to latency data source.
      * 
      * @param rawSamples metric samples to visualize
      * @param now current timestamp
      * @return SVG path elements with colored strokes
      */
     public String buildColoredPaths(List<MetricSample> rawSamples, Instant now) {
+        return buildColoredPaths(rawSamples, now, SparklineDataSource.LATENCY);
+    }
+
+    /**
+     * Builds SVG path segments with color strokes using specified data source.
+     * Each segment uses a gradient color based on the data source thresholds.
+     * 
+     * @param rawSamples metric samples to visualize
+     * @param now current timestamp
+     * @param dataSource which metric to use (LATENCY or NEWHEAD)
+     * @return SVG path elements with colored strokes
+     */
+    public String buildColoredPaths(List<MetricSample> rawSamples, Instant now, SparklineDataSource dataSource) {
         int numBuckets = SPARKLINE_BUCKETS;
         long windowSecs = SPARKLINE_WINDOW_SECONDS;
         long bucketSecs = windowSecs / numBuckets;
@@ -111,12 +141,13 @@ public class SparklineBuilder {
 
         // Aggregate samples into time buckets
         for (MetricSample s : rawSamples) {
-            if (s.getLatencyMs() < 0) continue;
+            long valueMs = getValueForDataSource(s, dataSource);
+            if (valueMs < 0) continue;
             long offset = Duration.between(start, s.getTimestamp()).toSeconds();
             if (offset < 0 || offset >= windowSecs) continue;
             int idx = (int) (offset / bucketSecs);
             if (idx >= numBuckets) idx = numBuckets - 1;
-            bucketSum[idx] += s.getLatencyMs();
+            bucketSum[idx] += valueMs;
             bucketCount[idx]++;
         }
 
@@ -163,7 +194,7 @@ public class SparklineBuilder {
                 double x2 = points[idx2];
                 double y2 = points[idx2 + 1];
                 
-                String color = getLatencyColorForValue(avgs[i]);
+                String color = getColorForValue(avgs[i], dataSource);
                 String path = String.format(
                     "<path d=\"M %.1f %.1f L %.1f %.1f\" stroke=\"%s\" stroke-width=\"1\" fill=\"none\" stroke-linecap=\"round\"/>",
                     x1, y1, x2, y2, color
@@ -176,29 +207,76 @@ public class SparklineBuilder {
     }
 
     /**
-     * Gets RGB color for a latency value using gradient:
-     * Blue < 200ms -> Purple < 500ms -> Red > 500ms
+     * Gets the metric value from a sample based on the data source.
+     * For NEWHEAD, uses headDelayMs from WS samples, falling back to latencyMs.
+     * 
+     * @param sample the metric sample
+     * @param dataSource which metric to extract
+     * @return the value in milliseconds, or -1 if not available
      */
-    private String getLatencyColorForValue(double latencyMs) {
+    private long getValueForDataSource(MetricSample sample, SparklineDataSource dataSource) {
+        if (dataSource == SparklineDataSource.NEWHEAD) {
+            // For newHead, prefer headDelayMs from WS samples
+            Long headDelay = sample.getHeadDelayMs();
+            if (headDelay != null && headDelay >= 0) {
+                return headDelay;
+            }
+            // Fall back to latency for HTTP samples
+            return sample.getLatencyMs();
+        }
+        // Default to latency
+        return sample.getLatencyMs();
+    }
+
+    /**
+     * Gets RGB color for a value based on the data source.
+     * For LATENCY: Blue < 200ms -> Purple < 500ms -> Red > 500ms
+     * For NEWHEAD: Green < 3s -> Orange < 10s -> Red > 10s
+     * 
+     * @param valueMs the value in milliseconds
+     * @param dataSource which metric type for color thresholds
+     * @return RGB color string
+     */
+    private String getColorForValue(double valueMs, SparklineDataSource dataSource) {
         int r, g, b;
         
-        if (latencyMs < 200) {
-            // Blue (91, 141, 255) to Purple (176, 116, 255)
-            double t = latencyMs / 200.0;
-            r = (int) Math.round(91 + (176 - 91) * t);
-            g = (int) Math.round(141 + (116 - 141) * t);
-            b = (int) Math.round(255 + (255 - 255) * t);
-        } else if (latencyMs < 500) {
-            // Purple (176, 116, 255) to Red (255, 107, 107)
-            double t = (latencyMs - 200) / 300.0;
-            r = (int) Math.round(176 + (255 - 176) * t);
-            g = (int) Math.round(116 + (107 - 116) * t);
-            b = (int) Math.round(255 + (107 - 255) * t);
+        if (dataSource == SparklineDataSource.NEWHEAD) {
+            // NEWHEAD: Green (46,199,126) -> Orange (244,183,64) -> Red (255,107,107)
+            if (valueMs < 3000) {
+                // Green to Orange
+                double t = valueMs / 3000.0;
+                r = (int) Math.round(46 + (244 - 46) * t);
+                g = (int) Math.round(199 + (183 - 199) * t);
+                b = (int) Math.round(126 + (64 - 126) * t);
+            } else if (valueMs < 10000) {
+                // Orange to Red
+                double t = (valueMs - 3000) / 7000.0;
+                r = (int) Math.round(244 + (255 - 244) * t);
+                g = (int) Math.round(183 + (107 - 183) * t);
+                b = (int) Math.round(64 + (107 - 64) * t);
+            } else {
+                // Red
+                r = 255;
+                g = 107;
+                b = 107;
+            }
         } else {
-            // Red (255, 107, 107)
-            r = 255;
-            g = 107;
-            b = 107;
+            // LATENCY: Blue (91,141,255) -> Purple (176,116,255) -> Red (255,107,107)
+            if (valueMs < 200) {
+                double t = valueMs / 200.0;
+                r = (int) Math.round(91 + (176 - 91) * t);
+                g = (int) Math.round(141 + (116 - 141) * t);
+                b = (int) Math.round(255 + (255 - 255) * t);
+            } else if (valueMs < 500) {
+                double t = (valueMs - 200) / 300.0;
+                r = (int) Math.round(176 + (255 - 176) * t);
+                g = (int) Math.round(116 + (107 - 116) * t);
+                b = (int) Math.round(255 + (107 - 255) * t);
+            } else {
+                r = 255;
+                g = 107;
+                b = 107;
+            }
         }
         
         return String.format("rgb(%d,%d,%d)", r, g, b);

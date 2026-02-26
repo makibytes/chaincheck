@@ -450,14 +450,37 @@ h3 {
     margin-left: 4px;
 }
 
-/* Anomalies Card - Two column layout */
-.anomalies-card .card-row {
+/* Anomaly Grid */
+.anomaly-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px var(--space-md);
+}
+
+.anomaly-grid .card-row {
     display: flex;
     align-items: baseline;
     gap: 8px;
-    width: calc(50% - 8px);
-    float: left;
-    padding: 3px 0;
+    padding: 2px 0;
+    line-height: 1.4;
+}
+
+.anomaly-grid .card-row .card-value {
+    flex-grow: 1;
+    text-align: right;
+}
+
+/* Anomalies Card */
+.anomalies-card-row-full {
+    margin-top: 3px;
+    padding: 2px 0;
+    line-height: 1.4;
+}
+
+.anomalies-card-row-full .card-value {
+    flex-grow: 1;
+    text-align: right;
+    white-space: nowrap;
 }
 
 .anomalies-card .card-label {
@@ -465,19 +488,8 @@ h3 {
     white-space: nowrap;
 }
 
-.anomalies-card .card-value {
-    min-width: 24px;
-}
-
 .anomalies-card h3 {
-    margin-bottom: 8px;
-    clear: both;
-}
-
-.anomalies-card::after {
-    content: "";
-    display: table;
-    clear: both;
+    margin-bottom: 7px;
 }
 
 /* Cards */
@@ -520,11 +532,6 @@ h3 {
         grid-column: span 1;
         min-width: 0;
     }
-    
-    .anomalies-card .card-row {
-        width: 100%;
-        float: none;
-    }
 }
 
 /* Metric Styles */
@@ -560,46 +567,7 @@ h3 {
 }
 
 /* Anomaly Grid */
-.anomaly-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: var(--space-sm) var(--space-md);
-    position: relative;
-    padding: 0 6px;
-    margin-top: 0;
-}
 
-.anomaly-item {
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-    line-height: 1.6;
-    font-size: 13px;
-}
-
-.anomaly-item span:first-child {
-    color: var(--color-text-subtle);
-    font-weight: 500;
-}
-
-.anomaly-item span:last-child {
-    font-family: "Space Grotesk", "Inter", sans-serif;
-    font-weight: 600;
-    color: var(--color-text);
-}
-
-.anomalies-card .anomaly-grid::before {
-    content: "";
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 50%;
-    width: 1px;
-    background: var(--color-border);
-    opacity: 0.5;
-    transform: translateX(-0.5px);
-    pointer-events: none;
-}
 
 /* Panels */
 .panel {

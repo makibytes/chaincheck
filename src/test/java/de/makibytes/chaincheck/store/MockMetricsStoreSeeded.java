@@ -88,22 +88,23 @@ public class MockMetricsStoreSeeded extends InMemoryMetricsStore {
         long blockBase = 12_000_000L;
         for (int minute = 0; minute < totalMinutes; minute++) {
             Instant timestamp = start.plusSeconds(minute * 60L);
+            long currentBlock = blockBase + (minute * 5L);
 
             if (!isInRange(minute, httpOutageStart, httpOutageEnd)) {
                 boolean staleBlock = minute % 720 == 0;
-                addHttpSample(NODE_KEY, timestamp, blockBase + minute, true, staleBlock, 30, 2000L, 2500L);
-                addHttpSample(NODE_KEY, timestamp.plusSeconds(10), blockBase + minute, false, staleBlock, 30, 2000L, 2500L);
+                addHttpSample(NODE_KEY, timestamp, currentBlock, true, staleBlock, 30, 2000L, 2500L, random);
+                addHttpSample(NODE_KEY, timestamp.plusSeconds(10), currentBlock, false, staleBlock, 30, 2000L, 2500L, random);
                 if (isInAnyRange(minute, httpErrorWindows)) {
                     String errorMessage = httpErrorMessages[minute % httpErrorMessages.length];
-                    addHttpErrorSample(NODE_KEY, timestamp.plusSeconds(25), blockBase + minute, errorMessage);
+                    addHttpErrorSample(NODE_KEY, timestamp.plusSeconds(25), currentBlock, errorMessage);
                 }
             }
 
             if (!isInRange(minute, httpOutageStartSecondary, httpOutageEndSecondary)) {
                 boolean staleBlockSecondary = minute % 540 == 0;
-                long secondaryBlock = blockBase + 80_000 + minute;
-                addHttpSample(NODE_KEY_SECONDARY, timestamp.plusSeconds(5), secondaryBlock, true, staleBlockSecondary, 45, 2600L, 3200L);
-                addHttpSample(NODE_KEY_SECONDARY, timestamp.plusSeconds(15), secondaryBlock, false, staleBlockSecondary, 45, 2600L, 3200L);
+                long secondaryBlock = currentBlock - 2; // slightly behind
+                addHttpSample(NODE_KEY_SECONDARY, timestamp.plusSeconds(5), secondaryBlock, true, staleBlockSecondary, 45, 2600L, 3200L, random);
+                addHttpSample(NODE_KEY_SECONDARY, timestamp.plusSeconds(15), secondaryBlock, false, staleBlockSecondary, 45, 2600L, 3200L, random);
                 if (isInAnyRange(minute, httpErrorWindowsSecondary)) {
                     String errorMessage = httpErrorMessages[(minute + 1) % httpErrorMessages.length];
                     addHttpErrorSample(NODE_KEY_SECONDARY, timestamp.plusSeconds(35), secondaryBlock, errorMessage);
@@ -111,10 +112,10 @@ public class MockMetricsStoreSeeded extends InMemoryMetricsStore {
             }
 
             if (!isInAnyRange(minute, wsOutages)) {
-                addWsSample(NODE_KEY, timestamp.plusSeconds(20), 1000L);
+                addWsSample(NODE_KEY, timestamp.plusSeconds(20), 1000L, random);
             }
             if (!isInAnyRange(minute, wsOutagesSecondary)) {
-                addWsSample(NODE_KEY_SECONDARY, timestamp.plusSeconds(30), 1600L);
+                addWsSample(NODE_KEY_SECONDARY, timestamp.plusSeconds(30), 1600L, random);
             }
         }
 
@@ -197,16 +198,17 @@ public class MockMetricsStoreSeeded extends InMemoryMetricsStore {
                                boolean staleBlock,
                                long latencyOffsetMs,
                                long safeDelayBaseMs,
-                               long finalizedDelayBaseMs) {
+                               long finalizedDelayBaseMs,
+                               Random random) {
         boolean success = true;
-        long latencyMs = latencyOffsetMs + (blockNumber % 120);
-        Instant blockTimestamp = staleBlock ? timestamp.minusSeconds(90) : timestamp.minusSeconds(12);
+        long latencyMs = latencyOffsetMs + random.nextInt(120);
+        Instant blockTimestamp = staleBlock ? timestamp.minusSeconds(90) : timestamp.minusSeconds(12 + random.nextInt(5));
         String blockHash = "0x" + Long.toHexString(blockNumber);
         String parentHash = "0x" + Long.toHexString(blockNumber - 1);
-        Integer transactionCount = (int) (blockNumber % 350);
-        Long gasPriceWei = 1_000_000_000L + (blockNumber % 500_000);
-        Long safeDelayMs = safeSample ? safeDelayBaseMs + (blockNumber % 4000) : null;
-        Long finalizedDelayMs = safeSample ? null : finalizedDelayBaseMs + (blockNumber % 4500);
+        Integer transactionCount = 50 + random.nextInt(300);
+        Long gasPriceWei = 1_000_000_000L + random.nextInt(500_000);
+        Long safeDelayMs = safeSample ? safeDelayBaseMs + random.nextInt(4000) : null;
+        Long finalizedDelayMs = safeSample ? null : finalizedDelayBaseMs + random.nextInt(4500);
 
         MetricSample sample = MetricSample.builder(timestamp, MetricSource.HTTP)
                 .success(success)
@@ -233,9 +235,9 @@ public class MockMetricsStoreSeeded extends InMemoryMetricsStore {
         addSample(nodeKey, sample);
     }
 
-    private void addWsSample(String nodeKey, Instant timestamp, long baseDelayMs) {
+    private void addWsSample(String nodeKey, Instant timestamp, long baseDelayMs, Random random) {
         long latencyMs = 0;
-        Long headDelayMs = baseDelayMs + (timestamp.getEpochSecond() % 4000);
+        Long headDelayMs = baseDelayMs + random.nextInt(4000);
         MetricSample sample = MetricSample.builder(timestamp, MetricSource.WS)
                 .success(true)
                 .latencyMs(latencyMs)

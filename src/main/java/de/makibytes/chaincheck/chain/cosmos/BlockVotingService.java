@@ -47,7 +47,7 @@ public class BlockVotingService {
 
     /**
      * Performs voting to determine reference blocks based on collected votes.
-     * Gives bonus votes to the current reference node.
+     * Strict majority wins. The current reference node breaks ties only.
      */
     public void performVoting(String currentReferenceNodeKey) {
         blockConfidenceTracker.clear();
@@ -62,9 +62,6 @@ public class BlockVotingService {
                     String hash = hashEntry.getKey();
                     Set<String> nodes = hashEntry.getValue();
                     int votes = nodes.size();
-                    if (currentReferenceNodeKey != null && nodes.contains(currentReferenceNodeKey)) {
-                        votes += 2; // +3 total since +1 already included
-                    }
                     if (votes > maxVotes || (votes == maxVotes && currentReferenceNodeKey != null && nodes.contains(currentReferenceNodeKey))) {
                         maxVotes = votes;
                         winningHash = hash;

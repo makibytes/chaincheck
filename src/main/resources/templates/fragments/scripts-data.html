@@ -38,6 +38,7 @@
     const scaleChangeMs = /*[[${view.scaleChangeMs}]]*/ 500;
     const scaleMaxMs = /*[[${view.scaleMaxMs}]]*/ 30000;
     const hasOlderAggregates = /*[[${view.hasOlderAggregates}]]*/ false;
+    const chartGradientMode = /*[[${view.chartGradientMode}]]*/ 'NONE';
     const rangeKey = /*[[${range.key}]]*/ null;
     const viewEndEpochMs = /*[[${endEpochMs}]]*/ null;
     const hasHeadDelaySeries = headDelayData.some(value => value != null) || referenceHeadDelayData.some(value => value != null);
@@ -262,6 +263,33 @@
         return colors;
     };
 
+    // Color gradient function for newHead delay values (green/yellow < 3s -> orange < 10s -> red > 10s)
+    const getNewHeadColor = (delayMs, alpha = 1) => {
+        if (delayMs == null) return null;
+        
+        let r, g, b;
+        if (delayMs < 3000) {
+            // Green/yellow (46, 199, 126) at 0ms, transitioning to orange at 3s
+            const t = delayMs / 3000;
+            r = Math.round(46 + (244 - 46) * t);     // 46 -> 244
+            g = Math.round(199 + (183 - 199) * t);   // 199 -> 183
+            b = Math.round(126 + (64 - 126) * t);    // 126 -> 64
+        } else if (delayMs < 10000) {
+            // Orange (244, 183, 64) at 3s, transitioning to red at 10s
+            const t = (delayMs - 3000) / 7000;
+            r = Math.round(244 + (255 - 244) * t);   // 244 -> 255
+            g = Math.round(183 + (107 - 183) * t);   // 183 -> 107
+            b = Math.round(64 + (107 - 64) * t);     // 64 -> 107
+        } else {
+            // Red (255, 107, 107) for 10s and above
+            r = 255;
+            g = 107;
+            b = 107;
+        }
+        
+        return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    };
+
     const [
         latencyScaled, latencyMinScaled, latencyMaxScaled,
         headDelayScaled, headDelayMinScaled, headDelayMaxScaled,
@@ -299,16 +327,30 @@
 
                 let strokeStyle;
                 if (item.text === 'Network Latency') {
-                    // Full blue → purple → red gradient, accurate to the same breakpoints used
-                    // by the chart line's per-segment colouring.
-                    const grad = chartCtx.createLinearGradient(x0, 0, x1, 0);
-                    grad.addColorStop(0,         getLatencyColor(0,   1.0));  // blue   @ 0 ms
-                    grad.addColorStop(200 / 500, getLatencyColor(200, 1.0));  // purple @ 200 ms
-                    grad.addColorStop(1.0,       getLatencyColor(500, 1.0));  // red    @ 500 ms
-                    strokeStyle = grad;
-                } else {
-                    // Head Delay P95 → solid line in the theme head-delay colour
-                    strokeStyle = theme.headDelay;
+                    if (chartGradientMode === 'LATENCY') {
+                        // Full blue → purple → red gradient, accurate to the same breakpoints used
+                        // by the chart line's per-segment colouring.
+                        const grad = chartCtx.createLinearGradient(x0, 0, x1, 0);
+                        grad.addColorStop(0,         getLatencyColor(0,   1.0));  // blue   @ 0 ms
+                        grad.addColorStop(200 / 500, getLatencyColor(200, 1.0));  // purple @ 200 ms
+                        grad.addColorStop(1.0,       getLatencyColor(500, 1.0));  // red    @ 500 ms
+                        strokeStyle = grad;
+                    } else {
+                        // Solid primary color when gradient is disabled or on other chart
+                        strokeStyle = theme.primary;
+                    }
+                } else if (item.text === 'Head Delay P95') {
+                    if (chartGradientMode === 'NEWHEAD') {
+                        // Green → orange → red gradient for newHead delay
+                        const grad = chartCtx.createLinearGradient(x0, 0, x1, 0);
+                        grad.addColorStop(0,         getNewHeadColor(0,     1.0));  // green  @ 0 ms
+                        grad.addColorStop(3000/10000, getNewHeadColor(3000, 1.0));  // orange @ 3s
+                        grad.addColorStop(1.0,       getNewHeadColor(10000, 1.0));  // red    @ 10s
+                        strokeStyle = grad;
+                    } else {
+                        // Solid head delay color when gradient is disabled or on other chart
+                        strokeStyle = theme.headDelay;
+                    }
                 }
 
                 chartCtx.save();
@@ -333,7 +375,7 @@
         rgb,
         backgroundAlpha,
         order,
-        useLatencyGradient
+        gradientMode
     }) => {
         const dataset = {
             label,
@@ -348,7 +390,10 @@
             borderWidth: 2
         };
 
-        if (useLatencyGradient && originalData) {
+        if (gradientMode && originalData) {
+            // Determine which color function to use based on gradient mode
+            const getColor = gradientMode === 'NEWHEAD' ? getNewHeadColor : getLatencyColor;
+            
             // Chart.js segment context provides p0DataIndex / p1DataIndex (start and end of each
             // rendered segment) and p0 / p1 (PointElement with pixel x/y coordinates).
             // We create a horizontal canvas LinearGradient for each segment so the color
@@ -362,8 +407,8 @@
                     // One side null (leading/trailing gap): use the available value
                     const eff0 = v0 ?? v1;
                     const eff1 = v1 ?? v0;
-                    const c0 = getLatencyColor(eff0, 1.0);
-                    const c1 = getLatencyColor(eff1, 1.0);
+                    const c0 = getColor(eff0, 1.0);
+                    const c1 = getColor(eff1, 1.0);
                     // Same color zone — skip gradient allocation
                     if (c0 === c1) return c0;
                     // Horizontal gradient (along the time axis) so the colour at each x

@@ -193,7 +193,7 @@ class ChartBuilderTest {
             Instant aggStart = end.minus(Duration.ofMinutes(30));
             SampleAggregate agg = new SampleAggregate(aggStart);
             MetricSample sample = httpSample(aggStart.plusSeconds(10), 200, 100L);
-            agg.addSample(sample);
+            agg.addSample(sample, 30000);
 
             ChartBuilder.ChartData result = ChartBuilder.buildLatencyChart(
                     List.of(), List.of(agg), TimeRange.HOURS_2, end);
@@ -211,7 +211,7 @@ class ChartBuilderTest {
 
             List<MetricSample> raw = List.of(httpSample(rawTime, 100, 1000L));
             SampleAggregate agg = new SampleAggregate(aggTime);
-            agg.addSample(httpSample(aggTime.plusSeconds(5), 300, 999L));
+            agg.addSample(httpSample(aggTime.plusSeconds(5), 300, 999L), 30000);
 
             ChartBuilder.ChartData result = ChartBuilder.buildLatencyChart(
                     raw, List.of(agg), TimeRange.HOURS_2, end);

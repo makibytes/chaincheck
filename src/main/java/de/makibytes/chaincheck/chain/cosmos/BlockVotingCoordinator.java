@@ -103,25 +103,16 @@ public class BlockVotingCoordinator {
                                  boolean warmupComplete,
                                  Map<String, RpcMonitorService.NodeState> nodeStates) {
         blockVotingService.performVoting(currentReferenceNodeKey);
-        emitWrongHeadForInvalidatedWsNewHeads(oldBlocks, now, warmupComplete);
+        ReferenceHead currentHead = resolveReferenceHead();
+        emitWrongHeadForInvalidatedWsNewHeads(oldBlocks, now, warmupComplete, currentHead);
         blockAgreementTracker.penalize(oldBlocks, blockVotingService.getBlockConfidenceTracker(), blockVotingService.getBlockVotes());
         blockAgreementTracker.awardPoints(oldBlocks, blockVotingService.getBlockConfidenceTracker(), blockVotingService.getBlockVotes());
     }
 
-    public ReferenceHead resolveReferenceHead() {
-        return blockVotingService.getBlockConfidenceTracker().getBlocks().entrySet().stream()
-                .filter(entry -> entry.getValue().get(Confidence.NEW) != null)
-                .max(Comparator.comparingLong(Map.Entry::getKey))
-                .map(entry -> {
-                    logger.debug("Resolved reference head: number={} hash= {}", entry.getKey(), entry.getValue().get(Confidence.NEW));
-                    return new ReferenceHead(entry.getKey(), entry.getValue().get(Confidence.NEW));
-                })
-                .orElse(null);
-    }
-
     private void emitWrongHeadForInvalidatedWsNewHeads(Map<Long, Map<Confidence, String>> oldBlocks,
                                                        Instant now,
-                                                       boolean warmupComplete) {
+                                                       boolean warmupComplete,
+                                                       ReferenceHead currentHead) {
         if (!warmupComplete || oldBlocks == null || oldBlocks.isEmpty()) {
             return;
         }
@@ -140,6 +131,12 @@ public class BlockVotingCoordinator {
             }
             String newHash = newBlocks.getOrDefault(blockNumber, Map.of()).get(Confidence.NEW);
             if (newHash == null || oldHash.equalsIgnoreCase(newHash)) {
+                continue;
+            }
+            // Only flag wrong heads for blocks that are at least 5 blocks behind current head
+            // This gives all nodes time to catch up and report before we judge them as "wrong"
+            if (currentHead != null && currentHead.headNumber() != null 
+                    && blockNumber > currentHead.headNumber() - 5) {
                 continue;
             }
 
@@ -164,6 +161,17 @@ public class BlockVotingCoordinator {
                 store.addAnomaly(nodeKey, anomaly);
             }
         }
+    }
+
+    public ReferenceHead resolveReferenceHead() {
+        return blockVotingService.getBlockConfidenceTracker().getBlocks().entrySet().stream()
+                .filter(entry -> entry.getValue().get(Confidence.NEW) != null)
+                .max(Comparator.comparingLong(Map.Entry::getKey))
+                .map(entry -> {
+                    logger.debug("Resolved reference head: number={} hash= {}", entry.getKey(), entry.getValue().get(Confidence.NEW));
+                    return new ReferenceHead(entry.getKey(), entry.getValue().get(Confidence.NEW));
+                })
+                .orElse(null);
     }
 
     private boolean hasWsNewHeadSample(String nodeKey, Long blockNumber, String blockHash, Instant since) {

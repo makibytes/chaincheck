@@ -526,6 +526,7 @@ public class HttpMonitorService {
                     node.key(),
                     sample,
                     node.anomalyDelayMs(),
+                    properties.getAnomalyDetection().getStaleBlockThresholdMs(),
                     null,
                     null,
                     sample.getBlockNumber());
@@ -568,6 +569,7 @@ public class HttpMonitorService {
                     node.key(),
                     sample,
                     node.anomalyDelayMs(),
+                    properties.getAnomalyDetection().getStaleBlockThresholdMs(),
                     previousNumber,
                     previousHash,
                     sample.getBlockNumber());

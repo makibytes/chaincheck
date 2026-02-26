@@ -32,6 +32,17 @@ public class ChainCheckProperties {
         COSMOS
     }
 
+    public enum ChartGradientMode {
+        LATENCY,
+        NEWHEAD,
+        NONE
+    }
+
+    public enum SparklineDataSource {
+        LATENCY,
+        NEWHEAD
+    }
+
     private String title = "";
     private String titleColor = "white";
     private Mode mode = Mode.COSMOS;
@@ -41,6 +52,8 @@ public class ChainCheckProperties {
     private int wsGapRecoveryMaxBlocks = 5;
     private int scaleChangeMs = 500;
     private int scaleMaxMs = 30000;
+    private ChartGradientMode chartGradientMode = ChartGradientMode.NONE;
+    private SparklineDataSource sparklineDataSource = SparklineDataSource.LATENCY;
     private long blockVerificationDelayMs = 5000;
     private Consensus consensus = new Consensus();
     private Defaults defaults = new Defaults();
@@ -118,6 +131,22 @@ public class ChainCheckProperties {
 
     public void setScaleMaxMs(int scaleMaxMs) {
         this.scaleMaxMs = scaleMaxMs;
+    }
+
+    public ChartGradientMode getChartGradientMode() {
+        return chartGradientMode;
+    }
+
+    public void setChartGradientMode(ChartGradientMode chartGradientMode) {
+        this.chartGradientMode = chartGradientMode;
+    }
+
+    public SparklineDataSource getSparklineDataSource() {
+        return sparklineDataSource;
+    }
+
+    public void setSparklineDataSource(SparklineDataSource sparklineDataSource) {
+        this.sparklineDataSource = sparklineDataSource;
     }
 
     public long getBlockVerificationDelayMs() {
@@ -486,6 +515,7 @@ public class ChainCheckProperties {
     public static class AnomalyDetection {
         private Integer longDelayBlockCount = 15;
         private long highLatencyMs = 2000;
+        private long staleBlockThresholdMs = 30000;
 
         public Integer getLongDelayBlockCount() {
             return longDelayBlockCount;
@@ -501,6 +531,14 @@ public class ChainCheckProperties {
 
         public void setHighLatencyMs(long highLatencyMs) {
             this.highLatencyMs = highLatencyMs;
+        }
+
+        public long getStaleBlockThresholdMs() {
+            return staleBlockThresholdMs;
+        }
+
+        public void setStaleBlockThresholdMs(long staleBlockThresholdMs) {
+            this.staleBlockThresholdMs = staleBlockThresholdMs;
         }
     }
 }

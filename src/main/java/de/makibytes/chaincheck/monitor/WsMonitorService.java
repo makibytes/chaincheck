@@ -354,6 +354,7 @@ public class WsMonitorService {
                             node.key(),
                             sample,
                             node.anomalyDelayMs(),
+                            properties.getAnomalyDetection().getStaleBlockThresholdMs(),
                             null,
                             null,
                             state.lastHttpBlockNumber);
@@ -428,6 +429,7 @@ public class WsMonitorService {
                         node.key(),
                         sample,
                         node.anomalyDelayMs(),
+                        properties.getAnomalyDetection().getStaleBlockThresholdMs(),
                         state.lastWsBlockNumber,
                         state.lastWsBlockHash,
                         state.lastHttpBlockNumber);
