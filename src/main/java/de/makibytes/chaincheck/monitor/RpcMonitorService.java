@@ -105,15 +105,15 @@ public class RpcMonitorService {
         this.configuredSource = new ConfiguredReferenceSource(nodeRegistry, blockConfidenceTracker, nodeStates, properties, configuredReferenceNodeKey);
         this.referenceBlockVoting = new BlockVotingCoordinator(nodeRegistry, blockVotingService, blockAgreementTracker, store, detector);
 
-        // Select reference strategy based on mode and whether consensus is configured
-        ChainCheckProperties.Mode mode = properties.getMode();
+        // Select reference strategy based on whether a consensus node is configured.
+        // ConfiguredReferenceStrategy is used in both ETHEREUM and COSMOS modes when a consensus
+        // node is configured (rpc.consensus.http set). Without one, fall back to majority voting.
         boolean hasConsensusNode = properties.getConsensus() != null && properties.getConsensus().hasConfiguredReferenceNode();
         
-        // Use ConfiguredReferenceStrategy only when in ETHEREUM mode AND consensus node is configured
-        if (mode == ChainCheckProperties.Mode.ETHEREUM && hasConsensusNode) {
+        if (hasConsensusNode) {
             this.referenceStrategy = new ConfiguredReferenceStrategy(configuredSource, configuredReferenceNodeKey);
         } else {
-            // Cosmos mode OR Ethereum without consensus: use majority voting across execution nodes
+            // No consensus node: use majority voting across execution nodes
             this.referenceStrategy = new VotingReferenceStrategy(nodeRegistry, blockVotingService, referenceBlockVoting, referenceNodeSelector, blockAgreementTracker, store);
         }
 

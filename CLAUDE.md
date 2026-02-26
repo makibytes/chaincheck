@@ -26,7 +26,7 @@ All source lives under `de.makibytes.chaincheck` with eight packages:
 - **config** — `ChainCheckProperties` binds the `rpc.*` YAML namespace. Per-node overrides (timeouts, retries, headers, anomaly thresholds) fall back to `rpc.defaults.*`.
 - **model** — Value types: `MetricSample` (raw metrics per poll/event), `AnomalyEvent` (with `AnomalyType` enum: ERROR, RATE_LIMIT, TIMEOUT, DELAY, STALE, BLOCK_GAP, CONFLICT, REORG, WRONG_HEAD — note: CONFLICT is never emitted; the dashboard always sets `conflict=false`), `MetricSource` (HTTP vs WS), `TimeRange`, `AttestationConfidence` (per-block attestation tracking data).
 - **monitor** — Core monitoring services:
-  - `RpcMonitorService` — orchestrator, wires up per-node HTTP/WS monitors, selects reference strategy based on mode
+  - `RpcMonitorService` — orchestrator, wires up per-node HTTP/WS monitors, selects reference strategy: `ConfiguredReferenceStrategy` when `rpc.consensus.http` is set (works in **both** ETHEREUM and COSMOS modes), otherwise `VotingReferenceStrategy`
   - `HttpMonitorService` — scheduled polling of `eth_blockNumber`/`eth_getBlockByNumber`; also provides `fetchBlockByHash` used by WS verification
   - `WsMonitorService` — WebSocket `eth_subscribe(newHeads)` for real-time head tracking; Ethereum and Cosmos paths differ significantly (see below)
   - `AnomalyDetector` — evaluates each sample against thresholds, emits `AnomalyEvent`s
@@ -34,7 +34,7 @@ All source lives under `de.makibytes.chaincheck` with eight packages:
   - `HttpConnectionTracker` / `WsConnectionTracker` — track connection health per node
 - **reference/node** — Reference node selection:
   - `ReferenceNodeSelector` — selects best reference node via scoring with `NodeSwitchPolicy` hysteresis
-  - `ReferenceStrategy` interface with `ConfiguredReferenceStrategy` (explicit consensus node, Ethereum mode only) and `VotingReferenceStrategy` (majority voting, used in Cosmos mode and in Ethereum mode without a consensus node)
+  - `ReferenceStrategy` interface with `ConfiguredReferenceStrategy` (explicit consensus node, used in **both** ETHEREUM and COSMOS modes when `rpc.consensus.http` is configured) and `VotingReferenceStrategy` (majority voting, used when no consensus node is configured)
   - `ConfiguredReferenceSource` / `ConsensusNodeClient` — manage consensus node HTTP client, SSE event stream, and block updates. `ConsensusNodeClient` also drives attestation tracking when enabled: on each `head` SSE event it registers attestation tracking, then a background loop polls committee data and updates `AttestationTracker`.
   - `BlockAgreementTracker` — tracks which nodes agree on blocks
 - **reference/attestation** — Attestation-based block confidence scoring:
@@ -51,7 +51,7 @@ All source lives under `de.makibytes.chaincheck` with eight packages:
 1. HTTP monitors poll RPC endpoints on configurable intervals; WS monitors receive `newHeads` events
 2. Samples are stored in `InMemoryMetricsStore` and merged by block hash for a unified block view
 3. `AnomalyDetector` evaluates each sample in real-time
-4. `ReferenceNodeSelector` establishes consensus head via configured consensus node (Ethereum) or majority voting (Cosmos)
+4. `ReferenceNodeSelector` establishes consensus head via configured consensus node (when `rpc.consensus.http` is set, in any mode) or majority voting (when no consensus node is configured)
 5. When attestation tracking is enabled (Ethereum only), `ConsensusNodeClient` polls committee data on each new head and `AttestationTracker` computes per-block confidence
 6. Dashboard queries the store and renders via Thymeleaf + Chart.js; `DashboardService` enriches `SampleRow` records with safe/finalized status from the consensus node (applying it globally by block hash across all nodes) and with attestation confidence data
 
@@ -139,10 +139,12 @@ Block numbers are never used as the basis for conflict/invalid detection. Only p
 
 ### Cosmos Mode (e.g. Polygon)
 
-Used for EVM chains without a beacon chain. There is no consensus node; finality is tracked per execution node and the reference head is determined by majority voting.
+Used for EVM chains without a beacon chain. By default, finality is tracked per execution node and the reference head is determined by majority voting. Optionally, a consensus node can be configured via `rpc.consensus.http` to serve as the authoritative reference source instead of voting (see below).
 
 #### Reference source
-Majority voting across all execution nodes. The reference head is the block hash agreed on by the most nodes. Safe and finalized observations are per-node (each node's own HTTP poll determines its own finality).
+**Default (no consensus node):** Majority voting across all execution nodes. The reference head is the block hash agreed on by the most nodes. Safe and finalized observations are per-node (each node's own HTTP poll determines its own finality).
+
+**Optional (with consensus node):** When `rpc.consensus.http` is set, `ConfiguredReferenceStrategy` is used — the same as in Ethereum mode. The consensus node becomes the authoritative source for head, safe, and finalized blocks, and its observations are applied globally across all execution nodes.
 
 #### WS newHead path (execution nodes, `source=WS`)
 
@@ -156,7 +158,7 @@ On each `eth_subscribe("newHeads")` event, `WsMonitorService.handleCosmosNewHead
 
 When WS is active, HTTP polling alternates between safe and finalized block tags (as configured). When WS is not active, HTTP also polls `latest`. The resulting `MetricSample` (`source=HTTP`) contains the same fields as in Ethereum mode, with one key difference: `safeDelayMs` and `finalizedDelayMs` are computed using block timestamp as the baseline (no consensus node observation time is available), and safe/finalized status applies only to that node's own samples.
 
-#### No consensus node, no attestations
+#### No consensus node, no attestations (default Cosmos mode)
 
 - No beacon node is connected
 - No SSE events for finality
@@ -173,16 +175,16 @@ This avoids false positives for nodes that are simply lagging (they will catch u
 
 #### Summary — Cosmos mode vs Ethereum mode
 
-| Feature | Ethereum mode | Cosmos mode |
-|---|---|---|
-| Consensus node | Required for full finality | Not used |
-| WS newHead: getBlockByHash | Yes (immediate, for reliable block number) | No (trusts event data) |
-| WS newHead: delayed HTTP verification | Yes (5s later, `rpc.block-verification-delay-ms`) | No |
-| Safe blocks | From consensus node (applies to all nodes) | Per execution node (HTTP poll `safe` tag) |
-| Finalized blocks | From consensus node (applies to all nodes) | Per execution node (HTTP poll `finalized` tag) |
-| safeDelayMs baseline | Consensus node observation time | Block timestamp |
-| finalizedDelayMs baseline | Consensus node observation time | Block timestamp |
-| Attestations | Optional (beacon committees) | Not available |
+| Feature | Ethereum mode | Cosmos mode (no consensus) | Cosmos mode (with consensus) |
+|---|---|---|---|
+| Consensus node | Required for full finality | Not used | Optional (`rpc.consensus.http`) |
+| WS newHead: getBlockByHash | Yes (immediate, for reliable block number) | No (trusts event data) | No (trusts event data) |
+| WS newHead: delayed HTTP verification | Yes (5s later, `rpc.block-verification-delay-ms`) | No | No |
+| Safe blocks | From consensus node (applies to all nodes) | Per execution node (HTTP poll `safe` tag) | From consensus node (applies to all nodes) |
+| Finalized blocks | From consensus node (applies to all nodes) | Per execution node (HTTP poll `finalized` tag) | From consensus node (applies to all nodes) |
+| safeDelayMs baseline | Consensus node observation time | Block timestamp | Consensus node observation time |
+| finalizedDelayMs baseline | Consensus node observation time | Block timestamp | Consensus node observation time |
+| Attestations | Optional (beacon committees) | Not available | Not available |
 | Orphan detection confidence | Finalized + safe + 3-attest rounds | Finalized + safe |
 | Reference head | Consensus node head SSE | Majority vote across execution nodes |
 | Block number reliability | Hash is identity; block number verified via getBlockByHash | Block number from event (may be wrong) |

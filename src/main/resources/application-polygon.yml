@@ -9,6 +9,22 @@ rpc:
   anomaly-detection:
     high-latency-ms: 2000
     long-delay-block-count: 15
+  # Optional: connect to a consensus node as the authoritative reference source.
+  # When configured, ChainCheck uses this endpoint instead of majority-voting across
+  # execution nodes.  Works in both ETHEREUM and COSMOS modes.
+  # For Polygon/Bor you can point this at a Heimdall REST API or any compatible
+  # consensus endpoint that exposes:
+  #   - SSE event stream (head / finalized_checkpoint events)
+  #   - Finality checkpoint REST endpoint
+  # All paths are fully configurable to match the chain's actual API.
+  #consensus:
+  #  display-name: heimdall
+  #  http: http://heimdall:1317
+  #  events-path: /eth/v1/events?topics=head&topics=finalized_checkpoint
+  #  finality-checkpoints-path: /eth/v1/beacon/states/head/finality_checkpoints
+  #  safe-poll-interval-ms: 30000
+  #  finalized-poll-interval-ms: 30000
+  #  timeout-ms: 3000
   nodes:
     - name: polygon-rpc.com
       http: https://polygon-rpc.com
