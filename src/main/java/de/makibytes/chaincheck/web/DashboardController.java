@@ -30,9 +30,9 @@ import org.springframework.web.bind.annotation.ResponseBody;
 import de.makibytes.chaincheck.config.ChainCheckProperties;
 import de.makibytes.chaincheck.model.AnomalyEvent;
 import de.makibytes.chaincheck.model.TimeRange;
-import de.makibytes.chaincheck.monitor.RpcMonitorService;
 import de.makibytes.chaincheck.monitor.NodeRegistry;
 import de.makibytes.chaincheck.monitor.NodeRegistry.NodeDefinition;
+import de.makibytes.chaincheck.monitor.RpcMonitorService;
 
 @Controller
 public class DashboardController {
@@ -83,8 +83,8 @@ public class DashboardController {
         return "fleet";
     }
 
-    @GetMapping("/dashboard")
-    public String dashboard(@RequestParam(name = "range", required = false) String rangeKey,
+    @GetMapping("/node")
+    public String node(@RequestParam(name = "range", required = false) String rangeKey,
                             @RequestParam(name = "node", required = false) String nodeKey,
                             @RequestParam(name = "end", required = false) Long endEpochMs,
                             Model model) {

@@ -71,8 +71,6 @@ public class DashboardService {
     private static final int MAX_PAGES = 20;
     private static final int MAX_ANOMALIES = 10000;
     
-    // Thresholds
-    private static final long STALE_BLOCK_THRESHOLD_MS = 30000; // 30 seconds
     private static final double PERCENT_MULTIPLIER = 100.0;
 
     private static final DateTimeFormatter TIMESTAMP_FORMATTER =
@@ -176,7 +174,8 @@ public class DashboardService {
         double errorRatePercent = total == 0 ? 0 : (errors * PERCENT_MULTIPLIER) / total;
 
         List<Long> propagationDelays = rawSamples.stream()
-                .filter(sample -> sample.getSource() == MetricSource.HTTP && sample.getBlockTimestamp() != null)
+                .filter(sample -> sample.getSource() == MetricSource.HTTP && sample.getBlockTimestamp() != null
+                        && sample.getSafeDelayMs() == null && sample.getFinalizedDelayMs() == null)
                 .map(sample -> Duration.between(sample.getBlockTimestamp(), sample.getTimestamp()).toMillis())
                 .filter(delay -> delay >= 0)
                 .toList();
@@ -188,7 +187,8 @@ public class DashboardService {
         DelayStats finalizedStats = computeDelayStats(rawSamples, aggregateSamples,
                 MetricSample::getFinalizedDelayMs, SampleAggregate::getFinalizedDelaySumMs, SampleAggregate::getFinalizedDelayCount);
 
-        long staleBlockCount = propagationDelays.stream().filter(delay -> delay > STALE_BLOCK_THRESHOLD_MS).count()
+        long staleBlockThresholdMs = properties.getAnomalyDetection().getStaleBlockThresholdMs();
+        long staleBlockCount = propagationDelays.stream().filter(delay -> delay > staleBlockThresholdMs).count()
                 + aggregateSamples.stream().mapToLong(SampleAggregate::getStaleBlockCount).sum();
 
         Map<AnomalyType, Long> anomalyCounts = anomalies.stream()
@@ -196,6 +196,7 @@ public class DashboardService {
                         () -> new EnumMap<>(AnomalyType.class), Collectors.counting()));
         aggregatedAnomalies.forEach(aggregate -> {
             anomalyCounts.merge(AnomalyType.DELAY, aggregate.getDelayCount(), Long::sum);
+            anomalyCounts.merge(AnomalyType.STALE, aggregate.getStaleCount(), Long::sum);
             anomalyCounts.merge(AnomalyType.REORG, aggregate.getReorgCount(), Long::sum);
             anomalyCounts.merge(AnomalyType.CONFLICT, aggregate.getConflictCount(), Long::sum);
             anomalyCounts.merge(AnomalyType.BLOCK_GAP, aggregate.getBlockGapCount(), Long::sum);
@@ -274,102 +275,7 @@ public class DashboardService {
 
         // First pass: create intermediate rows
         List<SampleRow> intermediateRows = samplesByHash.entrySet().stream()
-                .map(entry -> {
-                    List<MetricSample> samples = entry.getValue();
-                    samples.sort(Comparator.comparing(MetricSample::getTimestamp));
-                    MetricSample first = samples.get(0);
-                    
-                    List<String> sources = samples.stream()
-                            .map(s -> s.getSource() == MetricSource.HTTP ? "HTTP" : "WS")
-                            .distinct()
-                            .sorted()
-                            .toList();
-                    
-                    Long avgLatencyForRow = null;
-                    List<Long> validLatencies = samples.stream()
-                            .filter(s -> s.getLatencyMs() >= 0)
-                            .map(MetricSample::getLatencyMs)
-                            .toList();
-                    if (!validLatencies.isEmpty()) {
-                        avgLatencyForRow = Math.round(validLatencies.stream()
-                                .mapToLong(Long::longValue)
-                                .average()
-                                .orElse(-1));
-                    }
-
-                    boolean allSuccess = samples.stream().allMatch(MetricSample::isSuccess);
-                    String blockHash = samples.stream()
-                            .map(MetricSample::getBlockHash)
-                            .filter(h -> h != null && !h.isBlank())
-                            .findFirst()
-                            .orElse(null);
-                    // Determine if this block is safe/finalized either from node-local queries
-                    // or from configured consensus reference observations.
-                    boolean hasFinalized = samples.stream().anyMatch(s -> s.getFinalizedDelayMs() != null)
-                            || (blockHash != null && consensusFinalizedHashes.contains(blockHash));
-                    boolean hasSafe = samples.stream().anyMatch(s -> s.getSafeDelayMs() != null)
-                            || (blockHash != null && consensusSafeHashes.contains(blockHash));
-                    String parentHash = samples.stream()
-                            .map(MetricSample::getParentHash)
-                            .filter(h -> h != null && !h.isBlank())
-                            .findFirst()
-                            .orElse(null);
-                        Instant blockTimestamp = samples.stream()
-                            .map(MetricSample::getBlockTimestamp)
-                            .filter(Objects::nonNull)
-                            .findFirst()
-                            .orElse(null);
-                        String blockTime = blockTimestamp == null ? null : TIMESTAMP_FORMATTER.format(blockTimestamp);
-                    Integer transactionCount = samples.stream()
-                            .map(MetricSample::getTransactionCount)
-                            .filter(tc -> tc != null)
-                            .findFirst()
-                            .orElse(null);
-                    Long gasPriceWei = samples.stream()
-                            .map(MetricSample::getGasPriceWei)
-                            .filter(gp -> gp != null)
-                            .findFirst()
-                            .orElse(null);
-                    
-                    Double attConf = null;
-                    Integer attRound = null;
-                    if (blockHash != null && !blockHash.isBlank()) {
-                        AttestationConfidence ac = attestationConfidences.get(blockHash);
-                        if (ac != null) {
-                            attConf = ac.getConfidencePercent();
-                            attRound = ac.getAttestationRound();
-                        }
-                    }
-
-                    // First-seen delta: how many ms behind the first node to see this block
-                    Long firstSeenDelta = null;
-                    if (multiNodeConfigured && blockHash != null && !blockHash.isBlank()) {
-                        Instant globalFirst = globalFirstSeen.get(blockHash);
-                        Instant thisFirst = thisNodeFirstSeen.get(blockHash);
-                        if (globalFirst != null && thisFirst != null) {
-                            firstSeenDelta = Math.max(0, Duration.between(globalFirst, thisFirst).toMillis());
-                        }
-                    }
-
-                    return new SampleRow(
-                            TIMESTAMP_FORMATTER.format(first.getTimestamp()),
-                            sources,
-                            allSuccess ? "NEW" : "ERROR",
-                            avgLatencyForRow,
-                            first.getBlockNumber(),
-                            blockHash,
-                            parentHash,
-                            blockTime,
-                            hasSafe,
-                            hasFinalized,
-                                        false,
-                                        false,
-                            transactionCount,
-                            gasPriceWei,
-                            attConf,
-                            attRound != null ? attRound.longValue() : null,
-                            firstSeenDelta);
-                })
+                .map(entry -> createSampleRow(entry.getValue(), consensusFinalizedHashes, consensusSafeHashes, attestationConfidences, multiNodeConfigured, globalFirstSeen, thisNodeFirstSeen))
                 .collect(Collectors.toList());
         
         // Backward propagation: tag parent blocks as safe/finalized
@@ -571,9 +477,9 @@ public class DashboardService {
         long totalBlocks = sampleRows.size();
         double canonicalRatePercent = totalBlocks == 0 ? 100.0 : (totalBlocks - invalidBlockCount) * 100.0 / totalBlocks;
 
-        // Wrong head rate
+        // Wrong head rate — expressed as a fraction of WS samples (head events seen)
         long wh = anomalyCounts.getOrDefault(AnomalyType.WRONG_HEAD, 0L);
-        double wrongHeadRatePercent = httpCount == 0 ? 0.0 : wh * 100.0 / httpCount;
+        double wrongHeadRatePercent = wsCount == 0 ? 0.0 : wh * 100.0 / wsCount;
 
         // Reorg depth and gap size from raw anomalies
         long maxReorgDepth = anomalies.stream()
@@ -641,6 +547,7 @@ public class DashboardService {
             anomalyCounts.getOrDefault(AnomalyType.TIMEOUT, 0L),
             anomalyCounts.getOrDefault(AnomalyType.WRONG_HEAD, 0L),
             anomalyCounts.getOrDefault(AnomalyType.CONFLICT, 0L),
+            anomalyCounts.getOrDefault(AnomalyType.ERROR, 0L),
             canonicalRatePercent,
             invalidBlockCount,
             wrongHeadRatePercent,
@@ -664,7 +571,8 @@ public class DashboardService {
                 anomalyTotalPages, PAGE_SIZE, totalAnomalies,
                 scaleChangeMs, scaleMaxMs, hasOlderAggregates,
                 now, referenceComparison, isReferenceNode,
-                lastBlockAgeMs, multiNodeConfigured);
+                lastBlockAgeMs, multiNodeConfigured,
+                properties.getChartGradientMode());
             cache.put(nodeKey, range, now, view);
         return view;
     }
@@ -752,8 +660,8 @@ public class DashboardService {
             boolean isCurrentlyDown = httpConfigured && recentHttp > 0 && recentHttpSuccess == 0;
             int healthScore = healthScoreCalculator.calculateHealthScore(uptime, p95Lat, p95Head, errors, total, isCurrentlyDown, wsConfigured, wsUp);
             String healthLabel = FleetNodeSummary.labelForScore(healthScore);
-            String sparkline = sparklineBuilder.buildPoints(raw, now);
-            String coloredPaths = sparklineBuilder.buildColoredPaths(raw, now);
+            String sparkline = sparklineBuilder.buildPoints(raw, now, properties.getSparklineDataSource());
+            String coloredPaths = sparklineBuilder.buildColoredPaths(raw, now, properties.getSparklineDataSource());
 
             summaries.add(new FleetNodeSummary(
                     nk, node.name(), httpConfigured, wsConfigured, httpUp, wsUp,
@@ -766,6 +674,102 @@ public class DashboardService {
     }
 
     private record DelayStats(double average, double p95, double p99) {}
+
+    private SampleRow createSampleRow(List<MetricSample> samples, Set<String> consensusFinalizedHashes, Set<String> consensusSafeHashes, Map<String, AttestationConfidence> attestationConfidences, boolean multiNodeConfigured, Map<String, Instant> globalFirstSeen, Map<String, Instant> thisNodeFirstSeen) {
+        samples.sort(Comparator.comparing(MetricSample::getTimestamp));
+        MetricSample first = samples.get(0);
+        
+        List<String> sources = samples.stream()
+                .map(s -> s.getSource() == MetricSource.HTTP ? "HTTP" : "WS")
+                .distinct()
+                .sorted()
+                .toList();
+        
+        Long avgLatencyForRow = null;
+        List<Long> validLatencies = samples.stream()
+                .filter(s -> s.getLatencyMs() >= 0)
+                .map(MetricSample::getLatencyMs)
+                .toList();
+        if (!validLatencies.isEmpty()) {
+            avgLatencyForRow = Math.round(validLatencies.stream()
+                    .mapToLong(Long::longValue)
+                    .average()
+                    .orElse(-1));
+        }
+
+        boolean allSuccess = samples.stream().allMatch(MetricSample::isSuccess);
+        String blockHash = samples.stream()
+                .map(MetricSample::getBlockHash)
+                .filter(h -> h != null && !h.isBlank())
+                .findFirst()
+                .orElse(null);
+        // Determine if this block is safe/finalized either from node-local queries
+        // or from configured consensus reference observations.
+        boolean hasFinalized = samples.stream().anyMatch(s -> s.getFinalizedDelayMs() != null)
+                || (blockHash != null && consensusFinalizedHashes.contains(blockHash));
+        boolean hasSafe = samples.stream().anyMatch(s -> s.getSafeDelayMs() != null)
+                || (blockHash != null && consensusSafeHashes.contains(blockHash));
+        String parentHash = samples.stream()
+                .map(MetricSample::getParentHash)
+                .filter(h -> h != null && !h.isBlank())
+                .findFirst()
+                .orElse(null);
+            Instant blockTimestamp = samples.stream()
+                .map(MetricSample::getBlockTimestamp)
+                .filter(Objects::nonNull)
+                .findFirst()
+                .orElse(null);
+            String blockTime = blockTimestamp == null ? null : TIMESTAMP_FORMATTER.format(blockTimestamp);
+        Integer transactionCount = samples.stream()
+                .map(MetricSample::getTransactionCount)
+                .filter(tc -> tc != null)
+                .findFirst()
+                .orElse(null);
+        Long gasPriceWei = samples.stream()
+                .map(MetricSample::getGasPriceWei)
+                .filter(gp -> gp != null)
+                .findFirst()
+                .orElse(null);
+        
+        Double attConf = null;
+        Integer attRound = null;
+        if (blockHash != null && !blockHash.isBlank()) {
+            AttestationConfidence ac = attestationConfidences.get(blockHash);
+            if (ac != null) {
+                attConf = ac.getConfidencePercent();
+                attRound = ac.getAttestationRound();
+            }
+        }
+
+        // First-seen delta: how many ms behind the first node to see this block
+        Long firstSeenDelta = null;
+        if (multiNodeConfigured && blockHash != null && !blockHash.isBlank()) {
+            Instant globalFirst = globalFirstSeen.get(blockHash);
+            Instant thisFirst = thisNodeFirstSeen.get(blockHash);
+            if (globalFirst != null && thisFirst != null) {
+                firstSeenDelta = Math.max(0, Duration.between(globalFirst, thisFirst).toMillis());
+            }
+        }
+
+        return new SampleRow(
+                TIMESTAMP_FORMATTER.format(first.getTimestamp()),
+                sources,
+                allSuccess ? "NEW" : "ERROR",
+                avgLatencyForRow,
+                first.getBlockNumber(),
+                blockHash,
+                parentHash,
+                blockTime,
+                hasSafe,
+                hasFinalized,
+                            false,
+                            false,
+                transactionCount,
+                gasPriceWei,
+                attConf,
+                attRound != null ? attRound.longValue() : null,
+                firstSeenDelta);
+    }
 
     private DelayStats computeDelayStats(List<MetricSample> rawSamples,
                                          List<SampleAggregate> aggregates,

@@ -491,7 +491,6 @@ public class HttpMonitorService {
     private void handleLatestBlock(NodeDefinition node, RpcMonitorService.NodeState state, RpcMonitorService.BlockInfo latestBlock) {
         Instant now = Instant.now();
         state.lastWsEventReceivedAt = now;
-        state.wsNewHeadCount++;
 
         Long headDelayMs = null;
         Instant referenceHeadObservedAt = monitor.getReferenceObservedAt(Confidence.NEW,
@@ -526,6 +525,7 @@ public class HttpMonitorService {
                     node.key(),
                     sample,
                     node.anomalyDelayMs(),
+                    properties.getAnomalyDetection().getStaleBlockThresholdMs(),
                     null,
                     null,
                     sample.getBlockNumber());
@@ -568,6 +568,7 @@ public class HttpMonitorService {
                     node.key(),
                     sample,
                     node.anomalyDelayMs(),
+                    properties.getAnomalyDetection().getStaleBlockThresholdMs(),
                     previousNumber,
                     previousHash,
                     sample.getBlockNumber());

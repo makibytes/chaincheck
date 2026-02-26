@@ -26,6 +26,7 @@ public class AnomalyAggregate {
     private final Instant bucketStart;
     private long totalCount;
     private long delayCount;
+    private long staleCount;
     private long reorgCount;
     private long blockGapCount;
     private long errorCount;
@@ -42,26 +43,28 @@ public class AnomalyAggregate {
         totalCount++;
         switch (event.getType()) {
             case DELAY -> delayCount++;
+            case STALE -> staleCount++;
             case REORG -> reorgCount++;
             case BLOCK_GAP -> blockGapCount++;
             case ERROR -> errorCount++;
             case RATE_LIMIT -> rateLimitCount++;
             case TIMEOUT -> timeoutCount++;
             case WRONG_HEAD -> wrongHeadCount++;
-                case CONFLICT -> conflictCount++;
+            case CONFLICT -> conflictCount++;
         }
     }
 
     public void addAggregate(AnomalyAggregate aggregate) {
         totalCount += aggregate.totalCount;
         delayCount += aggregate.delayCount;
+        staleCount += aggregate.staleCount;
         reorgCount += aggregate.reorgCount;
         blockGapCount += aggregate.blockGapCount;
         errorCount += aggregate.errorCount;
         rateLimitCount += aggregate.rateLimitCount;
         timeoutCount += aggregate.timeoutCount;
         wrongHeadCount += aggregate.wrongHeadCount;
-            conflictCount += aggregate.conflictCount;
+        conflictCount += aggregate.conflictCount;
     }
 
     public Instant getBucketStart() {
@@ -74,6 +77,10 @@ public class AnomalyAggregate {
 
     public long getDelayCount() {
         return delayCount;
+    }
+
+    public long getStaleCount() {
+        return staleCount;
     }
 
     public long getReorgCount() {
@@ -100,7 +107,7 @@ public class AnomalyAggregate {
         return wrongHeadCount;
     }
 
-        public long getConflictCount() {
-            return conflictCount;
-        }
+    public long getConflictCount() {
+        return conflictCount;
+    }
 }

@@ -6,7 +6,7 @@
                 <tr>
                     <th>Health <span class="hint" data-hint="Composite score 0–100 weighted from: uptime (40%), latency P95 (25%), head-delay P95 (20%), error rate (15%). Score is 0 when the node is currently down.">?</span></th>
                     <th>Node</th>
-                    <th>Trend <span class="hint" data-hint="Average HTTP latency per minute over the last hour. Color gradient indicates performance: blue = fast (&lt; 200ms) · purple = moderate (200–500ms) · red = slow (&gt; 500ms).">?</span></th>
+                    <th>Trend <span class="hint" data-hint="1-hour sparkline of the configured metric (latency or head delay). Color indicates performance relative to the metric's thresholds.">?</span></th>
                     <th>Latest Block <span class="hint" data-hint="Most recent block number this node has reported. Green = highest · yellow = 1 behind · red = 2+ behind.">?</span></th>
                     <th>Age <span class="hint" data-hint="Time elapsed since this node last saw a new block. Green &lt; 15 s · amber &lt; 60 s · red ≥ 60 s.">?</span></th>
                     <th>Uptime <span class="hint" data-hint="Percentage of HTTP RPC calls that succeeded over the selected time range.">?</span></th>
@@ -19,7 +19,7 @@
             </thead>
             <tbody>
                 <tr th:each="node : ${fleetView.nodes}" class="fleet-row"
-                    th:onclick="|window.location.href='@{/dashboard(node=${node.nodeKey},range=${fleetView.range.key})}'|">
+                    th:onclick="|window.location.href='@{/node(node=${node.nodeKey},range=${fleetView.range.key})}'|">
                     <td>
                         <span class="health-badge"
                             th:classappend="${node.healthScore >= 80} ? ' health-excellent' : (${node.healthScore >= 50} ? ' health-good' : (${node.healthScore >= 20} ? ' health-degraded' : ' health-down'))"
@@ -30,24 +30,24 @@
                         <span th:if="${node.referenceNode}" class="ref-badge">REF</span>
                     </td>
                     <td class="fleet-sparkline-cell">
-                        <svg th:if="${!#strings.isEmpty(node.latencySparklineColoredPaths)}"
+                        <svg th:if="${!#strings.isEmpty(node.sparklineColoredPaths)}"
                              viewBox="0 0 60 28"
                              class="fleet-sparkline"
                              aria-hidden="true"
-                             th:utext="${node.latencySparklineColoredPaths}">
+                             th:utext="${node.sparklineColoredPaths}">
                         </svg>
-                        <svg th:if="${#strings.isEmpty(node.latencySparklineColoredPaths) && !#strings.isEmpty(node.latencySparklinePoints)}"
+                        <svg th:if="${#strings.isEmpty(node.sparklineColoredPaths) && !#strings.isEmpty(node.sparklinePoints)}"
                              viewBox="0 0 60 28"
                              class="fleet-sparkline"
                              aria-hidden="true">
-                            <polyline th:attr="points=${node.latencySparklinePoints}"
+                            <polyline th:attr="points=${node.sparklinePoints}"
                                       fill="none"
                                       stroke="var(--color-primary)"
                                       stroke-width="1.5"
                                       stroke-linejoin="round"
                                       stroke-linecap="round"/>
                         </svg>
-                        <span th:if="${#strings.isEmpty(node.latencySparklineColoredPaths) && #strings.isEmpty(node.latencySparklinePoints)}" class="muted">—</span>
+                        <span th:if="${#strings.isEmpty(node.sparklineColoredPaths) && #strings.isEmpty(node.sparklinePoints)}" class="muted">—</span>
                     </td>
                     <td>
                         <span th:if="${node.latestBlockNumber != null}"
@@ -81,7 +81,7 @@
                     </td>
                     <td>
                         <a class="button ghost fleet-details-link"
-                            th:href="@{/dashboard(node=${node.nodeKey},range=${fleetView.range.key})}"
+                            th:href="@{/node(node=${node.nodeKey},range=${fleetView.range.key})}"
                             onclick="event.stopPropagation()">Details →</a>
                     </td>
                 </tr>

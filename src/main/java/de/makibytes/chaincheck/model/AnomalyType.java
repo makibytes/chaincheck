@@ -22,6 +22,7 @@ public enum AnomalyType {
     RATE_LIMIT,
     TIMEOUT,
     DELAY,
+    STALE,
     BLOCK_GAP,
     CONFLICT,
     REORG,

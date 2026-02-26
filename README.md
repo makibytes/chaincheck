@@ -20,7 +20,7 @@
 - **Attestation Tracking** (Ethereum only): Beacon committee attestation rounds per block (1–3 rounds = ~33%/67%/90% canonical confidence)
 - **Metric Aggregation**: Raw samples (2 hours) roll up into minutely aggregates (3 days) and hourly aggregates (30 days)
 - **Persistent Snapshots**: Optional on-disk JSON snapshots survive restarts
-- **Gradient Latency Chart**: Chart line transitions from blue (fast) → purple (moderate) → red (slow) matching your latency thresholds at all times
+- **Configurable Gradient Charts**: The chart line and fleet sparklines use a configurable gradient — latency mode (blue → purple → red at 200 ms/500 ms) or head-delay mode (green → orange → red at 3 s/10 s), or solid color (`NONE`)
 
 ---
 
@@ -67,18 +67,18 @@ The Fleet Overview is the entry point. It presents every configured RPC node as 
 |--------|-------------|
 | **Health** | Composite score (0–100) with a color-coded badge (green ≥ 80, amber ≥ 50, red < 50) |
 | **Node** | Name; reference node is marked |
-| **Latest Block** | Most recently observed block number |
-| **Age** | Seconds since that block was first seen (green < 15 s, amber < 60 s, red otherwise) |
+| **Trend** | 1-hour sparkline of the configured metric (latency or head delay) with gradient coloring |
+| **Latest Block** | Most recently observed block number; color indicates lead/lag vs fastest node |
+| **Age** | Time since the node last saw a new block (green < 15 s, amber < 60 s, red otherwise) |
 | **Uptime** | Success rate across the selected time range |
 | **Latency P95** | 95th-percentile HTTP round-trip time |
-| **Head Delay P95** | 95th-percentile time between block production and the node seeing it |
-| **Block Lag** | How many blocks behind the fastest node this node is |
+| **Head Delay P95** | 95th-percentile time between block production and when the node first reported it |
 | **Anomalies** | Count of anomalies in the selected time range |
 | **WS** | WebSocket status; reconnection count in last 24 h |
 
 Click **Details →** on any row to drill into the per-node view.
 
-### Per-Node Details (`/dashboard?node=KEY`)
+### Per-Node Details (`/node?node=KEY`)
 
 The Details page shows the full picture for a single node:
 
@@ -158,12 +158,13 @@ rpc:
     flush-interval-seconds: 30
 
   anomaly-detection:
-    high-latency-ms: 2000       # Flag HTTP responses above this threshold
-    long-delay-block-count: 15  # Flag head delay above N blocks
+    high-latency-ms: 2000          # Flag HTTP responses above this threshold
+    long-delay-block-count: 15     # Flag head delay above N blocks
+    stale-block-threshold-ms: 30000  # Flag latest blocks older than this
 
   # Beacon / consensus node (required for full Ethereum finality tracking)
   consensus:
-    name: my-beacon-node
+    display-name: my-beacon-node
     http: http://beacon-node:5052
     safe-poll-interval-ms: 30000       # Poll finality_checkpoints every 30 s
     finalized-poll-interval-ms: 30000
@@ -281,6 +282,8 @@ The profile YAML files (`application-ethereum.yml`, `application-polygon.yml`) a
 | `scale-change-ms` | `500` | Low-band boundary on the chart Y-axis (ms) |
 | `scale-max-ms` | `30000` | Maximum chart Y-axis cap (ms) |
 | `block-verification-delay-ms` | `5000` | Ethereum mode: delay before post-newHead HTTP verification call |
+| `chart-gradient-mode` | `NONE` | Gradient coloring on the node-detail chart line: `LATENCY`, `NEWHEAD`, or `NONE` |
+| `sparkline-data-source` | `LATENCY` | Metric used for fleet sparklines: `LATENCY` or `NEWHEAD` |
 
 #### Default node settings (`rpc.defaults.*`)
 
@@ -297,6 +300,7 @@ The profile YAML files (`application-ethereum.yml`, `application-polygon.yml`) a
 |-----|---------|-------------|
 | `high-latency-ms` | `2000` | HTTP latency above this triggers a `DELAY` anomaly |
 | `long-delay-block-count` | `15` | Head delay above N blocks triggers a `DELAY` anomaly |
+| `stale-block-threshold-ms` | `30000` | HTTP latest block older than this triggers a `DELAY` anomaly |
 
 #### Consensus node (`rpc.consensus.*` — Ethereum mode only)
 

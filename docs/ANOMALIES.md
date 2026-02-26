@@ -28,14 +28,14 @@ This document describes how ChainCheck detects and closes each anomaly type. The
 ## TIMEOUT
 
 **When it triggers**
-- Failed RPC sample whose error message contains “timeout” or “timed out” (case-insensitive).
+- Failed RPC sample whose error message contains “timeout”, “timed out”, or “HTTP 408” (case-insensitive).
 
 **Signal source**
 - HTTP timeout or related error.
 
 ## DELAY
 
-Two independent delay signals use the same anomaly type:
+Three independent delay signals use the same anomaly type:
 
 **1) High latency**
 - A successful RPC sample whose latency is greater than or equal to the configured `rpc.anomaly-detection.high-latency-ms`.
@@ -45,6 +45,10 @@ Two independent delay signals use the same anomaly type:
 - The threshold is `rpc.anomaly-detection.long-delay-block-count` (default 15).
 - In default mode, reference comparisons start after auto reference selection has enough data.
 - In configured mode (`rpc.consensus.http`), the consensus node is used directly as reference source.
+
+**3) Stale block**
+- A successful HTTP `latest` sample whose block timestamp is older than `rpc.anomaly-detection.stale-block-threshold-ms` (default 30 000 ms).
+- Only HTTP `latest` samples are checked; safe and finalized checkpoint samples are excluded because their blocks are intentionally old.
 
 ## BLOCK_GAP
 
@@ -87,16 +91,11 @@ Reorg detection is conservative and can be triggered in multiple ways:
 
 ## CONFLICT
 
-**When it triggers**
-- Multiple distinct hashes are observed for the same block height in the sample window.
-- The conflict is surfaced as an anomaly only when at least one of those hashes was observed as finalized.
+> **Note:** CONFLICT anomalies are no longer actively generated. The `conflict` flag is always `false` in the current dashboard. Block quality is now expressed exclusively through the **invalid** (orphan) flag, which is set when a more-confident canonical block is found at the same parent slot (see [orphan detection in CLAUDE.md]).
 
-**Signal source**
-- Derived from the dashboard’s merged sample view (not emitted directly by the RPC monitor).
-
-**Resolution behavior**
-- If a later block links to one of the conflicting hashes as its parent, that hash becomes the resolved winner.
-- Conflicting hashes that are not selected by parent linkage are tagged as invalid in the samples list.
+**Historical behavior (pre-2.0)**
+- Multiple distinct hashes observed for the same block height with at least one finalized.
+- Conflicting hashes not selected by parent linkage were tagged as invalid in the samples list.
 
 ## Notes on Ongoing vs Closed
 

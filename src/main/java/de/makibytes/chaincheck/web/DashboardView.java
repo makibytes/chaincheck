@@ -20,6 +20,7 @@ package de.makibytes.chaincheck.web;
 import java.time.Instant;
 import java.util.List;
 
+import de.makibytes.chaincheck.config.ChainCheckProperties.ChartGradientMode;
 import de.makibytes.chaincheck.model.AnomalyEvent;
 import de.makibytes.chaincheck.model.DashboardSummary;
 import de.makibytes.chaincheck.model.TimeRange;
@@ -79,6 +80,7 @@ public class DashboardView {
     private final boolean isReferenceNode;
     private final Long lastBlockAgeMs;
     private final boolean multiNodeConfigured;
+    private final ChartGradientMode chartGradientMode;
 
     private DashboardView(TimeRange range,
                           DashboardSummary summary,
@@ -116,7 +118,8 @@ public class DashboardView {
                           ReferenceComparison referenceComparison,
                           boolean isReferenceNode,
                           Long lastBlockAgeMs,
-                          boolean multiNodeConfigured) {
+                          boolean multiNodeConfigured,
+                          ChartGradientMode chartGradientMode) {
         this.range = range;
         this.summary = summary;
         this.anomalies = anomalies;
@@ -170,6 +173,7 @@ public class DashboardView {
         this.isReferenceNode = isReferenceNode;
         this.lastBlockAgeMs = lastBlockAgeMs;
         this.multiNodeConfigured = multiNodeConfigured;
+        this.chartGradientMode = chartGradientMode;
     }
 
     static DashboardView create(TimeRange range,
@@ -206,9 +210,10 @@ public class DashboardView {
                                 boolean hasOlderAggregates,
                                 Instant generatedAt,
                                 ReferenceComparison referenceComparison,
-                                boolean isReferenceNode,
-                                Long lastBlockAgeMs,
-                                boolean multiNodeConfigured) {
+                                 boolean isReferenceNode,
+                                 Long lastBlockAgeMs,
+                                 boolean multiNodeConfigured,
+                                 ChartGradientMode chartGradientMode) {
         return new DashboardView(range, summary, anomalies, anomalyRows, sampleRows,
                 chartData, delayChartData,
                 chartReferenceHeadDelays, chartReferenceSafeDelays, chartReferenceFinalizedDelays,
@@ -220,7 +225,7 @@ public class DashboardView {
                 anomalyTotalPages, anomalyPageSize, totalAnomalies,
                 scaleChangeMs, scaleMaxMs, hasOlderAggregates,
                 generatedAt, referenceComparison, isReferenceNode,
-                lastBlockAgeMs, multiNodeConfigured);
+                lastBlockAgeMs, multiNodeConfigured, chartGradientMode);
     }
 
     public TimeRange getRange() {
@@ -433,5 +438,9 @@ public class DashboardView {
 
     public boolean isMultiNodeConfigured() {
         return multiNodeConfigured;
+    }
+
+    public ChartGradientMode getChartGradientMode() {
+        return chartGradientMode;
     }
 }

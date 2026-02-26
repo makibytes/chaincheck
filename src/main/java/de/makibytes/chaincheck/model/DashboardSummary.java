@@ -51,6 +51,7 @@ public class DashboardSummary {
     private final long timeoutCount;
     private final long wrongHeadCount;
     private final long conflictCount;
+    private final long errorAnomalyCount;
     private final double canonicalRatePercent;
     private final long invalidBlockCount;
     private final double wrongHeadRatePercent;
@@ -92,6 +93,7 @@ public class DashboardSummary {
                             long timeoutCount,
                             long wrongHeadCount,
                             long conflictCount,
+                            long errorAnomalyCount,
                             double canonicalRatePercent,
                             long invalidBlockCount,
                             double wrongHeadRatePercent,
@@ -132,6 +134,7 @@ public class DashboardSummary {
         this.timeoutCount = timeoutCount;
         this.wrongHeadCount = wrongHeadCount;
         this.conflictCount = conflictCount;
+        this.errorAnomalyCount = errorAnomalyCount;
         this.canonicalRatePercent = canonicalRatePercent;
         this.invalidBlockCount = invalidBlockCount;
         this.wrongHeadRatePercent = wrongHeadRatePercent;
@@ -268,6 +271,10 @@ public class DashboardSummary {
 
     public long getConflictCount() {
         return conflictCount;
+    }
+
+    public long getErrorAnomalyCount() {
+        return errorAnomalyCount;
     }
 
     public double getCanonicalRatePercent() {

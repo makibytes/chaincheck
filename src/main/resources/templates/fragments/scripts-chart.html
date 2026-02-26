@@ -10,7 +10,7 @@
             rgb: theme.primaryRgb,
             backgroundAlpha: 0.2,
             order: 2,
-            useLatencyGradient: true
+            gradientMode: chartGradientMode === 'LATENCY' ? 'LATENCY' : null
         })];
 
         if (hasAggregatedLatencies) {
@@ -125,9 +125,15 @@
                 };
 
                 ctx.save();
-                drawBars(errorRateData, httpPattern, httpErrorOngoing);
+                const httpErrorIdx = chart.data.datasets.findIndex(d => d.label === 'HTTP Errors');
+                if (httpErrorIdx < 0 || !chart.getDatasetMeta(httpErrorIdx).hidden) {
+                    drawBars(errorRateData, httpPattern, httpErrorOngoing);
+                }
                 if (wsConfigured) {
-                    drawBars(wsErrorRateData, wsPattern, wsErrorOngoing);
+                    const wsErrorIdx = chart.data.datasets.findIndex(d => d.label === 'WS Errors');
+                    if (wsErrorIdx < 0 || !chart.getDatasetMeta(wsErrorIdx).hidden) {
+                        drawBars(wsErrorRateData, wsPattern, wsErrorOngoing);
+                    }
                 }
                 ctx.restore();
             }
@@ -200,7 +206,8 @@
                 originalMaxData,
                 referenceOriginalData,
                 pointRadius = 0,
-                pointHoverRadius = 3
+                pointHoverRadius = 3,
+                gradientMode = null
             } = config;
 
             datasets.push(createLineDataset({
@@ -210,7 +217,8 @@
                 color: color,
                 rgb: rgb,
                 backgroundAlpha: 0.2,
-                order: 2
+                order: 2,
+                gradientMode: gradientMode
             }));
 
             const lineDataset = datasets[datasets.length - 1];
@@ -258,7 +266,8 @@
                     originalData: headDelayData,
                     originalMinData: headDelayMinData,
                     originalMaxData: headDelayMaxData,
-                    referenceOriginalData: referenceHeadDelayData
+                    referenceOriginalData: referenceHeadDelayData,
+                    gradientMode: chartGradientMode === 'NEWHEAD' ? 'NEWHEAD' : null
                 });
             }
 
@@ -316,23 +325,6 @@
                 pointRadius: 0,
                 borderWidth: 0,
                 showLine: false
-            });
-        }
-
-        const hasAnyErrorRate = errorRateData.some(v => v != null && v > 0);
-        if (hasAnyErrorRate) {
-            datasets.push({
-                label: 'Error rate %',
-                data: errorRateData,
-                borderColor: `rgba(${theme.dangerRgb}, 0.6)`,
-                backgroundColor: `rgba(${theme.dangerRgb}, 0.0)`,
-                borderWidth: 1,
-                borderDash: [4, 4],
-                pointRadius: 0,
-                spanGaps: true,
-                tension: 0.2,
-                yAxisID: 'yError',
-                order: 0
             });
         }
 
@@ -428,17 +420,6 @@
                         },
                         grid: { color: theme.grid }
                     },
-                    yError: {
-                        display: hasAnyErrorRate,
-                        position: 'right',
-                        min: 0,
-                        max: 100,
-                        ticks: {
-                            color: theme.textSubtle,
-                            callback: (value) => value + '%'
-                        },
-                        grid: { drawOnChartArea: false }
-                    }
                 }
             }
         });

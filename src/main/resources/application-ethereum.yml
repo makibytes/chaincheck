@@ -1,14 +1,14 @@
 rpc:
   mode: ethereum
   title: "Ethereum Mainnet"
-  title-color: "#ff0000"
+  title-color: "#627eea"
   get-safe-blocks: false
   get-finalized-blocks: false
   scale-max-ms: 60000
   consensus:
     # When configured, ChainCheck uses this consensus endpoint as reference source
     # and disables internal auto-reference voting/selection.
-    name: nibbler-nimbus
+    display-name: nibbler-nimbus
     http: http://nibbler:5052
     safe-poll-interval-ms: 30000
     finalized-poll-interval-ms: 30000

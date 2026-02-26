@@ -17,6 +17,7 @@
  */
 package de.makibytes.chaincheck.monitor;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -94,6 +95,7 @@ public class AnomalyDetector {
     public List<AnomalyEvent> detect(String nodeKey,
                                      MetricSample sample,
                                      long anomalyDelayMs,
+                                     long staleBlockThresholdMs,
                                      Long previousBlockNumber,
                                      String previousBlockHash,
                                      Long currentNodeHttpBlockNumber) {
@@ -106,6 +108,7 @@ public class AnomalyDetector {
         }
 
         anomalies.addAll(detectLatencyAnomalies(nodeKey, sample, anomalyDelayMs, now));
+        anomalies.addAll(detectStaleBlockAnomalies(nodeKey, sample, staleBlockThresholdMs, now));
         anomalies.addAll(detectBlockAnomalies(nodeKey, sample, previousBlockNumber, previousBlockHash, currentNodeHttpBlockNumber, now));
 
         return anomalies;
@@ -132,9 +135,33 @@ public class AnomalyDetector {
                 details);
     }
 
+    private List<AnomalyEvent> detectStaleBlockAnomalies(String nodeKey, MetricSample sample, long staleBlockThresholdMs, Instant now) {
+        List<AnomalyEvent> anomalies = new ArrayList<>();
+        // Only HTTP latest-block samples: skip WS, and skip safe/finalized checkpoint samples
+        // (those are intentionally old and tracked via safeDelayMs / finalizedDelayMs).
+        if (sample.getSource() != MetricSource.HTTP) return anomalies;
+        if (sample.getBlockTimestamp() == null) return anomalies;
+        if (sample.getSafeDelayMs() != null || sample.getFinalizedDelayMs() != null) return anomalies;
+        long ageMs = Duration.between(sample.getBlockTimestamp(), now).toMillis();
+        if (ageMs > staleBlockThresholdMs) {
+            anomalies.add(new AnomalyEvent(
+                    idSequence.getAndIncrement(),
+                    nodeKey,
+                    now,
+                    MetricSource.HTTP,
+                    AnomalyType.STALE,
+                    "Stale block",
+                    sample.getBlockNumber(),
+                    sample.getBlockHash(),
+                    sample.getParentHash(),
+                    "Block age " + ageMs + "ms exceeds threshold " + staleBlockThresholdMs + "ms"));
+        }
+        return anomalies;
+    }
+
     private List<AnomalyEvent> detectLatencyAnomalies(String nodeKey, MetricSample sample, long anomalyDelayMs, Instant now) {
         List<AnomalyEvent> anomalies = new ArrayList<>();
-        if (sample.getLatencyMs() >= anomalyDelayMs && sample.getLatencyMs() >= 0) {
+        if (sample.getLatencyMs() >= 0 && sample.getLatencyMs() >= anomalyDelayMs) {
             anomalies.add(new AnomalyEvent(
                     idSequence.getAndIncrement(),
                     nodeKey,
@@ -230,7 +257,7 @@ public class AnomalyDetector {
         if (lower.contains("rate limit") || lower.contains("rate-limit") || lower.contains("http 429")) {
             return AnomalyType.RATE_LIMIT;
         }
-        if (lower.contains("timeout") || lower.contains("timed out")) {
+        if (lower.contains("timeout") || lower.contains("timed out") || lower.contains("http 408")) {
             return AnomalyType.TIMEOUT;
         }
         return AnomalyType.ERROR;

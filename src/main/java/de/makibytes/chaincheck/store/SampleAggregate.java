@@ -61,7 +61,7 @@ public class SampleAggregate {
         this.bucketStart = bucketStart;
     }
 
-    public void addSample(MetricSample sample) {
+    public void addSample(MetricSample sample, long staleBlockThresholdMs) {
         totalCount++;
         if (sample.isSuccess()) {
             successCount++;
@@ -84,7 +84,8 @@ public class SampleAggregate {
                 wsErrorCount++;
             }
         }
-        if (sample.getSource() == MetricSource.HTTP && sample.getBlockTimestamp() != null) {
+        if (sample.getSource() == MetricSource.HTTP && sample.getBlockTimestamp() != null
+                && sample.getSafeDelayMs() == null && sample.getFinalizedDelayMs() == null) {
             long delay = Duration.between(sample.getBlockTimestamp(), sample.getTimestamp()).toMillis();
             if (delay >= 0) {
                 propagationDelaySumMs += delay;
@@ -92,7 +93,7 @@ public class SampleAggregate {
                 if (delay > maxPropagationDelayMs) {
                     maxPropagationDelayMs = delay;
                 }
-                if (delay > 30000) {
+                if (delay > staleBlockThresholdMs) {
                     staleBlockCount++;
                 }
             }

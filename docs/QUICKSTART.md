@@ -148,7 +148,7 @@ After=network.target
 Type=simple
 User=chaincheck
 WorkingDirectory=/opt/chaincheck
-ExecStart=/usr/bin/java -jar /opt/chaincheck/chaincheck-1.0.0.jar
+ExecStart=/usr/bin/java -jar /opt/chaincheck/chaincheck-2.0.0.jar
 Restart=on-failure
 RestartSec=10
 
@@ -178,13 +178,13 @@ rpc:
       ws: wss://rpc1.example.com
       poll-interval-ms: 1000
       anomaly-detection:
-        high-latency: 2000
-      
+        high-latency-ms: 2000
+
     - name: Node 2
       http: https://rpc2.example.com
       poll-interval-ms: 1500
       anomaly-detection:
-        high-latency: 3000
+        high-latency-ms: 3000
 ```
 
 Use the dropdown in the dashboard to switch between nodes.
@@ -235,7 +235,7 @@ rpc:
 - Explore the dashboard features
 - Set up anomaly thresholds for your use case
 - Configure multiple nodes for comparison
-- Review the RELEASE_NOTES.md for detailed feature documentation
+- See the project README for full configuration reference and feature documentation
 
 ## Support
 

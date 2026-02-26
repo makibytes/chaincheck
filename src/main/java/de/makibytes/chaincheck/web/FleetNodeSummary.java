@@ -35,8 +35,8 @@ public record FleetNodeSummary(
     long anomalyCount,
     long wsDisconnectCount,
     boolean referenceNode,
-    String latencySparklinePoints,
-    String latencySparklineColoredPaths
+    String sparklinePoints,
+    String sparklineColoredPaths
 ) {
     public static String labelForScore(int score) {
         if (score >= 80) return "Excellent";
