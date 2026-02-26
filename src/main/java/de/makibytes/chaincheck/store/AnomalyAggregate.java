@@ -107,7 +107,7 @@ public class AnomalyAggregate {
         return wrongHeadCount;
     }
 
-        public long getConflictCount() {
-            return conflictCount;
-        }
+    public long getConflictCount() {
+        return conflictCount;
+    }
 }

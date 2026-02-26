@@ -251,7 +251,6 @@ class RpcMonitorServiceTest {
         referenceState.lastWsBlockNumber = 100L;
         referenceState.lastWsBlockHash = "0xref";
         referenceState.lastWsEventReceivedAt = Instant.now();
-        referenceState.wsNewHeadCount = 20;
         referenceState.webSocketRef.set(dummyWebSocket());
         states.put("mock-node-two", referenceState);
 
@@ -259,7 +258,6 @@ class RpcMonitorServiceTest {
         targetState.lastWsBlockNumber = 80L;
         targetState.lastWsBlockHash = "0xtarget";
         targetState.lastWsEventReceivedAt = Instant.now();
-        targetState.wsNewHeadCount = 20;
         targetState.webSocketRef.set(dummyWebSocket());
         states.put("mock-node", targetState);
 
@@ -295,7 +293,6 @@ class RpcMonitorServiceTest {
         referenceState.lastWsBlockNumber = 210L;
         referenceState.lastWsBlockHash = "0xhead";
         referenceState.lastWsEventReceivedAt = Instant.now();
-        referenceState.wsNewHeadCount = 20;
         referenceState.webSocketRef.set(dummyWebSocket());
         referenceState.lastSafeBlockNumber = 200L;
         referenceState.lastSafeBlockHash = "0xbbb";
@@ -305,7 +302,6 @@ class RpcMonitorServiceTest {
         targetState.lastWsBlockNumber = 210L;
         targetState.lastWsBlockHash = "0xhead-target";
         targetState.lastWsEventReceivedAt = Instant.now();
-        targetState.wsNewHeadCount = 20;
         targetState.webSocketRef.set(dummyWebSocket());
         states.put("mock-node", targetState);
 
@@ -328,7 +324,7 @@ class RpcMonitorServiceTest {
     }
 
     @Test
-    @DisplayName("wrong head anomaly when WS newHead later becomes invalid")
+    @DisplayName("wrong head anomaly when WS newHead block hash is not on the canonical (safe) chain")
     void wrongHeadWhenWsNewHeadLaterInvalidated() {
         ChainCheckProperties properties = new ChainCheckProperties();
         NodeRegistry registry = registryWithNodes("node-a", "node-b", "node-c");
@@ -338,30 +334,8 @@ class RpcMonitorServiceTest {
 
         Map<String, RpcMonitorService.NodeState> states = nodeStates(svc);
 
-        RpcMonitorService.NodeState stateA = new RpcMonitorService.NodeState();
-        stateA.lastWsBlockNumber = 100L;
-        stateA.lastWsBlockHash = "0xaaa";
-        stateA.lastWsEventReceivedAt = Instant.now();
-        stateA.webSocketRef.set(dummyWebSocket());
-        states.put("node-a", stateA);
-
-        RpcMonitorService.NodeState stateB = new RpcMonitorService.NodeState();
-        stateB.lastWsBlockNumber = 100L;
-        stateB.lastWsBlockHash = "0xaaa";
-        stateB.lastWsEventReceivedAt = Instant.now();
-        stateB.webSocketRef.set(dummyWebSocket());
-        states.put("node-b", stateB);
-
-        RpcMonitorService.NodeState stateC = new RpcMonitorService.NodeState();
-        stateC.lastWsBlockNumber = 100L;
-        stateC.lastWsBlockHash = "0xaaa";
-        stateC.lastWsEventReceivedAt = Instant.now();
-        stateC.webSocketRef.set(dummyWebSocket());
-        states.put("node-c", stateC);
-
-        ReflectionTestUtils.invokeMethod(svc, "refreshReferenceFromNodes");
-
-        MetricSample sample = MetricSample.builder(Instant.now().minusSeconds(5), MetricSource.WS)
+        // node-a reported a WS newHead with orphan hash 0xaaa at block 100
+        MetricSample sample = MetricSample.builder(Instant.now().minusSeconds(30), MetricSource.WS)
                 .success(true)
                 .latencyMs(-1)
                 .blockNumber(100L)
@@ -370,21 +344,87 @@ class RpcMonitorServiceTest {
                 .build();
         store.addSample("node-a", sample);
 
+        // node-a is still near block 100; node-b and node-c have advanced and their safe
+        // checkpoint for block 100 is 0xbbb — the canonical hash
+        RpcMonitorService.NodeState stateA = new RpcMonitorService.NodeState();
+        stateA.lastWsBlockNumber = 100L;
         stateA.lastWsBlockHash = "0xaaa";
-        stateB.lastWsBlockHash = "0xbbb";
-        stateC.lastWsBlockHash = "0xbbb";
-        ReflectionTestUtils.setField(svc, "currentReferenceNodeKey", "node-b");
+        stateA.lastWsEventReceivedAt = Instant.now();
+        stateA.webSocketRef.set(dummyWebSocket());
+        states.put("node-a", stateA);
+
+        RpcMonitorService.NodeState stateB = new RpcMonitorService.NodeState();
+        stateB.lastWsBlockNumber = 110L;
+        stateB.lastWsBlockHash = "0xfff";
+        stateB.lastSafeBlockNumber = 100L;
+        stateB.lastSafeBlockHash = "0xbbb";
+        stateB.webSocketRef.set(dummyWebSocket());
+        states.put("node-b", stateB);
+
+        RpcMonitorService.NodeState stateC = new RpcMonitorService.NodeState();
+        stateC.lastWsBlockNumber = 110L;
+        stateC.lastWsBlockHash = "0xfff";
+        stateC.lastSafeBlockNumber = 100L;
+        stateC.lastSafeBlockHash = "0xbbb";
+        stateC.webSocketRef.set(dummyWebSocket());
+        states.put("node-c", stateC);
 
         ReflectionTestUtils.invokeMethod(svc, "refreshReferenceFromNodes");
 
+        // node-a's WS hash 0xaaa ≠ safe canonical 0xbbb → wrong head
         List<AnomalyEvent> anomaliesA = store.getRawAnomaliesSince("node-a", Instant.EPOCH);
         assertTrue(anomaliesA.stream().anyMatch(a -> a.getType() == AnomalyType.WRONG_HEAD
                 && a.getSource() == MetricSource.WS
                 && Long.valueOf(100L).equals(a.getBlockNumber())
                 && "0xaaa".equalsIgnoreCase(a.getBlockHash())));
 
+        // node-b had no WS sample at block 100 → no wrong head
         List<AnomalyEvent> anomaliesB = store.getRawAnomaliesSince("node-b", Instant.EPOCH);
         assertTrue(anomaliesB.stream().noneMatch(a -> a.getType() == AnomalyType.WRONG_HEAD));
+    }
+
+    @Test
+    @DisplayName("no wrong head when node is lagging but its WS hash matches the safe canonical chain")
+    void noWrongHeadWhenNodeLagsWithCorrectHash() {
+        ChainCheckProperties properties = new ChainCheckProperties();
+        NodeRegistry registry = registryWithNodes("node-a", "node-b");
+        InMemoryMetricsStore store = new InMemoryMetricsStore(properties);
+        RpcMonitorService svc = new RpcMonitorService(registry, store, new AnomalyDetector(), properties);
+        ReflectionTestUtils.setField(svc, "warmupComplete", true);
+
+        Map<String, RpcMonitorService.NodeState> states = nodeStates(svc);
+
+        // node-a reported the correct canonical hash via WS — it was just a bit slow
+        MetricSample sample = MetricSample.builder(Instant.now().minusSeconds(30), MetricSource.WS)
+                .success(true)
+                .latencyMs(-1)
+                .blockNumber(100L)
+                .blockHash("0xbbb")
+                .parentHash("0xparent")
+                .build();
+        store.addSample("node-a", sample);
+
+        RpcMonitorService.NodeState stateA = new RpcMonitorService.NodeState();
+        stateA.lastWsBlockNumber = 100L;
+        stateA.lastWsBlockHash = "0xbbb";
+        stateA.lastWsEventReceivedAt = Instant.now();
+        stateA.webSocketRef.set(dummyWebSocket());
+        states.put("node-a", stateA);
+
+        // node-b is ahead and has confirmed 0xbbb as safe at block 100
+        RpcMonitorService.NodeState stateB = new RpcMonitorService.NodeState();
+        stateB.lastWsBlockNumber = 110L;
+        stateB.lastWsBlockHash = "0xfff";
+        stateB.lastSafeBlockNumber = 100L;
+        stateB.lastSafeBlockHash = "0xbbb";
+        stateB.webSocketRef.set(dummyWebSocket());
+        states.put("node-b", stateB);
+
+        ReflectionTestUtils.invokeMethod(svc, "refreshReferenceFromNodes");
+
+        // 0xbbb == canonical 0xbbb → no wrong head
+        List<AnomalyEvent> anomaliesA = store.getRawAnomaliesSince("node-a", Instant.EPOCH);
+        assertTrue(anomaliesA.stream().noneMatch(a -> a.getType() == AnomalyType.WRONG_HEAD));
     }
 
     private NodeRegistry registryWithNodes(String... names) {

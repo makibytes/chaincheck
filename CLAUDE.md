@@ -24,7 +24,7 @@ Integration tests use the `IT` suffix (e.g., `LargeDataStoreIntegrationTestIT`) 
 All source lives under `de.makibytes.chaincheck` with eight packages:
 
 - **config** — `ChainCheckProperties` binds the `rpc.*` YAML namespace. Per-node overrides (timeouts, retries, headers, anomaly thresholds) fall back to `rpc.defaults.*`.
-- **model** — Value types: `MetricSample` (raw metrics per poll/event), `AnomalyEvent` (with `AnomalyType` enum: ERROR, RATE_LIMIT, TIMEOUT, DELAY, BLOCK_GAP, CONFLICT, REORG, WRONG_HEAD), `MetricSource` (HTTP vs WS), `TimeRange`, `AttestationConfidence` (per-block attestation tracking data).
+- **model** — Value types: `MetricSample` (raw metrics per poll/event), `AnomalyEvent` (with `AnomalyType` enum: ERROR, RATE_LIMIT, TIMEOUT, DELAY, STALE, BLOCK_GAP, CONFLICT, REORG, WRONG_HEAD — note: CONFLICT is never emitted; the dashboard always sets `conflict=false`), `MetricSource` (HTTP vs WS), `TimeRange`, `AttestationConfidence` (per-block attestation tracking data).
 - **monitor** — Core monitoring services:
   - `RpcMonitorService` — orchestrator, wires up per-node HTTP/WS monitors, selects reference strategy based on mode
   - `HttpMonitorService` — scheduled polling of `eth_blockNumber`/`eth_getBlockByNumber`; also provides `fetchBlockByHash` used by WS verification
@@ -164,6 +164,12 @@ When WS is active, HTTP polling alternates between safe and finalized block tags
 - `consensusSafeHashes` and `consensusFinalizedHashes` are always empty in `DashboardService`
 - Safe/finalized tagging on sample rows comes only from each node's own HTTP polling results
 - The `DashboardService` orphan detection still applies via parentHash chain from each node's finalized/safe samples
+
+#### WRONG_HEAD detection (Cosmos mode)
+
+`BlockVotingCoordinator.emitWrongHeadForOrphanedWsNewHeads` detects nodes that reported a WS newHead block hash that is not part of the canonical chain. Detection is anchored to SAFE or FINALIZED consensus: once the voting majority establishes a canonical hash at a given confidence level, any stored WS newHead sample for the same block number with a different hash is flagged as `WRONG_HEAD`.
+
+This avoids false positives for nodes that are simply lagging (they will catch up and eventually agree on the canonical hash). Only nodes that were genuinely on a fork — where their reported block hash was never confirmed by the network at safe/finalized confidence — are flagged.
 
 #### Summary — Cosmos mode vs Ethereum mode
 

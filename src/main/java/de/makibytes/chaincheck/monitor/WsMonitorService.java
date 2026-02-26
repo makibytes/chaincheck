@@ -263,7 +263,6 @@ public class WsMonitorService {
 
                     Instant now = Instant.now();
                     state.lastWsEventReceivedAt = now;
-                    state.wsNewHeadCount++;
 
                     if (properties.getMode() == ChainCheckProperties.Mode.ETHEREUM && blockHash != null) {
                         handleEthereumNewHead(node, blockHash, now);

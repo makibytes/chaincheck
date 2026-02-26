@@ -75,7 +75,7 @@ public class RpcMonitorService {
     private final ChainCheckProperties properties;
     private final Map<String, NodeState> nodeStates = new ConcurrentHashMap<>();
     private final AtomicReference<ReferenceState> referenceState = new AtomicReference<>();
-    private String currentReferenceNodeKey;
+    private volatile String currentReferenceNodeKey;
     private final HttpMonitorService httpMonitorService;
     private final WsMonitorService wsMonitorService;
     private final BlockVotingService blockVotingService;
@@ -699,7 +699,6 @@ public class RpcMonitorService {
         long wsFailureBackoffSeconds = 0;
         Instant wsNextFailureSampleAt;
         Instant wsNextConnectAttemptAt;
-        int wsNewHeadCount = 0;
         int pollCounter = 0;
         String lastHttpError;
         String lastWsError;

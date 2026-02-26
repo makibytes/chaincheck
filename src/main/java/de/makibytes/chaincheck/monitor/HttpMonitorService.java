@@ -491,7 +491,6 @@ public class HttpMonitorService {
     private void handleLatestBlock(NodeDefinition node, RpcMonitorService.NodeState state, RpcMonitorService.BlockInfo latestBlock) {
         Instant now = Instant.now();
         state.lastWsEventReceivedAt = now;
-        state.wsNewHeadCount++;
 
         Long headDelayMs = null;
         Instant referenceHeadObservedAt = monitor.getReferenceObservedAt(Confidence.NEW,

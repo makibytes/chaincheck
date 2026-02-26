@@ -47,7 +47,7 @@ public class BlockVotingService {
 
     /**
      * Performs voting to determine reference blocks based on collected votes.
-     * Strict majority wins. The current reference node breaks ties only.
+     * Plurality wins (most votes). The current reference node breaks ties.
      */
     public void performVoting(String currentReferenceNodeKey) {
         blockConfidenceTracker.clear();

@@ -161,7 +161,7 @@ public class AnomalyDetector {
 
     private List<AnomalyEvent> detectLatencyAnomalies(String nodeKey, MetricSample sample, long anomalyDelayMs, Instant now) {
         List<AnomalyEvent> anomalies = new ArrayList<>();
-        if (sample.getLatencyMs() >= anomalyDelayMs && sample.getLatencyMs() >= 0) {
+        if (sample.getLatencyMs() >= 0 && sample.getLatencyMs() >= anomalyDelayMs) {
             anomalies.add(new AnomalyEvent(
                     idSequence.getAndIncrement(),
                     nodeKey,

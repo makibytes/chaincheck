@@ -103,60 +103,61 @@ public class BlockVotingCoordinator {
                                  boolean warmupComplete,
                                  Map<String, RpcMonitorService.NodeState> nodeStates) {
         blockVotingService.performVoting(currentReferenceNodeKey);
-        ReferenceHead currentHead = resolveReferenceHead();
-        emitWrongHeadForInvalidatedWsNewHeads(oldBlocks, now, warmupComplete, currentHead);
+        emitWrongHeadForOrphanedWsNewHeads(now, warmupComplete);
         blockAgreementTracker.penalize(oldBlocks, blockVotingService.getBlockConfidenceTracker(), blockVotingService.getBlockVotes());
         blockAgreementTracker.awardPoints(oldBlocks, blockVotingService.getBlockConfidenceTracker(), blockVotingService.getBlockVotes());
     }
 
-    private void emitWrongHeadForInvalidatedWsNewHeads(Map<Long, Map<Confidence, String>> oldBlocks,
-                                                       Instant now,
-                                                       boolean warmupComplete,
-                                                       ReferenceHead currentHead) {
-        if (!warmupComplete || oldBlocks == null || oldBlocks.isEmpty()) {
+    /**
+     * Emits WRONG_HEAD anomalies for WS newHead samples whose block hash is not part of the
+     * canonical chain. Detection is anchored to SAFE or FINALIZED consensus: once the majority
+     * of nodes agree on a canonical hash for a block at a given confidence level, any WS newHead
+     * sample with a different hash at the same block number is an orphan.
+     *
+     * <p>This avoids false positives for nodes that are merely lagging (they will eventually catch
+     * up and report the same canonical hash), while reliably flagging nodes that were on a fork.
+     */
+    private void emitWrongHeadForOrphanedWsNewHeads(Instant now, boolean warmupComplete) {
+        if (!warmupComplete) {
             return;
         }
 
-        Map<Long, Map<Confidence, String>> newBlocks = blockVotingService.getBlockConfidenceTracker().getBlocks();
+        Map<Long, Map<Confidence, String>> confirmedBlocks = blockVotingService.getBlockConfidenceTracker().getBlocks();
         Instant lookback = now.minus(Duration.ofHours(2));
 
-        for (Map.Entry<Long, Map<Confidence, String>> entry : oldBlocks.entrySet()) {
+        for (Map.Entry<Long, Map<Confidence, String>> entry : confirmedBlocks.entrySet()) {
             Long blockNumber = entry.getKey();
-            if (blockNumber == null) {
-                continue;
+            Map<Confidence, String> confidenceMap = entry.getValue();
+
+            // Only check blocks with SAFE or FINALIZED consensus — these are definitively canonical
+            String canonicalHash = confidenceMap.get(Confidence.FINALIZED);
+            String label = "finalized";
+            if (canonicalHash == null) {
+                canonicalHash = confidenceMap.get(Confidence.SAFE);
+                label = "safe";
             }
-            String oldHash = entry.getValue() == null ? null : entry.getValue().get(Confidence.NEW);
-            if (oldHash == null || oldHash.isBlank()) {
-                continue;
-            }
-            String newHash = newBlocks.getOrDefault(blockNumber, Map.of()).get(Confidence.NEW);
-            if (newHash == null || oldHash.equalsIgnoreCase(newHash)) {
-                continue;
-            }
-            // Only flag wrong heads for blocks that are at least 5 blocks behind current head
-            // This gives all nodes time to catch up and report before we judge them as "wrong"
-            if (currentHead != null && currentHead.headNumber() != null 
-                    && blockNumber > currentHead.headNumber() - 5) {
+            if (canonicalHash == null) {
                 continue;
             }
 
             for (NodeDefinition node : nodeRegistry.getNodes()) {
                 String nodeKey = node.key();
-                if (!hasWsNewHeadSample(nodeKey, blockNumber, oldHash, lookback)) {
+                String wrongHash = findWsNewHeadNonCanonicalHash(nodeKey, blockNumber, canonicalHash, lookback);
+                if (wrongHash == null) {
                     continue;
                 }
-                if (hasExistingWrongHeadForHash(nodeKey, blockNumber, oldHash, lookback)) {
+                if (hasExistingWrongHeadForHash(nodeKey, blockNumber, wrongHash, lookback)) {
                     continue;
                 }
-                String details = "Node reported newHead hash " + oldHash
+                String details = "Node reported newHead hash " + wrongHash
                         + " at height " + blockNumber
-                        + ", later invalidated by reference hash " + newHash;
+                        + ", " + label + " canonical hash is " + canonicalHash;
                 AnomalyEvent anomaly = detector.wrongHead(
                         nodeKey,
                         now,
                         MetricSource.WS,
                         blockNumber,
-                        oldHash,
+                        wrongHash,
                         details);
                 store.addAnomaly(nodeKey, anomaly);
             }
@@ -174,16 +175,23 @@ public class BlockVotingCoordinator {
                 .orElse(null);
     }
 
-    private boolean hasWsNewHeadSample(String nodeKey, Long blockNumber, String blockHash, Instant since) {
-        if (nodeKey == null || blockNumber == null || blockHash == null) {
-            return false;
+    /**
+     * Returns the first WS newHead block hash for the given block number that differs from the
+     * canonical hash, or null if no such sample exists.
+     */
+    private String findWsNewHeadNonCanonicalHash(String nodeKey, Long blockNumber, String canonicalHash, Instant since) {
+        if (nodeKey == null || blockNumber == null || canonicalHash == null) {
+            return null;
         }
         return store.getRawSamplesSince(nodeKey, since).stream()
-                .anyMatch(s -> s.getSource() == MetricSource.WS
+                .filter(s -> s.getSource() == MetricSource.WS
                         && s.isSuccess()
                         && blockNumber.equals(s.getBlockNumber())
                         && s.getBlockHash() != null
-                        && s.getBlockHash().equalsIgnoreCase(blockHash));
+                        && !s.getBlockHash().equalsIgnoreCase(canonicalHash))
+                .map(s -> s.getBlockHash())
+                .findFirst()
+                .orElse(null);
     }
 
     private boolean hasExistingWrongHeadForHash(String nodeKey, Long blockNumber, String blockHash, Instant since) {
