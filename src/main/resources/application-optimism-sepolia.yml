@@ -1,0 +1,42 @@
+rpc:
+  mode: optimism-sepolia
+  mode-type: optimism
+  title: "Optimism Sepolia Testnet"
+  title-color: "#ff0420"
+  get-safe-blocks: false
+  get-finalized-blocks: true
+  scale-change-ms: 500
+  scale-max-ms: 30000
+  anomaly-detection:
+    high-latency-ms: 2000
+    long-delay-block-count: 15
+  # Polling intervals: optimal = 2s (matches OP's ~2s block time), sparse = 30s
+  requests:
+    optimal-poll-interval-ms: 2000
+    sparse-poll-interval-ms: 30000
+  nodes:
+    - name: optimism.io
+      http: https://sepolia.optimism.io
+      ws: wss://sepolia.optimism.io
+    - name: publicnode.com
+      http: https://optimism-sepolia-rpc.publicnode.com
+      ws: wss://optimism-sepolia-rpc.publicnode.com
+      requests: sparse
+    - name: drpc.org
+      http: https://optimism-sepolia.drpc.org
+      ws: wss://optimism-sepolia.drpc.org
+      requests: sparse
+    - name: tenderly.co
+      http: https://optimism-sepolia.gateway.tenderly.co
+      ws: wss://optimism-sepolia.gateway.tenderly.co
+      requests: sparse
+    - name: 1RPC
+      http: https://1rpc.io/op/sepolia
+      requests: sparse
+    - name: BlastAPI
+      http: https://optimism-sepolia.public.blastapi.io
+      ws: wss://optimism-sepolia.public.blastapi.io
+      requests: sparse
+    - name: Ankr
+      http: https://rpc.ankr.com/optimism_sepolia
+      requests: sparse

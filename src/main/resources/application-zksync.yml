@@ -1,0 +1,39 @@
+rpc:
+  mode: zksync
+  mode-type: zk
+  title: "zkSync Era Mainnet"
+  title-color: "#1e69ff"
+  get-safe-blocks: false
+  get-finalized-blocks: true
+  scale-change-ms: 500
+  scale-max-ms: 30000
+  # Polling intervals: optimal = 2s (matches zkSync Era's ~1-2s block time), sparse = 30s
+  requests:
+    optimal-poll-interval-ms: 2000
+    sparse-poll-interval-ms: 30000
+  nodes:
+    - name: mainnet.era.zksync.io
+      http: https://mainnet.era.zksync.io
+      ws: wss://mainnet.era.zksync.io/ws
+    - name: publicnode.com
+      http: https://zksync-era-rpc.publicnode.com
+      ws: wss://zksync-era-rpc.publicnode.com
+      requests: sparse
+    - name: drpc.org
+      http: https://zksync.drpc.org
+      ws: wss://zksync.drpc.org
+      requests: sparse
+    - name: tenderly.co
+      http: https://zksync-era.gateway.tenderly.co
+      ws: wss://zksync-era.gateway.tenderly.co
+      requests: sparse
+    - name: 1RPC
+      http: https://1rpc.io/zksync2-era
+      requests: sparse
+    - name: BlastAPI
+      http: https://zksync-era-mainnet.public.blastapi.io
+      ws: wss://zksync-era-mainnet.public.blastapi.io
+      requests: sparse
+    - name: Ankr
+      http: https://rpc.ankr.com/zksync_era
+      requests: sparse

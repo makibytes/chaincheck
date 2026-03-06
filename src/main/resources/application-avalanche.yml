@@ -1,0 +1,40 @@
+rpc:
+  mode: avalanche
+  mode-type: avalanche
+  title: "Avalanche C-Chain"
+  title-color: "#e84142"
+  get-safe-blocks: false
+  get-finalized-blocks: false
+  scale-change-ms: 500
+  scale-max-ms: 30000
+  anomaly-detection:
+    high-latency-ms: 2000
+    long-delay-block-count: 15
+  # Polling intervals: optimal = 2s (matches Avalanche's ~2s block time), sparse = 30s
+  requests:
+    optimal-poll-interval-ms: 2000
+    sparse-poll-interval-ms: 30000
+  nodes:
+    - name: api.avax.network
+      http: https://api.avax.network/ext/bc/C/rpc
+    - name: publicnode.com
+      http: https://avalanche-c-chain-rpc.publicnode.com
+      ws: wss://avalanche-c-chain-rpc.publicnode.com
+      requests: sparse
+    - name: drpc.org
+      http: https://avalanche.drpc.org
+      ws: wss://avalanche.drpc.org
+      requests: sparse
+    - name: tenderly.co
+      http: https://avalanche.gateway.tenderly.co
+      ws: wss://avalanche.gateway.tenderly.co
+      requests: sparse
+    - name: 1RPC
+      http: https://1rpc.io/avax/c
+      requests: sparse
+    - name: BlastAPI
+      http: https://ava-mainnet.public.blastapi.io/ext/bc/C/rpc
+      requests: sparse
+    - name: Ankr
+      http: https://rpc.ankr.com/avalanche
+      requests: sparse

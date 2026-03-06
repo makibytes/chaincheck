@@ -1,10 +1,15 @@
 rpc:
   mode: ethereum
+  mode-type: ethereum
   title: "Ethereum Mainnet"
   title-color: "#627eea"
   get-safe-blocks: false
   get-finalized-blocks: false
   scale-max-ms: 60000
+  # Polling intervals: optimal = 12s (1 poll/block), sparse = 60s (rate-limited public nodes)
+  requests:
+    optimal-poll-interval-ms: 12000
+    sparse-poll-interval-ms: 60000
   consensus:
     # When configured, ChainCheck uses this consensus endpoint as reference source
     # and disables internal auto-reference voting/selection.
@@ -21,29 +26,37 @@ rpc:
     - name: nibbler
       http: http://nibbler:8545
       ws: ws://nibbler:8545
-      poll-interval-ms: 10000
 
     - name: PublicNode
       http: https://ethereum-rpc.publicnode.com
       ws: wss://ethereum-rpc.publicnode.com
-      poll-interval-ms: 10000
+      requests: sparse
 
     - name: LlamaNodes
       http: https://eth.llamarpc.com
       ws: wss://eth.llamarpc.com
-      poll-interval-ms: 10000
+      requests: sparse
 
     - name: Ankr
       http: https://rpc.ankr.com/eth/276087160888bd72c2dc6d4366109344d7c8f5ed3bce41be8d205b093abadb11
       ws: wss://rpc.ankr.com/eth/276087160888bd72c2dc6d4366109344d7c8f5ed3bce41be8d205b093abadb11
-      poll-interval-ms: 10000
+      requests: sparse
 
     - name: DRPC
       http: https://eth.drpc.org
       ws: wss://eth.drpc.org
-      poll-interval-ms: 10000
+      requests: sparse
 
     - name: 1RPC
       http: https://1rpc.io/eth
       ws: wss://1rpc.io/eth
-      poll-interval-ms: 10000
+      requests: sparse
+
+    - name: Cloudflare
+      http: https://cloudflare-eth.com
+      requests: sparse
+
+    - name: BlastAPI
+      http: https://eth-mainnet.public.blastapi.io
+      ws: wss://eth-mainnet.public.blastapi.io
+      requests: sparse

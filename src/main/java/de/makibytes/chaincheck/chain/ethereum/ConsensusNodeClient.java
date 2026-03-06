@@ -494,9 +494,6 @@ public class ConsensusNodeClient {
             logger.debug("Successfully received finalized checkpoint: block #{} ({})", executionBlock.blockNumber(), executionBlock.blockHash());
         }
 
-        if (confidence == Confidence.FINALIZED) {
-            updateObservation(Confidence.FINALIZED, finalized, destination.get());
-        }
         return changed;
     }
 
@@ -574,6 +571,9 @@ public class ConsensusNodeClient {
 
     private static String sanitizePath(String value, String fallback) {
         String path = (value == null || value.isBlank()) ? fallback : value.trim();
+        if (path == null) {
+            return null;
+        }
         return path.startsWith("/") ? path : "/" + path;
     }
 

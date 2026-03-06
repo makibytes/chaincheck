@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-ChainCheck is an Ethereum/EVM blockchain RPC node monitoring dashboard. It tracks latency, block delays, anomalies, and finality status across multiple HTTP and WebSocket RPC endpoints. Built with Spring Boot 4.0.2, Java 21, Thymeleaf, and Chart.js.
+ChainCheck is a multi-chain EVM blockchain RPC node monitoring dashboard. It tracks latency, block delays, anomalies, and finality status across multiple HTTP and WebSocket RPC endpoints for Ethereum, Polygon, Base, Optimism, Arbitrum, zkSync Era, Avalanche, Tron, and their testnets. Built with Spring Boot 4.0.3, Java 25, Thymeleaf, and Chart.js.
 
 ## Build & Run Commands
 
@@ -17,24 +17,24 @@ mvn test -Dtest=AnomalyDetectorTest#testMethodName  # Run a single test method
 mvn -Dspring-boot.run.profiles=mock spring-boot:run  # Run with mock RPC data
 ```
 
-Integration tests use the `IT` suffix (e.g., `LargeDataStoreIntegrationTestIT`) and run during `mvn verify`. Additional profiles: `application-ethereum.yml`, `application-polygon.yml`, `application-test.yml`.
+Integration tests use the `IT` suffix (e.g., `LargeDataStoreIntegrationTestIT`) and run during `mvn verify`. Built-in Spring profiles: `application-ethereum.yml`, `application-polygon.yml`, `application-base.yml`, `application-optimism.yml`, `application-arbitrum.yml`, `application-zksync.yml`, `application-starknet.yml`, `application-avalanche.yml`, `application-tron.yml`, plus testnet variants (`ethereum-sepolia`, `polygon-amoy`, `base-sepolia`, `optimism-sepolia`, `arbitrum-sepolia`, `zksync-sepolia`, `starknet-sepolia`, `avalanche-fuji`, `tron-shasta`). See [BLOCKCHAINS.md](BLOCKCHAINS.md) for the full table. Test profile: `application-test.yml`.
 
 ## Architecture
 
 All source lives under `de.makibytes.chaincheck` with eight packages:
 
-- **config** — `ChainCheckProperties` binds the `rpc.*` YAML namespace. Per-node overrides (timeouts, retries, headers, anomaly thresholds) fall back to `rpc.defaults.*`.
+- **config** — `ChainCheckProperties` binds the `rpc.*` YAML namespace. `rpc.mode` (String) is the concrete chain name (informational); `rpc.mode-type` (`ModeType` enum: `ETHEREUM`, `COSMOS`, `OPTIMISM`, `ZK`, `AVALANCHE`, `TRON`) controls behavioral processing. `RequestProfile` enum (`OPTIMAL`/`SPARSE`) and `RequestsConfig` inner class set mode-level HTTP polling intervals; per-node `requests: optimal|sparse` selects the effective interval. Per-node overrides (timeouts, retries, headers, anomaly thresholds) fall back to `rpc.defaults.*`.
 - **model** — Value types: `MetricSample` (raw metrics per poll/event), `AnomalyEvent` (with `AnomalyType` enum: ERROR, RATE_LIMIT, TIMEOUT, DELAY, STALE, BLOCK_GAP, CONFLICT, REORG, WRONG_HEAD — note: CONFLICT is never emitted; the dashboard always sets `conflict=false`), `MetricSource` (HTTP vs WS), `TimeRange`, `AttestationConfidence` (per-block attestation tracking data).
 - **monitor** — Core monitoring services:
-  - `RpcMonitorService` — orchestrator, wires up per-node HTTP/WS monitors, selects reference strategy based on mode
+  - `RpcMonitorService` — orchestrator, wires up per-node HTTP/WS monitors, selects reference strategy: `ConfiguredReferenceStrategy` when `rpc.consensus.http` is set (works in all mode types), otherwise `VotingReferenceStrategy`
   - `HttpMonitorService` — scheduled polling of `eth_blockNumber`/`eth_getBlockByNumber`; also provides `fetchBlockByHash` used by WS verification
-  - `WsMonitorService` — WebSocket `eth_subscribe(newHeads)` for real-time head tracking; Ethereum and Cosmos paths differ significantly (see below)
+  - `WsMonitorService` — WebSocket `eth_subscribe(newHeads)` for real-time head tracking; Ethereum path (`getModeType() == ModeType.ETHEREUM`) calls `eth_getBlockByHash` for reliable block data; all other mode types (`COSMOS`, `OPTIMISM`, `ZK`, `AVALANCHE`, `TRON`) trust the event payload directly
   - `AnomalyDetector` — evaluates each sample against thresholds, emits `AnomalyEvent`s
   - `NodeRegistry` — maintains the set of monitored nodes (uses a `NodeDefinition` record)
   - `HttpConnectionTracker` / `WsConnectionTracker` — track connection health per node
 - **reference/node** — Reference node selection:
   - `ReferenceNodeSelector` — selects best reference node via scoring with `NodeSwitchPolicy` hysteresis
-  - `ReferenceStrategy` interface with `ConfiguredReferenceStrategy` (explicit consensus node, Ethereum mode only) and `VotingReferenceStrategy` (majority voting, used in Cosmos mode and in Ethereum mode without a consensus node)
+  - `ReferenceStrategy` interface with `ConfiguredReferenceStrategy` (explicit consensus node, used in all mode types when `rpc.consensus.http` is configured) and `VotingReferenceStrategy` (majority voting, used when no consensus node is configured)
   - `ConfiguredReferenceSource` / `ConsensusNodeClient` — manage consensus node HTTP client, SSE event stream, and block updates. `ConsensusNodeClient` also drives attestation tracking when enabled: on each `head` SSE event it registers attestation tracking, then a background loop polls committee data and updates `AttestationTracker`.
   - `BlockAgreementTracker` — tracks which nodes agree on blocks
 - **reference/attestation** — Attestation-based block confidence scoring:
@@ -51,13 +51,29 @@ All source lives under `de.makibytes.chaincheck` with eight packages:
 1. HTTP monitors poll RPC endpoints on configurable intervals; WS monitors receive `newHeads` events
 2. Samples are stored in `InMemoryMetricsStore` and merged by block hash for a unified block view
 3. `AnomalyDetector` evaluates each sample in real-time
-4. `ReferenceNodeSelector` establishes consensus head via configured consensus node (Ethereum) or majority voting (Cosmos)
+4. `ReferenceNodeSelector` establishes consensus head via configured consensus node (when `rpc.consensus.http` is set, in any mode) or majority voting (when no consensus node is configured)
 5. When attestation tracking is enabled (Ethereum only), `ConsensusNodeClient` polls committee data on each new head and `AttestationTracker` computes per-block confidence
 6. Dashboard queries the store and renders via Thymeleaf + Chart.js; `DashboardService` enriches `SampleRow` records with safe/finalized status from the consensus node (applying it globally by block hash across all nodes) and with attestation confidence data
 
 ## Modes
 
-ChainCheck operates in one of two modes set by `rpc.mode`: `ETHEREUM` (default: `COSMOS`).
+ChainCheck uses two orthogonal configuration fields:
+
+- `rpc.mode` (String): concrete blockchain name ("ethereum", "polygon", "base", etc.) — informational only, drives no code logic
+- `rpc.mode-type` (ModeType enum): behavioral chain type — drives WS newHead handling and `@PostConstruct` polling defaults
+
+### ModeType values
+
+| ModeType | Chains | WS newHead behavior | poll defaults |
+|----------|--------|---------------------|---------------|
+| `ETHEREUM` | Ethereum | Calls `eth_getBlockByHash` immediately; discards event block number | 12s optimal / 60s sparse |
+| `COSMOS` | Polygon, and similar | Trusts event payload directly | 2s optimal / 30s sparse |
+| `OPTIMISM` | Base, Optimism, Arbitrum | Trusts event payload directly | 2s optimal / 30s sparse |
+| `ZK` | zkSync Era, Starknet | Trusts event payload directly | 2s optimal / 30s sparse |
+| `AVALANCHE` | Avalanche C-Chain | Trusts event payload directly | 2s optimal / 30s sparse |
+| `TRON` | Tron | Trusts event payload directly | 2s optimal / 30s sparse |
+
+Only `ModeType.ETHEREUM` triggers the special newHead verification path. All other types share the same Cosmos-style path in `WsMonitorService.handleCosmosNewHead`.
 
 ---
 
@@ -137,12 +153,16 @@ Block numbers are never used as the basis for conflict/invalid detection. Only p
 
 ---
 
-### Cosmos Mode (e.g. Polygon)
+### Non-Ethereum Mode Types (COSMOS, OPTIMISM, ZK, AVALANCHE, TRON)
 
-Used for EVM chains without a beacon chain. There is no consensus node; finality is tracked per execution node and the reference head is determined by majority voting.
+All non-Ethereum mode types share the same code path (`WsMonitorService.handleCosmosNewHead`). The distinction in `ModeType` is semantic — it sets appropriate polling defaults and allows future divergence if needed.
+
+Used for EVM chains without a beacon chain. By default, finality is tracked per execution node and the reference head is determined by majority voting. Optionally, a consensus node can be configured via `rpc.consensus.http` to serve as the authoritative reference source instead of voting (see below).
 
 #### Reference source
-Majority voting across all execution nodes. The reference head is the block hash agreed on by the most nodes. Safe and finalized observations are per-node (each node's own HTTP poll determines its own finality).
+**Default (no consensus node):** Majority voting across all execution nodes. The reference head is the block hash agreed on by the most nodes. Safe and finalized observations are per-node (each node's own HTTP poll determines its own finality).
+
+**Optional (with consensus node):** When `rpc.consensus.http` is set, `ConfiguredReferenceStrategy` is used — the same as in Ethereum mode. The consensus node becomes the authoritative source for head, safe, and finalized blocks, and its observations are applied globally across all execution nodes.
 
 #### WS newHead path (execution nodes, `source=WS`)
 
@@ -156,7 +176,7 @@ On each `eth_subscribe("newHeads")` event, `WsMonitorService.handleCosmosNewHead
 
 When WS is active, HTTP polling alternates between safe and finalized block tags (as configured). When WS is not active, HTTP also polls `latest`. The resulting `MetricSample` (`source=HTTP`) contains the same fields as in Ethereum mode, with one key difference: `safeDelayMs` and `finalizedDelayMs` are computed using block timestamp as the baseline (no consensus node observation time is available), and safe/finalized status applies only to that node's own samples.
 
-#### No consensus node, no attestations
+#### No consensus node, no attestations (default Cosmos mode)
 
 - No beacon node is connected
 - No SSE events for finality
@@ -171,21 +191,21 @@ When WS is active, HTTP polling alternates between safe and finalized block tags
 
 This avoids false positives for nodes that are simply lagging (they will catch up and eventually agree on the canonical hash). Only nodes that were genuinely on a fork — where their reported block hash was never confirmed by the network at safe/finalized confidence — are flagged.
 
-#### Summary — Cosmos mode vs Ethereum mode
+#### Summary — non-Ethereum vs Ethereum mode
 
-| Feature | Ethereum mode | Cosmos mode |
-|---|---|---|
-| Consensus node | Required for full finality | Not used |
-| WS newHead: getBlockByHash | Yes (immediate, for reliable block number) | No (trusts event data) |
-| WS newHead: delayed HTTP verification | Yes (5s later, `rpc.block-verification-delay-ms`) | No |
-| Safe blocks | From consensus node (applies to all nodes) | Per execution node (HTTP poll `safe` tag) |
-| Finalized blocks | From consensus node (applies to all nodes) | Per execution node (HTTP poll `finalized` tag) |
-| safeDelayMs baseline | Consensus node observation time | Block timestamp |
-| finalizedDelayMs baseline | Consensus node observation time | Block timestamp |
-| Attestations | Optional (beacon committees) | Not available |
-| Orphan detection confidence | Finalized + safe + 3-attest rounds | Finalized + safe |
-| Reference head | Consensus node head SSE | Majority vote across execution nodes |
-| Block number reliability | Hash is identity; block number verified via getBlockByHash | Block number from event (may be wrong) |
+| Feature | Ethereum mode | Non-Ethereum (no consensus) | Non-Ethereum (with consensus) |
+|---|---|---|---|
+| Consensus node | Required for full finality | Not used | Optional (`rpc.consensus.http`) |
+| WS newHead: getBlockByHash | Yes (immediate, for reliable block number) | No (trusts event data) | No (trusts event data) |
+| WS newHead: delayed HTTP verification | Yes (5s later, `rpc.block-verification-delay-ms`) | No | No |
+| Safe blocks | From consensus node (applies to all nodes) | Per execution node (HTTP poll `safe` tag) | From consensus node (applies to all nodes) |
+| Finalized blocks | From consensus node (applies to all nodes) | Per execution node (HTTP poll `finalized` tag) | From consensus node (applies to all nodes) |
+| safeDelayMs baseline | Consensus node observation time | Block timestamp | Consensus node observation time |
+| finalizedDelayMs baseline | Consensus node observation time | Block timestamp | Consensus node observation time |
+| Attestations | Optional (beacon committees) | Not available | Not available |
+| Orphan detection confidence | Finalized + safe + 3-attest rounds | Finalized + safe | Finalized + safe |
+| Reference head | Consensus node head SSE | Majority vote across execution nodes | Consensus node head SSE |
+| Block number reliability | Hash is identity; block number verified via getBlockByHash | Block number from event (may be wrong) | Block number from event (may be wrong) |
 
 ---
 
@@ -275,7 +295,15 @@ The feature is opt-in and only works in Ethereum mode with a consensus node conf
 
 ## Configuration
 
-All config is in `src/main/resources/application.yml` under the `rpc` prefix, bound to `ChainCheckProperties`. The mock profile (`application-mock.yml`) provides fake RPC responses for local development. The `rpc.consensus` namespace configures the beacon/consensus node connection, finality checkpoint polling, and attestation tracking. Per-node WS gap recovery can be configured via `ws-gap-recovery-enabled` and `ws-gap-recovery-max-blocks` at both the global and per-node level. The `rpc.block-verification-delay-ms` property (default 5000) controls the delay before the post-newHead HTTP block verification call in Ethereum mode.
+All config is in `src/main/resources/application.yml` under the `rpc` prefix, bound to `ChainCheckProperties`. The mock profile (`application-mock.yml`) provides fake RPC responses for local development. Built-in chain profiles live in `src/main/resources/application-<chain>.yml` — see [BLOCKCHAINS.md](BLOCKCHAINS.md) for the full list.
+
+Key configuration concepts:
+- `rpc.mode` (String): chain name, informational only
+- `rpc.mode-type` (ModeType): behavioral type, drives WS processing and polling defaults
+- `rpc.requests.optimal-poll-interval-ms` / `rpc.requests.sparse-poll-interval-ms`: mode-level HTTP poll intervals; per-node `requests: optimal|sparse` selects between them (default: optimal). `@PostConstruct applyRequestDefaults()` fills these from modeType defaults if not set in YAML: ETHEREUM→12000/60000ms, all others→2000/30000ms.
+- `rpc.consensus` namespace configures the beacon/consensus node connection, finality checkpoint polling, and attestation tracking
+- Per-node WS gap recovery: `ws-gap-recovery-enabled` and `ws-gap-recovery-max-blocks` (global and per-node)
+- `rpc.block-verification-delay-ms` (default 5000): delay before post-newHead HTTP verification in Ethereum mode
 
 ## Key Conventions
 

@@ -1,0 +1,43 @@
+rpc:
+  mode: optimism
+  mode-type: optimism
+  title: "Optimism Mainnet"
+  title-color: "#ff0420"
+  get-safe-blocks: false
+  get-finalized-blocks: true
+  scale-change-ms: 500
+  scale-max-ms: 30000
+  anomaly-detection:
+    high-latency-ms: 2000
+    long-delay-block-count: 15
+  # Polling intervals: optimal = 2s (matches Optimism's ~2s block time), sparse = 30s
+  requests:
+    optimal-poll-interval-ms: 2000
+    sparse-poll-interval-ms: 30000
+  nodes:
+    - name: mainnet.optimism.io
+      http: https://mainnet.optimism.io
+      ws: wss://mainnet.optimism.io
+    - name: publicnode.com
+      http: https://optimism-rpc.publicnode.com
+      ws: wss://optimism-rpc.publicnode.com
+      requests: sparse
+    - name: drpc.org
+      http: https://optimism.drpc.org
+      ws: wss://optimism.drpc.org
+      requests: sparse
+    - name: tenderly.co
+      http: https://optimism.gateway.tenderly.co
+      ws: wss://optimism.gateway.tenderly.co
+      requests: sparse
+    - name: 1RPC
+      http: https://1rpc.io/op
+      requests: sparse
+    - name: BlastAPI
+      http: https://optimism-mainnet.public.blastapi.io
+      ws: wss://optimism-mainnet.public.blastapi.io
+      requests: sparse
+    - name: LlamaNodes
+      http: https://optimism.llamarpc.com
+      ws: wss://optimism.llamarpc.com
+      requests: sparse

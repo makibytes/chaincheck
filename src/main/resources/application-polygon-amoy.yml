@@ -1,0 +1,39 @@
+rpc:
+  mode: polygon-amoy
+  mode-type: cosmos
+  title: "Polygon Amoy Testnet"
+  title-color: "#8247e5"
+  get-safe-blocks: false
+  get-finalized-blocks: true
+  scale-change-ms: 500
+  scale-max-ms: 30000
+  anomaly-detection:
+    high-latency-ms: 2000
+    long-delay-block-count: 15
+  requests:
+    optimal-poll-interval-ms: 2000
+    sparse-poll-interval-ms: 30000
+  nodes:
+    - name: polygon.technology
+      http: https://rpc-amoy.polygon.technology
+    - name: publicnode.com
+      http: https://polygon-amoy-bor-rpc.publicnode.com
+      ws: wss://polygon-amoy-bor-rpc.publicnode.com
+      requests: sparse
+    - name: drpc.org
+      http: https://polygon-amoy.drpc.org
+      ws: wss://polygon-amoy.drpc.org
+      requests: sparse
+    - name: tenderly.co
+      http: https://polygon-amoy.gateway.tenderly.co
+      requests: sparse
+    - name: Ankr
+      http: https://rpc.ankr.com/polygon_amoy
+      requests: sparse
+    - name: 1RPC
+      http: https://1rpc.io/polygon/amoy
+      requests: sparse
+    - name: BlastAPI
+      http: https://polygon-amoy.public.blastapi.io
+      ws: wss://polygon-amoy.public.blastapi.io
+      requests: sparse

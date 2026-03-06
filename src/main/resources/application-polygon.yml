@@ -1,7 +1,8 @@
 rpc:
+  mode: polygon
+  mode-type: cosmos
   title: "Polygon Mainnet"
   title-color: "#8247e5"
-  mode: cosmos
   get-safe-blocks: false
   get-finalized-blocks: true
   scale-change-ms: 500
@@ -9,24 +10,47 @@ rpc:
   anomaly-detection:
     high-latency-ms: 2000
     long-delay-block-count: 15
+  # Polling intervals: optimal = 2s (matches Polygon's 2s block time), sparse = 30s
+  requests:
+    optimal-poll-interval-ms: 2000
+    sparse-poll-interval-ms: 30000
+  # Optional: connect to a consensus node as the authoritative reference source.
+  # When configured, ChainCheck uses this endpoint instead of majority-voting across
+  # execution nodes.  Works in both ETHEREUM and COSMOS modes.
+  # For Polygon/Bor you can point this at a Heimdall REST API or any compatible
+  # consensus endpoint that exposes:
+  #   - SSE event stream (head / finalized_checkpoint events)
+  #   - Finality checkpoint REST endpoint
+  # All paths are fully configurable to match the chain's actual API.
+  #consensus:
+  #  display-name: heimdall
+  #  http: http://heimdall:1317
+  #  events-path: /eth/v1/events?topics=head&topics=finalized_checkpoint
+  #  finality-checkpoints-path: /eth/v1/beacon/states/head/finality_checkpoints
+  #  safe-poll-interval-ms: 30000
+  #  finalized-poll-interval-ms: 30000
+  #  timeout-ms: 3000
   nodes:
     - name: polygon-rpc.com
       http: https://polygon-rpc.com
       #ws: wss://polygon-rpc.com
-      poll-interval-ms: 2000
     - name: publicnode.com
       http: https://polygon-bor-rpc.publicnode.com
       ws: wss://polygon-bor-rpc.publicnode.com
-      poll-interval-ms: 5000
+      requests: sparse
     - name: drpc.org
       http: https://polygon.drpc.org
       ws: wss://polygon.drpc.org
-      poll-interval-ms: 5000
     - name: quiknode.pro
       http: https://rpc-mainnet.matic.quiknode.pro
       ws: wss://rpc-mainnet.matic.quiknode.pro/ws
-      poll-interval-ms: 5000
     - name: tenderly.co
       http: https://polygon.gateway.tenderly.co
       ws: wss://polygon.gateway.tenderly.co
-      poll-interval-ms: 5000
+    - name: Ankr
+      http: https://rpc.ankr.com/polygon
+      ws: wss://rpc.ankr.com/polygon
+      requests: sparse
+    - name: 1RPC
+      http: https://1rpc.io/matic
+      requests: sparse

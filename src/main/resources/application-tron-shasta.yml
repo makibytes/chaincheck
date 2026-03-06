@@ -1,0 +1,37 @@
+rpc:
+  mode: tron-shasta
+  mode-type: tron
+  title: "Tron Shasta Testnet"
+  title-color: "#ff0013"
+  # Tron exposes an Ethereum-compatible JSON-RPC interface.
+  get-safe-blocks: false
+  get-finalized-blocks: false
+  scale-change-ms: 500
+  scale-max-ms: 30000
+  anomaly-detection:
+    high-latency-ms: 3000
+    long-delay-block-count: 10
+  requests:
+    optimal-poll-interval-ms: 3000
+    sparse-poll-interval-ms: 30000
+  nodes:
+    - name: api.shasta.trongrid.io
+      http: https://api.shasta.trongrid.io/jsonrpc
+    - name: nile.trongrid.io
+      http: https://nile.trongrid.io/jsonrpc
+      requests: sparse
+    - name: rpc.ankr.com
+      http: https://rpc.ankr.com/tron_jsonrpc_shasta
+      requests: sparse
+    - name: tron-shasta-rpc.publicnode.com
+      http: https://tron-shasta-rpc.publicnode.com
+      requests: sparse
+    - name: tron-shasta.drpc.org
+      http: https://tron-shasta.drpc.org
+      requests: sparse
+    - name: shasta.tronstack.io
+      http: https://shasta.tronstack.io/jsonrpc
+      requests: sparse
+    - name: api.nileex.io
+      http: https://api.nileex.io/jsonrpc
+      requests: sparse

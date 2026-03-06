@@ -6,7 +6,8 @@ spring:
       enabled: false
 
 rpc:
-  mode: ethereum
+  mode: test
+  mode-type: ethereum
   title: "Mock RPC"
   title-color: "#777777"
   get-safe-blocks: false
@@ -15,6 +16,6 @@ rpc:
     - name: Mock Node
       http: ""
       ws: ""
-      poll-interval-ms: 60000
+      requests: sparse
       anomaly-detection:
         high-latency: 2000

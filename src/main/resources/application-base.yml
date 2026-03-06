@@ -1,0 +1,41 @@
+rpc:
+  mode: base
+  mode-type: optimism
+  title: "Base Mainnet"
+  title-color: "#0052ff"
+  get-safe-blocks: false
+  get-finalized-blocks: true
+  scale-change-ms: 500
+  scale-max-ms: 30000
+  anomaly-detection:
+    high-latency-ms: 2000
+    long-delay-block-count: 15
+  # Polling intervals: optimal = 2s (matches Base's ~2s block time), sparse = 30s
+  requests:
+    optimal-poll-interval-ms: 2000
+    sparse-poll-interval-ms: 30000
+  nodes:
+    - name: base.org
+      http: https://mainnet.base.org
+      ws: wss://mainnet.base.org
+    - name: publicnode.com
+      http: https://base-rpc.publicnode.com
+      ws: wss://base-rpc.publicnode.com
+      requests: sparse
+    - name: drpc.org
+      http: https://base.drpc.org
+      ws: wss://base.drpc.org
+    - name: tenderly.co
+      http: https://base.gateway.tenderly.co
+      ws: wss://base.gateway.tenderly.co
+    - name: 1RPC
+      http: https://1rpc.io/base
+      requests: sparse
+    - name: BlastAPI
+      http: https://base-mainnet.public.blastapi.io
+      ws: wss://base-mainnet.public.blastapi.io
+      requests: sparse
+    - name: LlamaNodes
+      http: https://base.llamarpc.com
+      ws: wss://base.llamarpc.com
+      requests: sparse

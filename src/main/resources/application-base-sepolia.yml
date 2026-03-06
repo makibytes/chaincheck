@@ -1,0 +1,42 @@
+rpc:
+  mode: base-sepolia
+  mode-type: optimism
+  title: "Base Sepolia Testnet"
+  title-color: "#0052ff"
+  get-safe-blocks: false
+  get-finalized-blocks: true
+  scale-change-ms: 500
+  scale-max-ms: 30000
+  anomaly-detection:
+    high-latency-ms: 2000
+    long-delay-block-count: 15
+  # Polling intervals: optimal = 2s (matches Base's ~2s block time), sparse = 30s
+  requests:
+    optimal-poll-interval-ms: 2000
+    sparse-poll-interval-ms: 30000
+  nodes:
+    - name: base.org
+      http: https://sepolia.base.org
+      ws: wss://sepolia.base.org
+    - name: publicnode.com
+      http: https://base-sepolia-rpc.publicnode.com
+      ws: wss://base-sepolia-rpc.publicnode.com
+      requests: sparse
+    - name: drpc.org
+      http: https://base-sepolia.drpc.org
+      ws: wss://base-sepolia.drpc.org
+      requests: sparse
+    - name: tenderly.co
+      http: https://base-sepolia.gateway.tenderly.co
+      ws: wss://base-sepolia.gateway.tenderly.co
+      requests: sparse
+    - name: 1RPC
+      http: https://1rpc.io/base-sepolia
+      requests: sparse
+    - name: BlastAPI
+      http: https://base-sepolia.public.blastapi.io
+      ws: wss://base-sepolia.public.blastapi.io
+      requests: sparse
+    - name: Ankr
+      http: https://rpc.ankr.com/base_sepolia
+      requests: sparse

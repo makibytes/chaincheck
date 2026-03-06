@@ -19,31 +19,13 @@ package de.makibytes.chaincheck.web;
 
 import java.time.Instant;
 
-public class WsStatus {
-
-    private final boolean connected;
-    private final Instant connectedSince;
-    private final Instant lastDisconnectedAt;
-    private final long connectCount;
-    private final long disconnectCount;
-    private final long connectFailureCount;
-    private final String lastError;
-
-    public WsStatus(boolean connected,
-                    Instant connectedSince,
-                    Instant lastDisconnectedAt,
-                    long connectCount,
-                    long disconnectCount,
-                    long connectFailureCount,
-                    String lastError) {
-        this.connected = connected;
-        this.connectedSince = connectedSince;
-        this.lastDisconnectedAt = lastDisconnectedAt;
-        this.connectCount = connectCount;
-        this.disconnectCount = disconnectCount;
-        this.connectFailureCount = connectFailureCount;
-        this.lastError = lastError;
-    }
+public record WsStatus(boolean connected,
+                       Instant connectedSince,
+                       Instant lastDisconnectedAt,
+                       long connectCount,
+                       long disconnectCount,
+                       long connectFailureCount,
+                       String lastError) {
 
     public boolean isConnected() {
         return connected;

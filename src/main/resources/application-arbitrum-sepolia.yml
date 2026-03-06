@@ -1,0 +1,41 @@
+rpc:
+  mode: arbitrum-sepolia
+  mode-type: optimism
+  title: "Arbitrum Sepolia Testnet"
+  title-color: "#213147"
+  get-safe-blocks: false
+  get-finalized-blocks: true
+  scale-change-ms: 250
+  scale-max-ms: 15000
+  anomaly-detection:
+    high-latency-ms: 1000
+    long-delay-block-count: 30
+  # Polling intervals: optimal = 1s (matches Arbitrum's ~1s block time), sparse = 30s
+  requests:
+    optimal-poll-interval-ms: 1000
+    sparse-poll-interval-ms: 30000
+  nodes:
+    - name: arbitrum.io
+      http: https://sepolia-rollup.arbitrum.io/rpc
+    - name: publicnode.com
+      http: https://arbitrum-sepolia-rpc.publicnode.com
+      ws: wss://arbitrum-sepolia-rpc.publicnode.com
+      requests: sparse
+    - name: drpc.org
+      http: https://arbitrum-sepolia.drpc.org
+      ws: wss://arbitrum-sepolia.drpc.org
+      requests: sparse
+    - name: tenderly.co
+      http: https://arbitrum-sepolia.gateway.tenderly.co
+      ws: wss://arbitrum-sepolia.gateway.tenderly.co
+      requests: sparse
+    - name: 1RPC
+      http: https://1rpc.io/arb-sepolia
+      requests: sparse
+    - name: BlastAPI
+      http: https://arbitrum-sepolia.public.blastapi.io
+      ws: wss://arbitrum-sepolia.public.blastapi.io
+      requests: sparse
+    - name: Ankr
+      http: https://rpc.ankr.com/arbitrum_sepolia
+      requests: sparse

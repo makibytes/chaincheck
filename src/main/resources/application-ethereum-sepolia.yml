@@ -1,0 +1,35 @@
+rpc:
+  mode: ethereum-sepolia
+  mode-type: ethereum
+  title: "Ethereum Sepolia"
+  title-color: "#627eea"
+  get-safe-blocks: false
+  get-finalized-blocks: false
+  scale-max-ms: 60000
+  requests:
+    optimal-poll-interval-ms: 12000
+    sparse-poll-interval-ms: 60000
+  nodes:
+    - name: rpc.sepolia.org
+      http: https://rpc.sepolia.org
+    - name: publicnode.com
+      http: https://ethereum-sepolia-rpc.publicnode.com
+      ws: wss://ethereum-sepolia-rpc.publicnode.com
+      requests: sparse
+    - name: drpc.org
+      http: https://eth-sepolia.drpc.org
+      ws: wss://eth-sepolia.drpc.org
+      requests: sparse
+    - name: tenderly.co
+      http: https://sepolia.gateway.tenderly.co
+      ws: wss://sepolia.gateway.tenderly.co
+      requests: sparse
+    - name: 1RPC
+      http: https://1rpc.io/sepolia
+      requests: sparse
+    - name: Ankr
+      http: https://rpc.ankr.com/eth_sepolia
+      requests: sparse
+    - name: BlastAPI
+      http: https://eth-sepolia-public.unifra.io
+      requests: sparse

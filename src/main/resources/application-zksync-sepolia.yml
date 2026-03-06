@@ -1,0 +1,36 @@
+rpc:
+  mode: zksync-sepolia
+  mode-type: zk
+  title: "zkSync Era Sepolia Testnet"
+  title-color: "#1e69ff"
+  get-safe-blocks: false
+  get-finalized-blocks: true
+  scale-change-ms: 500
+  scale-max-ms: 30000
+  requests:
+    optimal-poll-interval-ms: 2000
+    sparse-poll-interval-ms: 30000
+  nodes:
+    - name: era.zksync.dev
+      http: https://sepolia.era.zksync.dev
+      ws: wss://sepolia.era.zksync.dev/ws
+    - name: publicnode.com
+      http: https://zksync-era-sepolia-rpc.publicnode.com
+      requests: sparse
+    - name: drpc.org
+      http: https://zksync-era-sepolia.drpc.org
+      ws: wss://zksync-era-sepolia.drpc.org
+      requests: sparse
+    - name: tenderly.co
+      http: https://zksync-era-sepolia.gateway.tenderly.co
+      requests: sparse
+    - name: 1RPC
+      http: https://1rpc.io/zksync2-sepolia
+      requests: sparse
+    - name: BlastAPI
+      http: https://zksync-era-sepolia.public.blastapi.io
+      ws: wss://zksync-era-sepolia.public.blastapi.io
+      requests: sparse
+    - name: Ankr
+      http: https://rpc.ankr.com/zksync_era_sepolia
+      requests: sparse

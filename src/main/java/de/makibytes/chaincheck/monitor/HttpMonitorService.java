@@ -25,6 +25,8 @@ import java.net.http.HttpResponse;
 import java.net.http.HttpTimeoutException;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -36,6 +38,7 @@ import org.slf4j.LoggerFactory;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import de.makibytes.chaincheck.chain.shared.Confidence;
 import de.makibytes.chaincheck.config.ChainCheckProperties;
@@ -45,6 +48,8 @@ import de.makibytes.chaincheck.model.MetricSample;
 import de.makibytes.chaincheck.model.MetricSource;
 import de.makibytes.chaincheck.monitor.NodeRegistry.NodeDefinition;
 import de.makibytes.chaincheck.store.InMemoryMetricsStore;
+import io.micrometer.observation.Observation;
+import io.micrometer.observation.ObservationRegistry;
 
 public class HttpMonitorService {
 
@@ -61,19 +66,22 @@ public class HttpMonitorService {
     private final Map<Long, HttpClient> httpClients = new ConcurrentHashMap<>();
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
     private final Map<String, RpcMonitorService.NodeState> nodeStates;
+    private final ObservationRegistry observationRegistry;
 
     public HttpMonitorService(RpcMonitorService monitor,
                               NodeRegistry nodeRegistry,
                               InMemoryMetricsStore store,
                               AnomalyDetector detector,
                               ChainCheckProperties properties,
-                              Map<String, RpcMonitorService.NodeState> nodeStates) {
+                              Map<String, RpcMonitorService.NodeState> nodeStates,
+                              ObservationRegistry observationRegistry) {
         this.monitor = monitor;
         this.nodeRegistry = nodeRegistry;
         this.store = store;
         this.detector = detector;
         this.properties = properties;
         this.nodeStates = nodeStates;
+        this.observationRegistry = observationRegistry;
     }
 
     public void pollNodes() {
@@ -98,27 +106,122 @@ public class HttpMonitorService {
         }
     }
 
+    private static final int BATCH_ID_BLOCK_NUMBER = 1;
+    private static final int BATCH_ID_SAFE         = 2;
+    private static final int BATCH_ID_LATEST       = 3;
+    private static final int BATCH_ID_FINALIZED    = 4;
+    private static final int BATCH_ID_CHECKPOINT   = 5;
+
     private void pollHttp(NodeDefinition node, RpcMonitorService.NodeState state) {
         Instant timestamp = Instant.now();
-        long startNanos = System.nanoTime();
         try {
-            Long blockNumber = fetchBlockNumber(node);
+            boolean safeEnabled = node.safeBlocksEnabled();
+            boolean finalizedEnabled = node.finalizedBlocksEnabled();
+            boolean hasWs = node.ws() != null && !node.ws().isBlank();
+
+            List<BatchItem> batch = new ArrayList<>();
+            batch.add(new BatchItem(BATCH_ID_BLOCK_NUMBER, "eth_blockNumber", mapper.createArrayNode()));
+
+            String wsBlockTag = null;
+            boolean fetchLatest = false;
+
+            if (hasWs) {
+                if (safeEnabled && finalizedEnabled) {
+                    state.pollCounter++;
+                    wsBlockTag = (state.pollCounter % 2 == 1) ? "safe" : "finalized";
+                } else if (safeEnabled) {
+                    wsBlockTag = "safe";
+                } else if (finalizedEnabled) {
+                    wsBlockTag = "finalized";
+                } else {
+                    wsBlockTag = "latest";
+                }
+                logger.debug("HTTP poll ({}) pollCounter={} blockTag={}", node.name(), state.pollCounter, wsBlockTag);
+                batch.add(new BatchItem(BATCH_ID_CHECKPOINT, "eth_getBlockByNumber",
+                        mapper.createArrayNode().add(wsBlockTag).add(false)));
+            } else {
+                if (safeEnabled) {
+                    batch.add(new BatchItem(BATCH_ID_SAFE, "eth_getBlockByNumber",
+                            mapper.createArrayNode().add("safe").add(false)));
+                }
+                fetchLatest = shouldFetchLatest(state, timestamp, node.pollIntervalMs());
+                if (fetchLatest) {
+                    state.lastLatestFetchAt = timestamp;
+                    batch.add(new BatchItem(BATCH_ID_LATEST, "eth_getBlockByNumber",
+                            mapper.createArrayNode().add("latest").add(false)));
+                }
+                if (finalizedEnabled) {
+                    batch.add(new BatchItem(BATCH_ID_FINALIZED, "eth_getBlockByNumber",
+                            mapper.createArrayNode().add("finalized").add(false)));
+                }
+            }
+
+            long startNanos = System.nanoTime();
+            Map<Integer, JsonNode> results = sendBatchRpcWithRetry(node, batch);
+            long latencyMs = (System.nanoTime() - startNanos) / 1_000_000;
+
+            // Parse block number
+            JsonNode bnEntry = results.get(BATCH_ID_BLOCK_NUMBER);
+            if (bnEntry == null || bnEntry.has("error") || bnEntry.get("result") == null || bnEntry.get("result").isNull()) {
+                monitor.recordFailure(node, MetricSource.HTTP, "Could not fetch block number");
+                return;
+            }
+            Long blockNumber = EthHex.parseLong(bnEntry.get("result").asText());
             if (blockNumber == null) {
                 monitor.recordFailure(node, MetricSource.HTTP, "Could not fetch block number");
                 return;
             }
 
-            // Detect dead websocket connections using event timestamp
             checkWebSocketHealth(node, state, blockNumber);
 
             RpcMonitorService.BlockInfo safeBlock = null;
             RpcMonitorService.BlockInfo finalizedBlock = null;
             RpcMonitorService.BlockInfo latestBlock = null;
-            boolean safeEnabled = node.safeBlocksEnabled();
-            boolean finalizedEnabled = node.finalizedBlocksEnabled();
-            if (node.ws() == null || node.ws().isBlank()) {
+
+            if (hasWs) {
+                JsonNode cpEntry = results.get(BATCH_ID_CHECKPOINT);
+                if (cpEntry == null || cpEntry.has("error")) {
+                    monitor.recordFailure(node, MetricSource.HTTP, wsBlockTag + " block not found");
+                    return;
+                }
+                RpcMonitorService.BlockInfo checkpointBlock = EthHex.parseBlockFields(cpEntry.get("result"));
+                if (checkpointBlock == null) {
+                    monitor.recordFailure(node, MetricSource.HTTP, wsBlockTag + " block not found");
+                    return;
+                }
+                if ("safe".equals(wsBlockTag)) {
+                    logger.debug("HTTP poll ({}) safe block: number={} hash={} timestamp={}",
+                            node.name(), checkpointBlock.blockNumber(), checkpointBlock.blockHash(), checkpointBlock.blockTimestamp());
+                    state.lastSafeBlockNumber = checkpointBlock.blockNumber();
+                    state.lastSafeBlockHash = checkpointBlock.blockHash();
+                } else if ("finalized".equals(wsBlockTag)) {
+                    recordFinalizedReorgIfNeeded(node, state, checkpointBlock, timestamp);
+                    state.lastFinalizedBlockNumber = checkpointBlock.blockNumber();
+                    state.lastFinalizedBlockHash = checkpointBlock.blockHash();
+                    trackFinalizedChainAndCloseReorg(node, state, checkpointBlock);
+                } else {
+                    latestBlock = checkpointBlock;
+                }
+                if (!"latest".equals(wsBlockTag)) {
+                    monitor.maybeCompareToReference(node, wsBlockTag, checkpointBlock);
+                }
+                Confidence conf = "safe".equals(wsBlockTag)
+                        ? Confidence.SAFE
+                        : ("finalized".equals(wsBlockTag) ? Confidence.FINALIZED : Confidence.NEW);
+                monitor.recordBlock(node.key(), checkpointBlock.blockNumber(), checkpointBlock.blockHash(), conf);
+                if ("safe".equals(wsBlockTag)) {
+                    safeBlock = checkpointBlock;
+                } else if ("finalized".equals(wsBlockTag)) {
+                    finalizedBlock = checkpointBlock;
+                }
+            } else {
                 if (safeEnabled) {
-                    safeBlock = fetchBlockByTag(node, "safe");
+                    JsonNode safeEntry = results.get(BATCH_ID_SAFE);
+                    if (safeEntry == null || safeEntry.has("error")) {
+                        monitor.recordFailure(node, MetricSource.HTTP, "safe block not found");
+                        return;
+                    }
+                    safeBlock = EthHex.parseBlockFields(safeEntry.get("result"));
                     if (safeBlock == null) {
                         monitor.recordFailure(node, MetricSource.HTTP, "safe block not found");
                         return;
@@ -129,16 +232,23 @@ public class HttpMonitorService {
                     monitor.recordBlock(node.key(), safeBlock.blockNumber(), safeBlock.blockHash(), Confidence.SAFE);
                 }
 
-                if (shouldFetchLatest(state, timestamp, node.pollIntervalMs())) {
-                    state.lastLatestFetchAt = timestamp;
-                    latestBlock = fetchBlockByTag(node, "latest");
-                    if (latestBlock != null) {
-                        handleLatestBlock(node, state, latestBlock);
+                if (fetchLatest) {
+                    JsonNode latestEntry = results.get(BATCH_ID_LATEST);
+                    if (latestEntry != null && !latestEntry.has("error")) {
+                        latestBlock = EthHex.parseBlockFields(latestEntry.get("result"));
+                        if (latestBlock != null) {
+                            handleLatestBlock(node, state, latestBlock);
+                        }
                     }
                 }
 
                 if (finalizedEnabled) {
-                    finalizedBlock = fetchBlockByTag(node, "finalized");
+                    JsonNode finalizedEntry = results.get(BATCH_ID_FINALIZED);
+                    if (finalizedEntry == null || finalizedEntry.has("error")) {
+                        monitor.recordFailure(node, MetricSource.HTTP, "finalized block not found");
+                        return;
+                    }
+                    finalizedBlock = EthHex.parseBlockFields(finalizedEntry.get("result"));
                     if (finalizedBlock == null) {
                         monitor.recordFailure(node, MetricSource.HTTP, "finalized block not found");
                         return;
@@ -151,60 +261,10 @@ public class HttpMonitorService {
                     monitor.maybeCompareToReference(node, "finalized", finalizedBlock);
                     monitor.recordBlock(node.key(), finalizedBlock.blockNumber(), finalizedBlock.blockHash(), Confidence.FINALIZED);
                 }
-            } else {
-                String blockTag;
-                if (safeEnabled && finalizedEnabled) {
-                    state.pollCounter++;
-                    blockTag = (state.pollCounter % 2 == 1) ? "safe" : "finalized";
-                } else if (safeEnabled) {
-                    blockTag = "safe";
-                } else if (finalizedEnabled) {
-                    blockTag = "finalized";
-                } else {
-                    blockTag = "latest";
-                }
-
-                logger.debug("HTTP poll ({}) pollCounter={} blockTag={}", node.name(), state.pollCounter, blockTag);
-                RpcMonitorService.BlockInfo checkpointBlock = fetchBlockByTag(node, blockTag);
-                if (checkpointBlock == null) {
-                    monitor.recordFailure(node, MetricSource.HTTP, blockTag + " block not found");
-                    return;
-                }
-                if ("safe".equals(blockTag)) {
-                    logger.debug("HTTP poll ({}) safe block: number={} hash={} timestamp={}",
-                            node.name(), checkpointBlock.blockNumber(), checkpointBlock.blockHash(), checkpointBlock.blockTimestamp());
-                }
-
-                if ("safe".equals(blockTag)) {
-                    state.lastSafeBlockNumber = checkpointBlock.blockNumber();
-                    state.lastSafeBlockHash = checkpointBlock.blockHash();
-                } else if ("finalized".equals(blockTag)) {
-                    recordFinalizedReorgIfNeeded(node, state, checkpointBlock, timestamp);
-                    state.lastFinalizedBlockNumber = checkpointBlock.blockNumber();
-                    state.lastFinalizedBlockHash = checkpointBlock.blockHash();
-                    trackFinalizedChainAndCloseReorg(node, state, checkpointBlock);
-                } else {
-                    latestBlock = checkpointBlock;
-                }
-
-                if (!"latest".equals(blockTag)) {
-                    monitor.maybeCompareToReference(node, blockTag, checkpointBlock);
-                }
-                Confidence conf = "safe".equals(blockTag)
-                        ? Confidence.SAFE
-                        : ("finalized".equals(blockTag) ? Confidence.FINALIZED : Confidence.NEW);
-                monitor.recordBlock(node.key(), checkpointBlock.blockNumber(), checkpointBlock.blockHash(), conf);
-                if ("safe".equals(blockTag)) {
-                    safeBlock = checkpointBlock;
-                } else if ("finalized".equals(blockTag)) {
-                    finalizedBlock = checkpointBlock;
-                }
             }
 
             // Successfully fetched all data - this counts as a success sample for HTTP
             monitor.checkAndCloseAnomaly(node, null, MetricSource.HTTP);
-
-            long latencyMs = (System.nanoTime() - startNanos) / 1_000_000;
 
             HttpConnectionTracker tracker = nodeRegistry.getHttpTracker(node.key());
             if (tracker != null) {
@@ -389,24 +449,43 @@ public class HttpMonitorService {
                                       JsonNode params) throws IOException, InterruptedException {
         int attempts = Math.max(0, maxRetries);
         IOException lastIo = null;
-        for (int attempt = 0; attempt <= attempts; attempt++) {
-            try {
-                return sendRpcOnce(httpUrl, headers, readTimeoutMs, connectTimeoutMs, method, params);
-            } catch (HttpStatusException statusEx) {
-                if (!shouldRetryStatus(statusEx.getStatusCode()) || attempt == attempts) {
-                    throw statusEx;
+        String outcome = "success";
+        int retries = 0;
+        Observation observation = startRpcObservation("single", method, httpUrl);
+        try (Observation.Scope scope = observation.openScope()) {
+            for (int attempt = 0; attempt <= attempts; attempt++) {
+                try {
+                    return sendRpcOnce(httpUrl, headers, readTimeoutMs, connectTimeoutMs, method, params);
+                } catch (HttpStatusException statusEx) {
+                    outcome = "http-status";
+                    observation.error(statusEx);
+                    if (!shouldRetryStatus(statusEx.getStatusCode()) || attempt == attempts) {
+                        throw statusEx;
+                    }
+                    retries++;
+                    observation.event(Observation.Event.of("retry"));
+                    sleepBackoff(retryBackoffMs, attempt);
+                } catch (IOException ioEx) {
+                    outcome = "io";
+                    observation.error(ioEx);
+                    if (isHostDownConnectError(ioEx)) {
+                        throw ioEx;
+                    }
+                    lastIo = ioEx;
+                    if (attempt == attempts) {
+                        throw ioEx;
+                    }
+                    retries++;
+                    observation.event(Observation.Event.of("retry"));
+                    sleepBackoff(retryBackoffMs, attempt);
+                } catch (InterruptedException interruptedEx) {
+                    outcome = "interrupted";
+                    observation.error(interruptedEx);
+                    throw interruptedEx;
                 }
-                sleepBackoff(retryBackoffMs, attempt);
-            } catch (IOException | InterruptedException ioEx) {
-                if (isHostDownConnectError(ioEx)) {
-                    throw ioEx;
-                }
-                lastIo = ioEx instanceof IOException ? (IOException) ioEx : new IOException(ioEx);
-                if (attempt == attempts) {
-                    throw ioEx;
-                }
-                sleepBackoff(retryBackoffMs, attempt);
             }
+        } finally {
+            stopRpcObservation(observation, outcome, retries);
         }
         if (lastIo != null) {
             throw lastIo;
@@ -467,16 +546,13 @@ public class HttpMonitorService {
     }
 
     private boolean isTimeoutError(Throwable error) {
-        if (error == null) {
-            return false;
-        }
         if (error instanceof HttpTimeoutException) {
             return true;
         }
-        String message = error.getMessage();
-        if (message == null) {
+        if (error == null || error.getMessage() == null) {
             return false;
         }
+        String message = error.getMessage();
         String lower = message.toLowerCase();
         return lower.contains("timeout") || lower.contains("timed out");
     }
@@ -629,6 +705,122 @@ public class HttpMonitorService {
                 && third.parentHash().equals(second.blockHash());
         if (chainLink) {
             store.closeLastAnomaly(node.key(), MetricSource.HTTP, AnomalyType.REORG);
+        }
+    }
+
+    private record BatchItem(int id, String method, JsonNode params) {}
+
+    private Map<Integer, JsonNode> sendBatchRpcWithRetry(NodeDefinition node, List<BatchItem> items)
+            throws IOException, InterruptedException {
+        int attempts = Math.max(0, node.maxRetries());
+        IOException lastIo = null;
+        String outcome = "success";
+        int retries = 0;
+        Observation observation = startRpcObservation("batch", "batch", node.http());
+        observation.lowCardinalityKeyValue("rpc.batch_size", Integer.toString(items.size()));
+        try (Observation.Scope scope = observation.openScope()) {
+            for (int attempt = 0; attempt <= attempts; attempt++) {
+                try {
+                    return sendBatchRpcOnce(node.http(), node.headers(), node.readTimeoutMs(), node.connectTimeoutMs(), items);
+                } catch (HttpStatusException statusEx) {
+                    outcome = "http-status";
+                    observation.error(statusEx);
+                    if (!shouldRetryStatus(statusEx.getStatusCode()) || attempt == attempts) {
+                        throw statusEx;
+                    }
+                    retries++;
+                    observation.event(Observation.Event.of("retry"));
+                    sleepBackoff(node.retryBackoffMs(), attempt);
+                } catch (IOException ioEx) {
+                    outcome = "io";
+                    observation.error(ioEx);
+                    if (isHostDownConnectError(ioEx)) {
+                        throw ioEx;
+                    }
+                    lastIo = ioEx;
+                    if (attempt == attempts) {
+                        throw ioEx;
+                    }
+                    retries++;
+                    observation.event(Observation.Event.of("retry"));
+                    sleepBackoff(node.retryBackoffMs(), attempt);
+                } catch (InterruptedException interruptedEx) {
+                    outcome = "interrupted";
+                    observation.error(interruptedEx);
+                    throw interruptedEx;
+                }
+            }
+        } finally {
+            stopRpcObservation(observation, outcome, retries);
+        }
+        if (lastIo != null) {
+            throw lastIo;
+        }
+        throw new IOException("Batch RPC call failed after retries");
+    }
+
+    private Map<Integer, JsonNode> sendBatchRpcOnce(String httpUrl,
+                                                      Map<String, String> headers,
+                                                      long readTimeoutMs,
+                                                      long connectTimeoutMs,
+                                                      List<BatchItem> items)
+            throws IOException, InterruptedException {
+        var batch = mapper.createArrayNode();
+        for (BatchItem item : items) {
+            ObjectNode req = mapper.createObjectNode();
+            req.put("jsonrpc", JSONRPC_VERSION);
+            req.put("id", item.id());
+            req.put("method", item.method());
+            req.set("params", item.params());
+            batch.add(req);
+        }
+        HttpRequest.Builder builder = HttpRequest.newBuilder()
+                .uri(URI.create(httpUrl))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(batch.toString()));
+        if (readTimeoutMs > 0) {
+            builder.timeout(Duration.ofMillis(readTimeoutMs));
+        }
+        headers.forEach(builder::header);
+        HttpClient client = getHttpClient(connectTimeoutMs);
+        HttpResponse<String> response = client.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+        if (response.statusCode() != 200) {
+            throw new HttpStatusException(response.statusCode(), httpUrl);
+        }
+        JsonNode responseNode = mapper.readTree(response.body());
+        if (!responseNode.isArray()) {
+            throw new IOException("Expected JSON array from batch RPC, got: "
+                    + response.body().substring(0, Math.min(200, response.body().length())));
+        }
+        Map<Integer, JsonNode> results = new HashMap<>();
+        for (JsonNode item : responseNode) {
+            JsonNode idNode = item.get("id");
+            if (idNode != null) {
+                results.put(idNode.asInt(), item);
+            }
+        }
+        return results;
+    }
+
+    private Observation startRpcObservation(String kind, String method, String httpUrl) {
+        return Observation.start("chaincheck.rpc", observationRegistry)
+                .lowCardinalityKeyValue("rpc.kind", kind)
+                .lowCardinalityKeyValue("rpc.method", method)
+                .lowCardinalityKeyValue("rpc.host", extractHost(httpUrl));
+    }
+
+    private void stopRpcObservation(Observation observation, String outcome, int retries) {
+        observation.lowCardinalityKeyValue("rpc.outcome", outcome);
+        observation.lowCardinalityKeyValue("rpc.retries", Integer.toString(retries));
+        observation.stop();
+    }
+
+    private String extractHost(String httpUrl) {
+        try {
+            String host = URI.create(httpUrl).getHost();
+            return host != null && !host.isBlank() ? host : "unknown";
+        } catch (RuntimeException ex) {
+            return "unknown";
         }
     }
 

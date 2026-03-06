@@ -24,12 +24,29 @@ import java.util.Map;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
+import jakarta.annotation.PostConstruct;
+
 @ConfigurationProperties(prefix = "rpc")
 public class ChainCheckProperties {
 
-    public enum Mode {
+    /**
+     * Behavioral chain type. Determines WS newHead handling, finality model, and
+     * request interval defaults. COSMOS, OPTIMISM, ZK, AVALANCHE and TRON all trust
+     * event data directly; ETHEREUM performs additional getBlockByHash verification
+     * and uses a beacon node.
+     */
+    public enum ModeType {
         ETHEREUM,
-        COSMOS
+        COSMOS,
+        OPTIMISM,
+        ZK,
+        AVALANCHE,
+        TRON
+    }
+
+    public enum RequestProfile {
+        OPTIMAL,
+        SPARSE
     }
 
     public enum ChartGradientMode {
@@ -45,7 +62,10 @@ public class ChainCheckProperties {
 
     private String title = "";
     private String titleColor = "white";
-    private Mode mode = Mode.COSMOS;
+    /** Concrete blockchain name (e.g. "ethereum", "polygon", "base"). Informational only. */
+    private String mode = "";
+    /** Behavioral type — drives WS handling, finality logic and request defaults. */
+    private ModeType modeType = ModeType.COSMOS;
     private boolean getSafeBlocks = false;
     private boolean getFinalizedBlocks = false;
     private boolean wsGapRecoveryEnabled = false;
@@ -57,16 +77,25 @@ public class ChainCheckProperties {
     private long blockVerificationDelayMs = 5000;
     private Consensus consensus = new Consensus();
     private Defaults defaults = new Defaults();
+    private RequestsConfig requests = new RequestsConfig();
     private Persistence persistence = new Persistence();
     private AnomalyDetection anomalyDetection = new AnomalyDetection();
     private List<RpcNodeProperties> nodes = new ArrayList<>();
 
-    public Mode getMode() {
+    public String getMode() {
         return mode;
     }
 
-    public void setMode(Mode mode) {
+    public void setMode(String mode) {
         this.mode = mode;
+    }
+
+    public ModeType getModeType() {
+        return modeType;
+    }
+
+    public void setModeType(ModeType modeType) {
+        this.modeType = modeType;
     }
 
     public String getTitle() {
@@ -173,6 +202,24 @@ public class ChainCheckProperties {
         this.defaults = defaults;
     }
 
+    public RequestsConfig getRequests() {
+        return requests;
+    }
+
+    public void setRequests(RequestsConfig requests) {
+        this.requests = requests;
+    }
+
+    @PostConstruct
+    public void applyRequestDefaults() {
+        if (requests.getOptimalPollIntervalMs() <= 0) {
+            requests.setOptimalPollIntervalMs(modeType == ModeType.ETHEREUM ? 12_000L : 2_000L);
+        }
+        if (requests.getSparsePollIntervalMs() <= 0) {
+            requests.setSparsePollIntervalMs(modeType == ModeType.ETHEREUM ? 60_000L : 30_000L);
+        }
+    }
+
     public Persistence getPersistence() {
         return persistence;
     }
@@ -202,7 +249,7 @@ public class ChainCheckProperties {
         private String name;
         private String http;
         private String ws;
-        private long pollIntervalMs = 3000;
+        private RequestProfile requestProfile = RequestProfile.OPTIMAL;
         private AnomalyDetection anomalyDetection = new AnomalyDetection();
         private long connectTimeoutMs = -1;
         private long readTimeoutMs = -1;
@@ -236,12 +283,12 @@ public class ChainCheckProperties {
             this.ws = ws;
         }
 
-        public long getPollIntervalMs() {
-            return pollIntervalMs;
+        public RequestProfile getRequestProfile() {
+            return requestProfile;
         }
 
-        public void setPollIntervalMs(long pollIntervalMs) {
-            this.pollIntervalMs = pollIntervalMs;
+        public void setRequestProfile(RequestProfile requestProfile) {
+            this.requestProfile = requestProfile;
         }
 
         public AnomalyDetection getAnomalyDetection() {
@@ -306,6 +353,27 @@ public class ChainCheckProperties {
 
         public void setWsGapRecoveryMaxBlocks(Integer wsGapRecoveryMaxBlocks) {
             this.wsGapRecoveryMaxBlocks = wsGapRecoveryMaxBlocks;
+        }
+    }
+
+    public static class RequestsConfig {
+        private long optimalPollIntervalMs = 0;
+        private long sparsePollIntervalMs = 0;
+
+        public long getOptimalPollIntervalMs() {
+            return optimalPollIntervalMs;
+        }
+
+        public void setOptimalPollIntervalMs(long optimalPollIntervalMs) {
+            this.optimalPollIntervalMs = optimalPollIntervalMs;
+        }
+
+        public long getSparsePollIntervalMs() {
+            return sparsePollIntervalMs;
+        }
+
+        public void setSparsePollIntervalMs(long sparsePollIntervalMs) {
+            this.sparsePollIntervalMs = sparsePollIntervalMs;
         }
     }
 
