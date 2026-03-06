@@ -1,0 +1,38 @@
+rpc:
+  # Tron exposes an Ethereum-compatible JSON-RPC interface. Official endpoint requires TronGrid API key for high traffic.
+  mode: tron
+  mode-type: tron
+  title: "Tron Mainnet"
+  title-color: "#ff0013"
+  get-safe-blocks: false
+  get-finalized-blocks: false
+  scale-change-ms: 500
+  scale-max-ms: 30000
+  anomaly-detection:
+    high-latency-ms: 3000
+    long-delay-block-count: 10
+  # Polling intervals: optimal = 3s (matches Tron's ~3s block time), sparse = 30s
+  requests:
+    optimal-poll-interval-ms: 3000
+    sparse-poll-interval-ms: 30000
+  nodes:
+    - name: api.trongrid.io
+      http: https://api.trongrid.io/jsonrpc # Free tier, rate-limited
+    - name: Ankr
+      http: https://rpc.ankr.com/tron_jsonrpc
+      requests: sparse
+    - name: trondao.org
+      http: https://rpc.trondao.org
+      requests: sparse
+    - name: publicnode.com
+      http: https://tron-rpc.publicnode.com
+      requests: sparse
+    - name: drpc.org
+      http: https://tron.drpc.org
+      requests: sparse
+    - name: 1RPC
+      http: https://1rpc.io/trx
+      requests: sparse
+    - name: LlamaNodes
+      http: https://tron.llamarpc.com
+      requests: sparse

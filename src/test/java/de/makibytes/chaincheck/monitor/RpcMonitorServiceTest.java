@@ -145,7 +145,7 @@ class RpcMonitorServiceTest {
     @DisplayName("configured reference node disables automatic reference node selection")
     void configuredReferenceNodeDisablesAutoSelection() {
         ChainCheckProperties properties = new ChainCheckProperties();
-        properties.setMode(ChainCheckProperties.Mode.ETHEREUM);
+        properties.setModeType(ChainCheckProperties.ModeType.ETHEREUM);
         properties.getConsensus().setNodeKey("alpha");
 
         List<ChainCheckProperties.RpcNodeProperties> nodeProps = new ArrayList<>();
@@ -182,7 +182,7 @@ class RpcMonitorServiceTest {
     @DisplayName("configured reference node is excluded from execution HTTP polling")
     void configuredReferenceNodeExcludedFromExecutionPolling() {
         ChainCheckProperties properties = new ChainCheckProperties();
-        properties.setMode(ChainCheckProperties.Mode.ETHEREUM);
+        properties.setModeType(ChainCheckProperties.ModeType.ETHEREUM);
         properties.getConsensus().setNodeKey("alpha");
 
         List<ChainCheckProperties.RpcNodeProperties> nodeProps = new ArrayList<>();

@@ -264,7 +264,7 @@ public class WsMonitorService {
                     Instant now = Instant.now();
                     state.lastWsEventReceivedAt = now;
 
-                    if (properties.getMode() == ChainCheckProperties.Mode.ETHEREUM && blockHash != null) {
+                    if (properties.getModeType() == ChainCheckProperties.ModeType.ETHEREUM && blockHash != null) {
                         handleEthereumNewHead(node, blockHash, now);
                     } else {
                         handleCosmosNewHead(node, blockNumber, blockHash, parentHash, blockTimestamp, now);

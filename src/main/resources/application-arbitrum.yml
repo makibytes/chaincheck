@@ -1,0 +1,42 @@
+rpc:
+  mode: arbitrum
+  mode-type: optimism
+  title: "Arbitrum One"
+  title-color: "#213147"
+  get-safe-blocks: false
+  get-finalized-blocks: true
+  scale-change-ms: 250
+  scale-max-ms: 15000
+  anomaly-detection:
+    high-latency-ms: 1000
+    long-delay-block-count: 30
+  # Polling intervals: optimal = 1s (matches Arbitrum's ~0.25s block time, capped to avoid rate-limits), sparse = 30s
+  requests:
+    optimal-poll-interval-ms: 1000
+    sparse-poll-interval-ms: 30000
+  nodes:
+    - name: arb1.arbitrum.io
+      http: https://arb1.arbitrum.io/rpc
+    - name: publicnode.com
+      http: https://arbitrum-one-rpc.publicnode.com
+      ws: wss://arbitrum-one-rpc.publicnode.com
+      requests: sparse
+    - name: drpc.org
+      http: https://arbitrum.drpc.org
+      ws: wss://arbitrum.drpc.org
+      requests: sparse
+    - name: tenderly.co
+      http: https://arbitrum.gateway.tenderly.co
+      ws: wss://arbitrum.gateway.tenderly.co
+      requests: sparse
+    - name: 1RPC
+      http: https://1rpc.io/arb
+      requests: sparse
+    - name: BlastAPI
+      http: https://arbitrum-one.public.blastapi.io
+      ws: wss://arbitrum-one.public.blastapi.io
+      requests: sparse
+    - name: LlamaNodes
+      http: https://arbitrum.llamarpc.com
+      ws: wss://arbitrum.llamarpc.com
+      requests: sparse

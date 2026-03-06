@@ -66,6 +66,9 @@ public class NodeRegistry {
             int wsGapRecoveryMaxBlocks = node.getWsGapRecoveryMaxBlocks() != null
                     ? node.getWsGapRecoveryMaxBlocks()
                     : properties.getWsGapRecoveryMaxBlocks();
+            long pollIntervalMs = node.getRequestProfile() == ChainCheckProperties.RequestProfile.SPARSE
+                    ? properties.getRequests().getSparsePollIntervalMs()
+                    : properties.getRequests().getOptimalPollIntervalMs();
                 long nodeHighLatencyMs = node.getAnomalyDetection() != null
                     ? node.getAnomalyDetection().getHighLatencyMs()
                     : -1;
@@ -82,7 +85,7 @@ public class NodeRegistry {
                     nodeName,
                     node.getHttp(),
                     node.getWs(),
-                    node.getPollIntervalMs(),
+                    pollIntervalMs,
                     anomalyDelayMs,
                     safeBlocksEnabled,
                     finalizedBlocksEnabled,

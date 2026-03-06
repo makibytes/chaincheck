@@ -8,7 +8,7 @@
 
 - **Fleet Overview**: Default start page shows all configured nodes at a glance with health scores, latency, block lag, and connection status — no more guessing which node is healthy
 - **Per-Node Details**: Drill into any node for a full latency chart, block-finality timeline, anomaly log, and sample-by-sample breakdown
-- **Dual-Mode Architecture**: Dedicated Ethereum mode (beacon chain consensus, attestations) and Cosmos mode (Polygon-style, majority-voting finality) — each tuned to the chain's finality model
+- **Multi-Chain Architecture**: Six behavioral chain types (Ethereum, Cosmos, Optimism, ZK, Avalanche, Tron) each tuned to the chain's finality model — see [BLOCKCHAINS.md](BLOCKCHAINS.md) for all supported profiles
 - **Real-Time Monitoring**: Tracks latency and error rates for both HTTP polling and WebSocket `newHeads` subscriptions
 - **Checkpoint Propagation Delays**: Measures head, safe, and finalized block delays to track how fast a node follows the canonical chain
 - **Anomaly Detection**: Automatically flags block skips, reorgs (with depth), rate limits, timeouts, wrong heads, and connection drops
@@ -49,9 +49,20 @@ mvn spring-boot:run -Dspring-boot.run.profiles=ethereum
 # Polygon mainnet — uses application-polygon.yml
 mvn spring-boot:run -Dspring-boot.run.profiles=polygon
 
+# Base, Optimism, Arbitrum, zkSync, Avalanche, Tron — same pattern
+mvn spring-boot:run -Dspring-boot.run.profiles=base
+mvn spring-boot:run -Dspring-boot.run.profiles=arbitrum
+mvn spring-boot:run -Dspring-boot.run.profiles=avalanche
+
+# Testnets
+mvn spring-boot:run -Dspring-boot.run.profiles=ethereum-sepolia
+mvn spring-boot:run -Dspring-boot.run.profiles=polygon-amoy
+
 # Mock mode (fake RPC data — useful for UI development)
 mvn spring-boot:run -Dspring-boot.run.profiles=mock
 ```
+
+See [BLOCKCHAINS.md](BLOCKCHAINS.md) for the full list of supported profiles and their chain types.
 
 Open `http://localhost:8080` to see the Fleet Overview.
 
@@ -94,14 +105,21 @@ A **← Fleet** back-link in the header returns you to the overview.
 
 ## Modes
 
-ChainCheck has two operating modes set by `rpc.mode`. Choose the right one for your chain.
+ChainCheck uses two orthogonal fields to describe a chain:
 
-### Ethereum Mode (`rpc.mode: ethereum`)
+| Field | Type | Purpose |
+|-------|------|---------|
+| `rpc.mode` | `String` | Concrete chain name — informational only (e.g., `"ethereum"`, `"polygon"`) |
+| `rpc.mode-type` | enum | Behavioral chain type — controls WS newHead processing and polling defaults |
+
+Six behavioral mode types are supported. See [BLOCKCHAINS.md](BLOCKCHAINS.md) for all supported chains and testnet profiles.
+
+### Ethereum Mode (`rpc.mode-type: ethereum`)
 
 Designed for Ethereum mainnet and testnets. A separate consensus (beacon) node is **required** for full finality tracking.
 
 **How it works:**
-- HTTP nodes poll `eth_blockNumber` (and optionally `safe`/`finalized` tags)
+- HTTP nodes poll `eth_blockNumber` (and optionally `safe`/`finalized` tags) using a single batch JSON-RPC call per poll cycle
 - WebSocket nodes subscribe to `eth_subscribe("newHeads")`
 - On each `newHeads` event, ChainCheck immediately calls `eth_getBlockByHash` on the same node — because the block number in newHead payloads is **not reliable**. The hash is the only trusted block identity.
 - 5 seconds later, a second HTTP call fetches transaction count, gas price, and a reliable latency measurement
@@ -114,16 +132,16 @@ Designed for Ethereum mainnet and testnets. A separate consensus (beacon) node i
 
 The `newHeads` stream is a *best-effort* notification, not a canonical append-only log. Events may arrive out of order, be duplicated, or be dropped entirely. Two events may carry the same block number during a reorg. ChainCheck treats each event as a wake-up signal, then verifies the chain state via `eth_getBlockByHash`. Block identity is always the **hash**, never the number.
 
-### Cosmos Mode (`rpc.mode: cosmos`)
+### All Other Mode Types
 
-Designed for EVM chains without a beacon chain (e.g., Polygon, BNB Chain, Avalanche C-Chain).
+Mode types `COSMOS`, `OPTIMISM`, `ZK`, `AVALANCHE`, and `TRON` all share the same processing path:
 
-**How it works:**
-- No consensus node — the reference head is determined by **majority voting** across all execution nodes
-- WebSocket `newHeads` payloads are trusted directly (block number, hash, parentHash, timestamp come from the event)
-- No delayed HTTP block verification
-- Safe and finalized blocks are tracked **per execution node** from its own HTTP polling (`safe`/`finalized` tags). Status is not shared across nodes
-- `safeDelayMs` and `finalizedDelayMs` are computed relative to block timestamp (not a consensus node observation time)
+- WebSocket `newHeads` payloads are **trusted directly** (block number, hash, parentHash, timestamp come from the event — no `eth_getBlockByHash` verification)
+- No delayed HTTP verification call
+- Safe and finalized blocks tracked per execution node from its own HTTP polling
+- Reference head determined by **majority voting** unless an explicit consensus node is configured via `rpc.consensus.http`
+
+The key differences between these types are the default polling intervals and semantic intent — see [BLOCKCHAINS.md](BLOCKCHAINS.md).
 
 ---
 
@@ -136,7 +154,8 @@ Configuration lives in `src/main/resources/application.yml`. The built-in Spring
 ```yaml
 # application.yml (or add spring.profiles.active=ethereum to load application-ethereum.yml)
 rpc:
-  mode: ethereum               # Activates Ethereum-specific processing
+  mode: ethereum               # Concrete chain name (informational)
+  mode-type: ethereum          # Activates Ethereum-specific processing
   title: "Ethereum Mainnet"
   title-color: "#627eea"
 
@@ -145,6 +164,13 @@ rpc:
   get-finalized-blocks: false  # Set true to poll eth_getBlockByNumber("finalized")
   scale-change-ms: 500         # Chart scale boundary (ms): below this = "low" band
   scale-max-ms: 60000          # Chart Y-axis cap (ms)
+
+  # Polling intervals (mode-level, not per-node)
+  # optimal = 12s matches Ethereum's ~12s block time
+  # sparse  = 60s for rate-limited public nodes
+  requests:
+    optimal-poll-interval-ms: 12000
+    sparse-poll-interval-ms: 60000
 
   defaults:
     connect-timeout-ms: 2000
@@ -177,27 +203,26 @@ rpc:
     attestation-tracking-max-attempts: 100
 
   nodes:
-    - name: My Local Node
+    - name: My Local Node          # uses optimal (default) — polls every 12 s
       http: http://geth-node:8545
       ws: ws://geth-node:8545
-      poll-interval-ms: 10000          # Poll every 10 s when WS is active
 
     - name: PublicNode
       http: https://ethereum-rpc.publicnode.com
       ws: wss://ethereum-rpc.publicnode.com
-      poll-interval-ms: 10000
+      requests: sparse             # rate-limited — polls every 60 s
 
     - name: Ankr (with API key)
       http: https://rpc.ankr.com/eth
       ws: wss://rpc.ankr.com/eth
-      poll-interval-ms: 10000
+      requests: sparse
       headers:
         Authorization: "Bearer <your-api-key>"
 
     - name: DRPC
       http: https://eth.drpc.org
       ws: wss://eth.drpc.org
-      poll-interval-ms: 10000
+      requests: sparse
 ```
 
 ### Cosmos Mode Example (Polygon)
@@ -205,7 +230,8 @@ rpc:
 ```yaml
 # application.yml (or add spring.profiles.active=polygon to load application-polygon.yml)
 rpc:
-  mode: cosmos                 # Activates Cosmos/majority-voting processing
+  mode: polygon                # Concrete chain name (informational)
+  mode-type: cosmos            # Activates majority-voting, trust-event-payload processing
   title: "Polygon Mainnet"
   title-color: "#8247e5"
 
@@ -215,6 +241,12 @@ rpc:
 
   scale-change-ms: 500
   scale-max-ms: 30000
+
+  # optimal = 2s matches Polygon's ~2s block time
+  # sparse  = 30s for rate-limited public nodes
+  requests:
+    optimal-poll-interval-ms: 2000
+    sparse-poll-interval-ms: 30000
 
   defaults:
     connect-timeout-ms: 2000
@@ -227,37 +259,37 @@ rpc:
     long-delay-block-count: 15
 
   nodes:
-    - name: polygon-rpc.com
+    - name: polygon-rpc.com       # uses optimal — polls every 2 s
       http: https://polygon-rpc.com
-      # ws: wss://polygon-rpc.com     # Uncomment to enable WebSocket tracking
-      poll-interval-ms: 2000
 
     - name: PublicNode
       http: https://polygon-bor-rpc.publicnode.com
       ws: wss://polygon-bor-rpc.publicnode.com
-      poll-interval-ms: 5000
+      requests: sparse
 
     - name: DRPC
       http: https://polygon.drpc.org
       ws: wss://polygon.drpc.org
-      poll-interval-ms: 5000
+      requests: sparse
 
     - name: QuikNode
       http: https://rpc-mainnet.matic.quiknode.pro
       ws: wss://rpc-mainnet.matic.quiknode.pro/ws
-      poll-interval-ms: 5000
+      requests: sparse
       headers:
         Authorization: "Bearer <your-api-key>"
 ```
 
 ### Using Spring Boot Profiles
 
-ChainCheck ships with two pre-built profiles. Activate one instead of editing `application.yml` directly:
+ChainCheck ships with pre-built profiles for all major chains. Activate one instead of editing `application.yml` directly:
 
 ```bash
 # Via Maven
 mvn spring-boot:run -Dspring-boot.run.profiles=ethereum
 mvn spring-boot:run -Dspring-boot.run.profiles=polygon
+mvn spring-boot:run -Dspring-boot.run.profiles=base
+mvn spring-boot:run -Dspring-boot.run.profiles=arbitrum
 
 # Via environment variable
 SPRING_PROFILES_ACTIVE=ethereum java -jar chaincheck.jar
@@ -266,7 +298,7 @@ SPRING_PROFILES_ACTIVE=ethereum java -jar chaincheck.jar
 java -Dspring.profiles.active=polygon -jar chaincheck.jar
 ```
 
-The profile YAML files (`application-ethereum.yml`, `application-polygon.yml`) are starting points — copy and edit them to match your actual node endpoints and API keys before running in production.
+See [BLOCKCHAINS.md](BLOCKCHAINS.md) for the complete list of supported profiles (mainnets and testnets).
 
 ### Configuration Reference
 
@@ -274,7 +306,8 @@ The profile YAML files (`application-ethereum.yml`, `application-polygon.yml`) a
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `mode` | `cosmos` | Operating mode: `ethereum` or `cosmos` |
+| `mode` | — | Concrete chain name (informational — e.g., `"ethereum"`, `"polygon"`) |
+| `mode-type` | `cosmos` | Behavioral chain type: `ethereum`, `cosmos`, `optimism`, `zk`, `avalanche`, or `tron` |
 | `title` | `ChainCheck` | Dashboard title shown in the header |
 | `title-color` | — | CSS color for the title text |
 | `get-safe-blocks` | `false` | Poll `eth_getBlockByNumber("safe")` on execution nodes |
@@ -284,6 +317,15 @@ The profile YAML files (`application-ethereum.yml`, `application-polygon.yml`) a
 | `block-verification-delay-ms` | `5000` | Ethereum mode: delay before post-newHead HTTP verification call |
 | `chart-gradient-mode` | `NONE` | Gradient coloring on the node-detail chart line: `LATENCY`, `NEWHEAD`, or `NONE` |
 | `sparkline-data-source` | `LATENCY` | Metric used for fleet sparklines: `LATENCY` or `NEWHEAD` |
+
+#### Request profiles (`rpc.requests.*`)
+
+Controls HTTP polling intervals for all nodes in this profile. Each node selects `optimal` (default) or `sparse`.
+
+| Key | ETHEREUM default | All other defaults | Description |
+|-----|------------------|--------------------|-------------|
+| `optimal-poll-interval-ms` | `12000` | `2000` | Poll interval for well-connected nodes |
+| `sparse-poll-interval-ms` | `60000` | `30000` | Poll interval for rate-limited public nodes |
 
 #### Default node settings (`rpc.defaults.*`)
 
@@ -321,7 +363,7 @@ The profile YAML files (`application-ethereum.yml`, `application-polygon.yml`) a
 | `name` | Display name in the dashboard |
 | `http` | HTTP RPC endpoint (required) |
 | `ws` | WebSocket RPC endpoint (optional) |
-| `poll-interval-ms` | HTTP polling interval |
+| `requests` | Request profile: `optimal` (default) or `sparse` |
 | `headers` | Map of custom request headers (API keys, auth) |
 | `connect-timeout-ms` | Per-node override |
 | `read-timeout-ms` | Per-node override |
@@ -376,6 +418,7 @@ This makes ChainCheck safe to run against any standard Ethereum JSON-RPC endpoin
 
 ## Documentation
 
+- [BLOCKCHAINS.md](BLOCKCHAINS.md) — Supported chains, mode types, request profiles, and testnet profiles
 - [docs/QUICKSTART.md](docs/QUICKSTART.md)
 - [docs/ANOMALIES.md](docs/ANOMALIES.md)
 

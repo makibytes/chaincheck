@@ -9,6 +9,8 @@ server:
   port: 8080
 
 rpc:
+  mode: mock
+  mode-type: cosmos
   title: "Mock RPC"
   title-color: "#777777"
   get-safe-blocks: true
@@ -19,12 +21,12 @@ rpc:
     - name: Mock Node
       http: "http://mock.local"
       ws: "ws://mock.local"
-      poll-interval-ms: 60000
+      requests: sparse
       anomaly-detection:
         high-latency: 2000
     - name: Mock Node Two
       http: "http://mock-two.local"
       ws: "ws://mock-two.local"
-      poll-interval-ms: 60000
+      requests: sparse
       anomaly-detection:
         high-latency: 2600

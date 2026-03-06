@@ -1,0 +1,38 @@
+rpc:
+  mode: avalanche-fuji
+  mode-type: avalanche
+  title: "Avalanche Fuji Testnet"
+  title-color: "#e84142"
+  get-safe-blocks: false
+  get-finalized-blocks: false
+  scale-change-ms: 500
+  scale-max-ms: 30000
+  anomaly-detection:
+    high-latency-ms: 2000
+    long-delay-block-count: 15
+  requests:
+    optimal-poll-interval-ms: 2000
+    sparse-poll-interval-ms: 30000
+  nodes:
+    - name: api.avax-test.network
+      http: https://api.avax-test.network/ext/bc/C/rpc
+    - name: publicnode.com
+      http: https://avalanche-fuji-c-chain-rpc.publicnode.com
+      ws: wss://avalanche-fuji-c-chain-rpc.publicnode.com
+      requests: sparse
+    - name: drpc.org
+      http: https://avalanche-fuji.drpc.org
+      ws: wss://avalanche-fuji.drpc.org
+      requests: sparse
+    - name: tenderly.co
+      http: https://avalanche-fuji.gateway.tenderly.co
+      requests: sparse
+    - name: Ankr
+      http: https://rpc.ankr.com/avalanche_fuji
+      requests: sparse
+    - name: 1RPC
+      http: https://1rpc.io/avax/fuji
+      requests: sparse
+    - name: BlastAPI
+      http: https://ava-testnet.public.blastapi.io/ext/bc/C/rpc
+      requests: sparse

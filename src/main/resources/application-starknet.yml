@@ -1,0 +1,37 @@
+rpc:
+  # NOTE: Starknet uses a non-EVM RPC protocol (starknet_blockNumber etc.) and requires
+  # a Starknet-specific RPC adapter in ChainCheck before it will function correctly.
+  mode: starknet
+  mode-type: zk
+  title: "Starknet Mainnet"
+  title-color: "#ec796b"
+  get-safe-blocks: false
+  get-finalized-blocks: false
+  scale-change-ms: 5000
+  scale-max-ms: 120000
+  # Polling intervals: optimal = 30s (matches Starknet's variable ~30s block time), sparse = 120s
+  requests:
+    optimal-poll-interval-ms: 30000
+    sparse-poll-interval-ms: 120000
+  nodes:
+    - name: publicnode.com
+      http: https://starknet-rpc.publicnode.com
+      requests: sparse
+    - name: nethermind.io
+      http: https://free-rpc.nethermind.io/mainnet-juno
+      requests: sparse
+    - name: BlastAPI
+      http: https://starknet-mainnet.public.blastapi.io
+      requests: sparse
+    - name: drpc.org
+      http: https://starknet.drpc.org
+      requests: sparse
+    - name: lava.build
+      http: https://rpc.starknet.lava.build
+      requests: sparse
+    - name: exinchain.com
+      http: https://starknet-mainnet.rpc.exinchain.com
+      requests: sparse
+    - name: starknet.id
+      http: https://rpc.starknet.id
+      requests: sparse

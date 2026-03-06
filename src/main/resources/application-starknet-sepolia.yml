@@ -1,0 +1,36 @@
+rpc:
+  mode: starknet-sepolia
+  mode-type: zk
+  title: "Starknet Sepolia Testnet"
+  title-color: "#ec796b"
+  # NOTE: Starknet uses a non-EVM RPC protocol (starknet_blockNumber etc.) and requires
+  # a Starknet-specific RPC adapter in ChainCheck before it will function correctly.
+  get-safe-blocks: false
+  get-finalized-blocks: false
+  scale-change-ms: 5000
+  scale-max-ms: 120000
+  requests:
+    optimal-poll-interval-ms: 30000
+    sparse-poll-interval-ms: 120000
+  nodes:
+    - name: starknet-sepolia-rpc.publicnode.com
+      http: https://starknet-sepolia-rpc.publicnode.com
+      requests: sparse
+    - name: free-rpc.nethermind.io
+      http: https://free-rpc.nethermind.io/sepolia-juno
+      requests: sparse
+    - name: starknet-sepolia.public.blastapi.io
+      http: https://starknet-sepolia.public.blastapi.io
+      requests: sparse
+    - name: starknet-sepolia.drpc.org
+      http: https://starknet-sepolia.drpc.org
+      requests: sparse
+    - name: rpc.starknet.lava.build
+      http: https://rpc.starknet-sepolia.lava.build
+      requests: sparse
+    - name: rpc.ankr.com
+      http: https://rpc.ankr.com/starknet_sepolia
+      requests: sparse
+    - name: starknet-sepolia.gateway.tenderly.co
+      http: https://starknet-sepolia.gateway.tenderly.co
+      requests: sparse
