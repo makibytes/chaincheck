@@ -34,6 +34,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -55,6 +56,7 @@ import de.makibytes.chaincheck.model.MetricSample;
 import de.makibytes.chaincheck.model.MetricSource;
 import de.makibytes.chaincheck.monitor.NodeRegistry.NodeDefinition;
 import de.makibytes.chaincheck.store.InMemoryMetricsStore;
+import io.micrometer.observation.ObservationRegistry;
 import jakarta.annotation.PostConstruct;
 
 @Service
@@ -94,7 +96,8 @@ public class RpcMonitorService {
             ChainCheckProperties properties,
             BlockVotingService blockVotingService,
             BlockAgreementTracker blockAgreementTracker,
-            ReferenceNodeSelector referenceNodeSelector) {
+            ReferenceNodeSelector referenceNodeSelector,
+            ObjectProvider<ObservationRegistry> observationRegistryProvider) {
         this.nodeRegistry = nodeRegistry;
         this.store = store;
         this.detector = detector;
@@ -117,7 +120,10 @@ public class RpcMonitorService {
             this.referenceStrategy = new VotingReferenceStrategy(nodeRegistry, blockVotingService, referenceBlockVoting, referenceNodeSelector, blockAgreementTracker, store);
         }
 
-        this.httpMonitorService = new HttpMonitorService(this, nodeRegistry, store, detector, properties, nodeStates);
+        ObservationRegistry observationRegistry = observationRegistryProvider != null
+                ? observationRegistryProvider.getIfAvailable(() -> ObservationRegistry.NOOP)
+                : ObservationRegistry.NOOP;
+        this.httpMonitorService = new HttpMonitorService(this, nodeRegistry, store, detector, properties, nodeStates, observationRegistry);
         this.wsMonitorService = new WsMonitorService(this, nodeRegistry, store, detector, properties, nodeStates, httpMonitorService);
     }
 
@@ -128,7 +134,7 @@ public class RpcMonitorService {
     public RpcMonitorService(NodeRegistry nodeRegistry,
             InMemoryMetricsStore store,
             AnomalyDetector detector) {
-        this(nodeRegistry, store != null ? store : new InMemoryMetricsStore(), detector, new ChainCheckProperties(), new BlockVotingService(), new BlockAgreementTracker(), new ReferenceNodeSelector());
+        this(nodeRegistry, store != null ? store : new InMemoryMetricsStore(), detector, new ChainCheckProperties(), new BlockVotingService(), new BlockAgreementTracker(), new ReferenceNodeSelector(), null);
     }
 
     /**
@@ -138,7 +144,7 @@ public class RpcMonitorService {
             InMemoryMetricsStore store,
             AnomalyDetector detector,
             ChainCheckProperties properties) {
-        this(nodeRegistry, store, detector, properties, new BlockVotingService(), new BlockAgreementTracker(), new ReferenceNodeSelector());
+        this(nodeRegistry, store, detector, properties, new BlockVotingService(), new BlockAgreementTracker(), new ReferenceNodeSelector(), null);
     }
 
     @PostConstruct
@@ -349,16 +355,13 @@ public class RpcMonitorService {
         if (error == null) {
             return "Unknown error";
         }
-        if (error instanceof HttpTimeoutException) {
-            return "HTTP timeout: " + error.getMessage();
-        }
-        if (error instanceof ConnectException) {
-            return "Connect error: " + error.getMessage();
-        }
-        if (error instanceof HttpMonitorService.HttpStatusException statusEx) {
-            return "HTTP " + statusEx.getStatusCode() + ": " + statusEx.getMessage();
-        }
-        return error.getMessage();
+        return switch (error) {
+            case HttpTimeoutException timeoutException -> "HTTP timeout: " + timeoutException.getMessage();
+            case ConnectException connectException -> "Connect error: " + connectException.getMessage();
+            case HttpMonitorService.HttpStatusException statusException ->
+                    "HTTP " + statusException.getStatusCode() + ": " + statusException.getMessage();
+            default -> error.getMessage();
+        };
     }
 
     void checkAndCloseAnomaly(NodeDefinition node, String currentError, MetricSource source) {

@@ -6,14 +6,14 @@ This guide will help you get ChainCheck up and running in minutes.
 
 ## Prerequisites
 
-- Java 21 or higher installed
+- Java 25 or higher installed
 - Access to one or more Ethereum/Polygon RPC endpoints
 
 ### Check Java Version
 
 ```bash
 java -version
-# Should show version 21 or higher
+# Should show version 25 or higher
 ```
 
 ## Installation

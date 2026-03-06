@@ -19,17 +19,7 @@ package de.makibytes.chaincheck.web;
 
 import java.time.Instant;
 
-public class HttpStatus {
-
-    private final Instant connectedSince;
-    private final long errorCount;
-    private final String lastError;
-
-    public HttpStatus(Instant connectedSince, long errorCount, String lastError) {
-        this.connectedSince = connectedSince;
-        this.errorCount = errorCount;
-        this.lastError = lastError;
-    }
+public record HttpStatus(Instant connectedSince, long errorCount, String lastError) {
 
     public Instant getConnectedSince() {
         return connectedSince;

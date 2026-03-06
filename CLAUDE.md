@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-ChainCheck is a multi-chain EVM blockchain RPC node monitoring dashboard. It tracks latency, block delays, anomalies, and finality status across multiple HTTP and WebSocket RPC endpoints for Ethereum, Polygon, Base, Optimism, Arbitrum, zkSync Era, Avalanche, Tron, and their testnets. Built with Spring Boot 4.0.2, Java 21, Thymeleaf, and Chart.js.
+ChainCheck is a multi-chain EVM blockchain RPC node monitoring dashboard. It tracks latency, block delays, anomalies, and finality status across multiple HTTP and WebSocket RPC endpoints for Ethereum, Polygon, Base, Optimism, Arbitrum, zkSync Era, Avalanche, Tron, and their testnets. Built with Spring Boot 4.0.3, Java 25, Thymeleaf, and Chart.js.
 
 ## Build & Run Commands
 

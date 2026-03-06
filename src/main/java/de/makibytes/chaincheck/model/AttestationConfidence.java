@@ -19,16 +19,14 @@ package de.makibytes.chaincheck.model;
 
 import java.time.Instant;
 
-public class AttestationConfidence {
-
-    private final long executionBlockNumber;
-    private final String executionBlockHash;
-    private final long slot;
-    private final int attestingValidators;
-    private final int expectedValidators;
-    private final double confidencePercent;
-    private final Instant computedAt;
-    private final int attestationRound;
+public record AttestationConfidence(long executionBlockNumber,
+                                    String executionBlockHash,
+                                    long slot,
+                                    int attestingValidators,
+                                    int expectedValidators,
+                                    double confidencePercent,
+                                    Instant computedAt,
+                                    int attestationRound) {
 
     public AttestationConfidence(long executionBlockNumber,
                                  String executionBlockHash,
@@ -38,25 +36,7 @@ public class AttestationConfidence {
                                  double confidencePercent,
                                  Instant computedAt) {
         this(executionBlockNumber, executionBlockHash, slot, attestingValidators,
-             expectedValidators, confidencePercent, computedAt, 1);
-    }
-
-    public AttestationConfidence(long executionBlockNumber,
-                                 String executionBlockHash,
-                                 long slot,
-                                 int attestingValidators,
-                                 int expectedValidators,
-                                 double confidencePercent,
-                                 Instant computedAt,
-                                 int attestationRound) {
-        this.executionBlockNumber = executionBlockNumber;
-        this.executionBlockHash = executionBlockHash;
-        this.slot = slot;
-        this.attestingValidators = attestingValidators;
-        this.expectedValidators = expectedValidators;
-        this.confidencePercent = confidencePercent;
-        this.computedAt = computedAt;
-        this.attestationRound = attestationRound;
+                expectedValidators, confidencePercent, computedAt, 1);
     }
 
     public long getExecutionBlockNumber() {

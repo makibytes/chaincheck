@@ -48,6 +48,8 @@ import de.makibytes.chaincheck.model.MetricSample;
 import de.makibytes.chaincheck.model.MetricSource;
 import de.makibytes.chaincheck.monitor.NodeRegistry.NodeDefinition;
 import de.makibytes.chaincheck.store.InMemoryMetricsStore;
+import io.micrometer.observation.Observation;
+import io.micrometer.observation.ObservationRegistry;
 
 public class HttpMonitorService {
 
@@ -64,19 +66,22 @@ public class HttpMonitorService {
     private final Map<Long, HttpClient> httpClients = new ConcurrentHashMap<>();
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
     private final Map<String, RpcMonitorService.NodeState> nodeStates;
+    private final ObservationRegistry observationRegistry;
 
     public HttpMonitorService(RpcMonitorService monitor,
                               NodeRegistry nodeRegistry,
                               InMemoryMetricsStore store,
                               AnomalyDetector detector,
                               ChainCheckProperties properties,
-                              Map<String, RpcMonitorService.NodeState> nodeStates) {
+                              Map<String, RpcMonitorService.NodeState> nodeStates,
+                              ObservationRegistry observationRegistry) {
         this.monitor = monitor;
         this.nodeRegistry = nodeRegistry;
         this.store = store;
         this.detector = detector;
         this.properties = properties;
         this.nodeStates = nodeStates;
+        this.observationRegistry = observationRegistry;
     }
 
     public void pollNodes() {
@@ -444,24 +449,43 @@ public class HttpMonitorService {
                                       JsonNode params) throws IOException, InterruptedException {
         int attempts = Math.max(0, maxRetries);
         IOException lastIo = null;
-        for (int attempt = 0; attempt <= attempts; attempt++) {
-            try {
-                return sendRpcOnce(httpUrl, headers, readTimeoutMs, connectTimeoutMs, method, params);
-            } catch (HttpStatusException statusEx) {
-                if (!shouldRetryStatus(statusEx.getStatusCode()) || attempt == attempts) {
-                    throw statusEx;
+        String outcome = "success";
+        int retries = 0;
+        Observation observation = startRpcObservation("single", method, httpUrl);
+        try (Observation.Scope scope = observation.openScope()) {
+            for (int attempt = 0; attempt <= attempts; attempt++) {
+                try {
+                    return sendRpcOnce(httpUrl, headers, readTimeoutMs, connectTimeoutMs, method, params);
+                } catch (HttpStatusException statusEx) {
+                    outcome = "http-status";
+                    observation.error(statusEx);
+                    if (!shouldRetryStatus(statusEx.getStatusCode()) || attempt == attempts) {
+                        throw statusEx;
+                    }
+                    retries++;
+                    observation.event(Observation.Event.of("retry"));
+                    sleepBackoff(retryBackoffMs, attempt);
+                } catch (IOException ioEx) {
+                    outcome = "io";
+                    observation.error(ioEx);
+                    if (isHostDownConnectError(ioEx)) {
+                        throw ioEx;
+                    }
+                    lastIo = ioEx;
+                    if (attempt == attempts) {
+                        throw ioEx;
+                    }
+                    retries++;
+                    observation.event(Observation.Event.of("retry"));
+                    sleepBackoff(retryBackoffMs, attempt);
+                } catch (InterruptedException interruptedEx) {
+                    outcome = "interrupted";
+                    observation.error(interruptedEx);
+                    throw interruptedEx;
                 }
-                sleepBackoff(retryBackoffMs, attempt);
-            } catch (IOException | InterruptedException ioEx) {
-                if (isHostDownConnectError(ioEx)) {
-                    throw ioEx;
-                }
-                lastIo = ioEx instanceof IOException ? (IOException) ioEx : new IOException(ioEx);
-                if (attempt == attempts) {
-                    throw ioEx;
-                }
-                sleepBackoff(retryBackoffMs, attempt);
             }
+        } finally {
+            stopRpcObservation(observation, outcome, retries);
         }
         if (lastIo != null) {
             throw lastIo;
@@ -522,16 +546,13 @@ public class HttpMonitorService {
     }
 
     private boolean isTimeoutError(Throwable error) {
-        if (error == null) {
-            return false;
-        }
         if (error instanceof HttpTimeoutException) {
             return true;
         }
-        String message = error.getMessage();
-        if (message == null) {
+        if (error == null || error.getMessage() == null) {
             return false;
         }
+        String message = error.getMessage();
         String lower = message.toLowerCase();
         return lower.contains("timeout") || lower.contains("timed out");
     }
@@ -693,24 +714,44 @@ public class HttpMonitorService {
             throws IOException, InterruptedException {
         int attempts = Math.max(0, node.maxRetries());
         IOException lastIo = null;
-        for (int attempt = 0; attempt <= attempts; attempt++) {
-            try {
-                return sendBatchRpcOnce(node.http(), node.headers(), node.readTimeoutMs(), node.connectTimeoutMs(), items);
-            } catch (HttpStatusException statusEx) {
-                if (!shouldRetryStatus(statusEx.getStatusCode()) || attempt == attempts) {
-                    throw statusEx;
+        String outcome = "success";
+        int retries = 0;
+        Observation observation = startRpcObservation("batch", "batch", node.http());
+        observation.lowCardinalityKeyValue("rpc.batch_size", Integer.toString(items.size()));
+        try (Observation.Scope scope = observation.openScope()) {
+            for (int attempt = 0; attempt <= attempts; attempt++) {
+                try {
+                    return sendBatchRpcOnce(node.http(), node.headers(), node.readTimeoutMs(), node.connectTimeoutMs(), items);
+                } catch (HttpStatusException statusEx) {
+                    outcome = "http-status";
+                    observation.error(statusEx);
+                    if (!shouldRetryStatus(statusEx.getStatusCode()) || attempt == attempts) {
+                        throw statusEx;
+                    }
+                    retries++;
+                    observation.event(Observation.Event.of("retry"));
+                    sleepBackoff(node.retryBackoffMs(), attempt);
+                } catch (IOException ioEx) {
+                    outcome = "io";
+                    observation.error(ioEx);
+                    if (isHostDownConnectError(ioEx)) {
+                        throw ioEx;
+                    }
+                    lastIo = ioEx;
+                    if (attempt == attempts) {
+                        throw ioEx;
+                    }
+                    retries++;
+                    observation.event(Observation.Event.of("retry"));
+                    sleepBackoff(node.retryBackoffMs(), attempt);
+                } catch (InterruptedException interruptedEx) {
+                    outcome = "interrupted";
+                    observation.error(interruptedEx);
+                    throw interruptedEx;
                 }
-                sleepBackoff(node.retryBackoffMs(), attempt);
-            } catch (IOException | InterruptedException ioEx) {
-                if (isHostDownConnectError(ioEx)) {
-                    throw ioEx;
-                }
-                lastIo = ioEx instanceof IOException ? (IOException) ioEx : new IOException(ioEx);
-                if (attempt == attempts) {
-                    throw ioEx;
-                }
-                sleepBackoff(node.retryBackoffMs(), attempt);
             }
+        } finally {
+            stopRpcObservation(observation, outcome, retries);
         }
         if (lastIo != null) {
             throw lastIo;
@@ -719,10 +760,10 @@ public class HttpMonitorService {
     }
 
     private Map<Integer, JsonNode> sendBatchRpcOnce(String httpUrl,
-                                                     Map<String, String> headers,
-                                                     long readTimeoutMs,
-                                                     long connectTimeoutMs,
-                                                     List<BatchItem> items)
+                                                      Map<String, String> headers,
+                                                      long readTimeoutMs,
+                                                      long connectTimeoutMs,
+                                                      List<BatchItem> items)
             throws IOException, InterruptedException {
         var batch = mapper.createArrayNode();
         for (BatchItem item : items) {
@@ -759,6 +800,28 @@ public class HttpMonitorService {
             }
         }
         return results;
+    }
+
+    private Observation startRpcObservation(String kind, String method, String httpUrl) {
+        return Observation.start("chaincheck.rpc", observationRegistry)
+                .lowCardinalityKeyValue("rpc.kind", kind)
+                .lowCardinalityKeyValue("rpc.method", method)
+                .lowCardinalityKeyValue("rpc.host", extractHost(httpUrl));
+    }
+
+    private void stopRpcObservation(Observation observation, String outcome, int retries) {
+        observation.lowCardinalityKeyValue("rpc.outcome", outcome);
+        observation.lowCardinalityKeyValue("rpc.retries", Integer.toString(retries));
+        observation.stop();
+    }
+
+    private String extractHost(String httpUrl) {
+        try {
+            String host = URI.create(httpUrl).getHost();
+            return host != null && !host.isBlank() ? host : "unknown";
+        } catch (RuntimeException ex) {
+            return "unknown";
+        }
     }
 
     static class HttpStatusException extends IOException {
