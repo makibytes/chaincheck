@@ -358,7 +358,7 @@ public class RpcMonitorService {
         return switch (error) {
             case HttpTimeoutException timeoutException -> "HTTP timeout: " + timeoutException.getMessage();
             case ConnectException connectException -> "Connect error: " + connectException.getMessage();
-            case HttpMonitorService.HttpStatusException statusException ->
+            case HttpStatusException statusException ->
                     "HTTP " + statusException.getStatusCode() + ": " + statusException.getMessage();
             default -> error.getMessage();
         };

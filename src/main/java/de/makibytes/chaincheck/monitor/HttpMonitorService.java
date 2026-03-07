@@ -823,17 +823,4 @@ public class HttpMonitorService {
             return "unknown";
         }
     }
-
-    static class HttpStatusException extends IOException {
-        private final int statusCode;
-
-        private HttpStatusException(int statusCode, String url) {
-            super("HTTP " + statusCode + " from " + url);
-            this.statusCode = statusCode;
-        }
-
-        public int getStatusCode() {
-            return statusCode;
-        }
-    }
 }
