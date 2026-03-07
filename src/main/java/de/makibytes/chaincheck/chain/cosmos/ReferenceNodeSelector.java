@@ -28,9 +28,9 @@ import org.springframework.stereotype.Service;
 import de.makibytes.chaincheck.chain.shared.BlockAgreementTracker;
 import de.makibytes.chaincheck.chain.shared.BlockConfidenceTracker;
 import de.makibytes.chaincheck.chain.shared.NodeSwitchPolicy;
+import de.makibytes.chaincheck.model.AnomalyEvent;
 import de.makibytes.chaincheck.model.MetricSample;
 import de.makibytes.chaincheck.monitor.RpcMonitorService;
-import de.makibytes.chaincheck.store.AnomalyAggregate;
 import de.makibytes.chaincheck.store.InMemoryMetricsStore;
 
 /**
@@ -40,6 +40,36 @@ import de.makibytes.chaincheck.store.InMemoryMetricsStore;
  */
 @Service
 public class ReferenceNodeSelector {
+
+    static final long EVALUATION_WINDOW_SECONDS = 3600;
+    static final long WS_FRESH_SECONDS = 30;
+    static final int MIN_RECENT_SAMPLE_COUNT = 3;
+    static final double MIN_UPTIME_RATIO = 0.85;
+    static final int MAX_RECENT_ANOMALIES = 20;
+    static final double MAX_ANOMALY_RATE = 0.25;
+
+    private static final double WS_HEALTH_SCORE = 1200.0;
+    private static final double UPTIME_SCORE_WEIGHT = 2400.0;
+    private static final double LATENCY_SCORE_WEIGHT = 1600.0;
+    private static final double HEAD_DELAY_SCORE_WEIGHT = 2200.0;
+    private static final double SAFE_DELAY_SCORE_WEIGHT = 800.0;
+    private static final double FINALIZED_DELAY_SCORE_WEIGHT = 900.0;
+    private static final double MATCHING_SCORE_WEIGHT = 4.0;
+
+    private static final double LATENCY_THRESHOLD_MS = 2000.0;
+    private static final double HEAD_DELAY_THRESHOLD_MS = 10000.0;
+    private static final double SAFE_DELAY_THRESHOLD_MS = 30000.0;
+    private static final double FINALIZED_DELAY_THRESHOLD_MS = 60000.0;
+
+    private static final double DELAY_ANOMALY_PENALTY = 25.0;
+    private static final double STALE_ANOMALY_PENALTY = 120.0;
+    private static final double REORG_ANOMALY_PENALTY = 250.0;
+    private static final double BLOCK_GAP_ANOMALY_PENALTY = 150.0;
+    private static final double ERROR_ANOMALY_PENALTY = 60.0;
+    private static final double RATE_LIMIT_ANOMALY_PENALTY = 50.0;
+    private static final double TIMEOUT_ANOMALY_PENALTY = 90.0;
+    private static final double WRONG_HEAD_ANOMALY_PENALTY = 400.0;
+    private static final double CONFLICT_ANOMALY_PENALTY = 200.0;
 
     private final NodeSwitchPolicy switchPolicy;
 
@@ -53,9 +83,16 @@ public class ReferenceNodeSelector {
      */
     public String select(Map<String, RpcMonitorService.NodeState> nodeStates, BlockConfidenceTracker blockConfidenceTracker, InMemoryMetricsStore store, Instant now, BlockAgreementTracker blockAgreementTracker, String currentReferenceNodeKey) {
         String bestNode = null;
-        double bestScore = -1;
+        double bestScore = Double.NEGATIVE_INFINITY;
+        double currentScore = Double.NEGATIVE_INFINITY;
         for (String nodeKey : nodeStates.keySet()) {
             double score = computeNodeScore(nodeKey, blockAgreementTracker, nodeStates, blockConfidenceTracker, store, now);
+            if (nodeKey.equals(currentReferenceNodeKey)) {
+                currentScore = score;
+            }
+            if (!Double.isFinite(score)) {
+                continue;
+            }
             if (score > bestScore) {
                 bestScore = score;
                 bestNode = nodeKey;
@@ -65,6 +102,9 @@ public class ReferenceNodeSelector {
         if (bestNode != null) {
             switchPolicy.registerSelection(bestNode);
             if (currentReferenceNodeKey != null && !bestNode.equals(currentReferenceNodeKey)) {
+                if (!Double.isFinite(currentScore)) {
+                    return bestNode;
+                }
                 if (!switchPolicy.shouldSwitchTo(bestNode)) {
                     return currentReferenceNodeKey;
                 }
@@ -74,22 +114,28 @@ public class ReferenceNodeSelector {
         return null;
     }
 
-    private double computeNodeScore(String nodeKey, BlockAgreementTracker tracker, Map<String, RpcMonitorService.NodeState> nodeStates,
+    double computeNodeScore(String nodeKey, BlockAgreementTracker tracker, Map<String, RpcMonitorService.NodeState> nodeStates,
             BlockConfidenceTracker blockConfidenceTracker, InMemoryMetricsStore store, Instant now) {
         RpcMonitorService.NodeState state = nodeStates.get(nodeKey);
+        if (state == null) {
+            return Double.NEGATIVE_INFINITY;
+        }
 
-        // WebSocket health: 0 or 1000 points (most important after delays)
-        double wsScore = isWsHealthy(state, now) ? 1000 : 0;
-
-        // Get recent samples (last 5 minutes)
-        List<MetricSample> samples = store.getRawSamplesSince(nodeKey, now.minusSeconds(300));
+        List<MetricSample> samples = store.getRawSamplesSince(nodeKey, now.minusSeconds(EVALUATION_WINDOW_SECONDS));
+        if (samples.size() < MIN_RECENT_SAMPLE_COUNT) {
+            return Double.NEGATIVE_INFINITY;
+        }
 
         // Single-pass accumulation of latency and delay metrics
+        long successCount = 0;
         long latencySum = 0, latencyCount = 0;
         long headDelaySum = 0, headDelayCount = 0;
         long safeDelaySum = 0, safeDelayCount = 0;
         long finalizedDelaySum = 0, finalizedDelayCount = 0;
         for (MetricSample sample : samples) {
+            if (sample.isSuccess()) {
+                successCount++;
+            }
             if (sample.isSuccess() && sample.getLatencyMs() >= 0) {
                 latencySum += sample.getLatencyMs();
                 latencyCount++;
@@ -108,39 +154,70 @@ public class ReferenceNodeSelector {
             }
         }
 
-        double avgLatency = latencyCount > 0 ? (double) latencySum / latencyCount : 10000;
-        double latencyScore = 50 / (1 + avgLatency / 1000.0);
+        double uptimeRatio = (double) successCount / samples.size();
+        List<AnomalyEvent> anomalies = store.getRawAnomaliesSince(nodeKey, now.minusSeconds(EVALUATION_WINDOW_SECONDS));
+        long totalAnomalies = anomalies.size();
+        double anomalyRate = (double) totalAnomalies / Math.max(1, samples.size());
+        if (uptimeRatio < MIN_UPTIME_RATIO
+                || totalAnomalies > MAX_RECENT_ANOMALIES
+                || anomalyRate > MAX_ANOMALY_RATE) {
+            return Double.NEGATIVE_INFINITY;
+        }
 
-        double avgHeadDelay = headDelayCount > 0 ? (double) headDelaySum / headDelayCount : 10000;
-        double headDelayScore = 1000 / (1 + avgHeadDelay / 1000.0);
+        double wsScore = isWsHealthy(state, now) ? WS_HEALTH_SCORE : 0.0;
+        double uptimeScore = uptimeRatio * UPTIME_SCORE_WEIGHT;
 
-        double avgSafeDelay = safeDelayCount > 0 ? (double) safeDelaySum / safeDelayCount : 10000;
-        double safeDelayScore = blockConfidenceTracker.getBlocks().values().stream().anyMatch(m -> m.containsKey(Confidence.SAFE))
-                ? 1000 / (1 + avgSafeDelay / 1000.0) : 500;
+        double avgLatency = latencyCount > 0 ? (double) latencySum / latencyCount : LATENCY_THRESHOLD_MS;
+        double latencyScore = boundedScore(avgLatency, LATENCY_THRESHOLD_MS, LATENCY_SCORE_WEIGHT);
 
-        double avgFinalizedDelay = finalizedDelayCount > 0 ? (double) finalizedDelaySum / finalizedDelayCount : 10000;
-        double finalizedDelayScore = 1000 / (1 + avgFinalizedDelay / 1000.0);
+        double avgHeadDelay = headDelayCount > 0 ? (double) headDelaySum / headDelayCount : HEAD_DELAY_THRESHOLD_MS;
+        double headDelayScore = boundedScore(avgHeadDelay, HEAD_DELAY_THRESHOLD_MS, HEAD_DELAY_SCORE_WEIGHT);
 
-        // Matching score: points from agreement with reference
-        double matchingScore = tracker.getPoints(nodeKey);
+        boolean safeEstablished = blockConfidenceTracker.getBlocks().values().stream().anyMatch(m -> m.containsKey(Confidence.SAFE));
+        double avgSafeDelay = safeDelayCount > 0 ? (double) safeDelaySum / safeDelayCount : SAFE_DELAY_THRESHOLD_MS;
+        double safeDelayScore = safeEstablished
+                ? boundedScore(avgSafeDelay, SAFE_DELAY_THRESHOLD_MS, SAFE_DELAY_SCORE_WEIGHT)
+                : SAFE_DELAY_SCORE_WEIGHT / 2.0;
 
-        // Wrong head penalty: significant penalty for nodes that frequently disagree with majority
-        // Each wrong head reduces score by 200 points (10 wrong heads = -2000, effectively disqualifying)
-        List<AnomalyAggregate> anomalyAggregates = store.getAggregatedAnomaliesSince(nodeKey, now.minusSeconds(300));
-        long wrongHeadCount = anomalyAggregates.stream()
-                .mapToLong(AnomalyAggregate::getWrongHeadCount)
-                .sum();
-        double wrongHeadPenalty = wrongHeadCount * 200.0;
+        boolean finalizedEstablished = blockConfidenceTracker.getBlocks().values().stream().anyMatch(m -> m.containsKey(Confidence.FINALIZED));
+        double avgFinalizedDelay = finalizedDelayCount > 0 ? (double) finalizedDelaySum / finalizedDelayCount : FINALIZED_DELAY_THRESHOLD_MS;
+        double finalizedDelayScore = finalizedEstablished
+                ? boundedScore(avgFinalizedDelay, FINALIZED_DELAY_THRESHOLD_MS, FINALIZED_DELAY_SCORE_WEIGHT)
+                : FINALIZED_DELAY_SCORE_WEIGHT / 2.0;
 
-        // Total score: block delays are now the dominant factor, WS health is secondary, latency is least important
-        // Wrong heads are penalized heavily to prevent unreliable nodes from becoming reference
-        return wsScore + latencyScore + headDelayScore + safeDelayScore + finalizedDelayScore + matchingScore - wrongHeadPenalty;
+        double matchingScore = tracker.getPoints(nodeKey) * MATCHING_SCORE_WEIGHT;
+        double anomalyPenalty = computeAnomalyPenalty(anomalies);
+
+        return wsScore + uptimeScore + latencyScore + headDelayScore + safeDelayScore + finalizedDelayScore + matchingScore - anomalyPenalty;
     }
 
     private boolean isWsHealthy(RpcMonitorService.NodeState state, Instant now) {
         return state.webSocketRef.get() != null
                 && state.lastWsEventReceivedAt != null
-                && state.lastWsEventReceivedAt.isAfter(now.minusSeconds(30)); // fresh within 30s
+                && state.lastWsEventReceivedAt.isAfter(now.minusSeconds(WS_FRESH_SECONDS)); // fresh within 30s
+    }
+
+    private double computeAnomalyPenalty(List<AnomalyEvent> anomalies) {
+        double penalty = 0.0;
+        for (AnomalyEvent anomaly : anomalies) {
+            penalty += switch (anomaly.getType()) {
+                case DELAY -> DELAY_ANOMALY_PENALTY;
+                case STALE -> STALE_ANOMALY_PENALTY;
+                case REORG -> REORG_ANOMALY_PENALTY;
+                case BLOCK_GAP -> BLOCK_GAP_ANOMALY_PENALTY;
+                case ERROR -> ERROR_ANOMALY_PENALTY;
+                case RATE_LIMIT -> RATE_LIMIT_ANOMALY_PENALTY;
+                case TIMEOUT -> TIMEOUT_ANOMALY_PENALTY;
+                case WRONG_HEAD -> WRONG_HEAD_ANOMALY_PENALTY;
+                case CONFLICT -> CONFLICT_ANOMALY_PENALTY;
+            };
+        }
+        return penalty;
+    }
+
+    private double boundedScore(double value, double thresholdMs, double maxScore) {
+        double ratio = Math.min(1.0, Math.max(0.0, value) / thresholdMs);
+        return maxScore * (1.0 - ratio);
     }
 
     /**

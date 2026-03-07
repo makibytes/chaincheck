@@ -33,7 +33,7 @@ All source lives under `de.makibytes.chaincheck` with eight packages:
   - `NodeRegistry` — maintains the set of monitored nodes (uses a `NodeDefinition` record)
   - `HttpConnectionTracker` / `WsConnectionTracker` — track connection health per node
 - **reference/node** — Reference node selection:
-  - `ReferenceNodeSelector` — selects best reference node via scoring with `NodeSwitchPolicy` hysteresis
+  - `ReferenceNodeSelector` — selects the best reference node via a hardened 1-hour scoring window with `NodeSwitchPolicy` hysteresis; nodes below 85% recent uptime or with too many recent anomalies are disqualified, while uptime, latency, and head/safe/finalized delays are weighted heavily
   - `ReferenceStrategy` interface with `ConfiguredReferenceStrategy` (explicit consensus node, used in all mode types when `rpc.consensus.http` is configured) and `VotingReferenceStrategy` (majority voting, used when no consensus node is configured)
   - `ConfiguredReferenceSource` / `ConsensusNodeClient` — manage consensus node HTTP client, SSE event stream, and block updates. `ConsensusNodeClient` also drives attestation tracking when enabled: on each `head` SSE event it registers attestation tracking, then a background loop polls committee data and updates `AttestationTracker`.
   - `BlockAgreementTracker` — tracks which nodes agree on blocks
@@ -51,7 +51,7 @@ All source lives under `de.makibytes.chaincheck` with eight packages:
 1. HTTP monitors poll RPC endpoints on configurable intervals; WS monitors receive `newHeads` events
 2. Samples are stored in `InMemoryMetricsStore` and merged by block hash for a unified block view
 3. `AnomalyDetector` evaluates each sample in real-time
-4. `ReferenceNodeSelector` establishes consensus head via configured consensus node (when `rpc.consensus.http` is set, in any mode) or majority voting (when no consensus node is configured)
+4. `ReferenceNodeSelector` establishes consensus head via configured consensus node (when `rpc.consensus.http` is set, in any mode) or majority voting (when no consensus node is configured). In voting mode, the reference node is chosen from the last hour of metrics with hard uptime/anomaly gates and heavy delay/latency weighting.
 5. When attestation tracking is enabled (Ethereum only), `ConsensusNodeClient` polls committee data on each new head and `AttestationTracker` computes per-block confidence
 6. Dashboard queries the store and renders via Thymeleaf + Chart.js; `DashboardService` enriches `SampleRow` records with safe/finalized status from the consensus node (applying it globally by block hash across all nodes) and with attestation confidence data
 
@@ -160,7 +160,7 @@ All non-Ethereum mode types share the same code path (`WsMonitorService.handleCo
 Used for EVM chains without a beacon chain. By default, finality is tracked per execution node and the reference head is determined by majority voting. Optionally, a consensus node can be configured via `rpc.consensus.http` to serve as the authoritative reference source instead of voting (see below).
 
 #### Reference source
-**Default (no consensus node):** Majority voting across all execution nodes. The reference head is the block hash agreed on by the most nodes. Safe and finalized observations are per-node (each node's own HTTP poll determines its own finality).
+**Default (no consensus node):** Majority voting across all execution nodes. The reference head is the block hash agreed on by the most nodes. The reference **node** is then chosen only from healthy candidates using the last hour of samples/anomalies: low latency and low delays are rewarded heavily, while recent downtime and anomaly bursts incur strong penalties or disqualify the node entirely. Safe and finalized observations are per-node (each node's own HTTP poll determines its own finality).
 
 **Optional (with consensus node):** When `rpc.consensus.http` is set, `ConfiguredReferenceStrategy` is used — the same as in Ethereum mode. The consensus node becomes the authoritative source for head, safe, and finalized blocks, and its observations are applied globally across all execution nodes.
 
