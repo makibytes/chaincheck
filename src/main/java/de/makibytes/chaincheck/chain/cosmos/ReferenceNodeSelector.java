@@ -69,7 +69,6 @@ public class ReferenceNodeSelector {
     private static final double RATE_LIMIT_ANOMALY_PENALTY = 50.0;
     private static final double TIMEOUT_ANOMALY_PENALTY = 90.0;
     private static final double WRONG_HEAD_ANOMALY_PENALTY = 400.0;
-    private static final double CONFLICT_ANOMALY_PENALTY = 200.0;
 
     private final NodeSwitchPolicy switchPolicy;
 
@@ -82,11 +81,15 @@ public class ReferenceNodeSelector {
      * Uses the switch policy to ensure stability.
      */
     public String select(Map<String, RpcMonitorService.NodeState> nodeStates, BlockConfidenceTracker blockConfidenceTracker, InMemoryMetricsStore store, Instant now, BlockAgreementTracker blockAgreementTracker, String currentReferenceNodeKey) {
+        // Pre-compute once — these don't change across the per-node scoring loop
+        boolean safeEstablished = blockConfidenceTracker.getBlocks().values().stream().anyMatch(m -> m.containsKey(Confidence.SAFE));
+        boolean finalizedEstablished = blockConfidenceTracker.getBlocks().values().stream().anyMatch(m -> m.containsKey(Confidence.FINALIZED));
+
         String bestNode = null;
         double bestScore = Double.NEGATIVE_INFINITY;
         double currentScore = Double.NEGATIVE_INFINITY;
         for (String nodeKey : nodeStates.keySet()) {
-            double score = computeNodeScore(nodeKey, blockAgreementTracker, nodeStates, blockConfidenceTracker, store, now);
+            double score = computeNodeScore(nodeKey, blockAgreementTracker, nodeStates, store, now, safeEstablished, finalizedEstablished);
             if (nodeKey.equals(currentReferenceNodeKey)) {
                 currentScore = score;
             }
@@ -115,7 +118,7 @@ public class ReferenceNodeSelector {
     }
 
     double computeNodeScore(String nodeKey, BlockAgreementTracker tracker, Map<String, RpcMonitorService.NodeState> nodeStates,
-            BlockConfidenceTracker blockConfidenceTracker, InMemoryMetricsStore store, Instant now) {
+            InMemoryMetricsStore store, Instant now, boolean safeEstablished, boolean finalizedEstablished) {
         RpcMonitorService.NodeState state = nodeStates.get(nodeKey);
         if (state == null) {
             return Double.NEGATIVE_INFINITY;
@@ -173,13 +176,11 @@ public class ReferenceNodeSelector {
         double avgHeadDelay = headDelayCount > 0 ? (double) headDelaySum / headDelayCount : HEAD_DELAY_THRESHOLD_MS;
         double headDelayScore = boundedScore(avgHeadDelay, HEAD_DELAY_THRESHOLD_MS, HEAD_DELAY_SCORE_WEIGHT);
 
-        boolean safeEstablished = blockConfidenceTracker.getBlocks().values().stream().anyMatch(m -> m.containsKey(Confidence.SAFE));
         double avgSafeDelay = safeDelayCount > 0 ? (double) safeDelaySum / safeDelayCount : SAFE_DELAY_THRESHOLD_MS;
         double safeDelayScore = safeEstablished
                 ? boundedScore(avgSafeDelay, SAFE_DELAY_THRESHOLD_MS, SAFE_DELAY_SCORE_WEIGHT)
                 : SAFE_DELAY_SCORE_WEIGHT / 2.0;
 
-        boolean finalizedEstablished = blockConfidenceTracker.getBlocks().values().stream().anyMatch(m -> m.containsKey(Confidence.FINALIZED));
         double avgFinalizedDelay = finalizedDelayCount > 0 ? (double) finalizedDelaySum / finalizedDelayCount : FINALIZED_DELAY_THRESHOLD_MS;
         double finalizedDelayScore = finalizedEstablished
                 ? boundedScore(avgFinalizedDelay, FINALIZED_DELAY_THRESHOLD_MS, FINALIZED_DELAY_SCORE_WEIGHT)
@@ -209,7 +210,7 @@ public class ReferenceNodeSelector {
                 case RATE_LIMIT -> RATE_LIMIT_ANOMALY_PENALTY;
                 case TIMEOUT -> TIMEOUT_ANOMALY_PENALTY;
                 case WRONG_HEAD -> WRONG_HEAD_ANOMALY_PENALTY;
-                case CONFLICT -> CONFLICT_ANOMALY_PENALTY;
+                case CONFLICT -> 0.0; // CONFLICT is never emitted; kept for exhaustive switch
             };
         }
         return penalty;

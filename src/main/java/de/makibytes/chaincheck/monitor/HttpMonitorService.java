@@ -55,6 +55,10 @@ public class HttpMonitorService {
 
     private static final String JSONRPC_VERSION = "2.0";
     private static final String CONNECT_ERROR_HOST_DOWN = "Connect error: Host is down";
+    private static final String RPC_OUTCOME_SUCCESS = "success";
+    private static final String RPC_OUTCOME_HTTP_STATUS = "http-status";
+    private static final String RPC_OUTCOME_IO = "io";
+    private static final String RPC_OUTCOME_INTERRUPTED = "interrupted";
     private static final Logger logger = LoggerFactory.getLogger(HttpMonitorService.class);
 
     private final RpcMonitorService monitor;
@@ -146,7 +150,6 @@ public class HttpMonitorService {
                 }
                 fetchLatest = shouldFetchLatest(state, timestamp, node.pollIntervalMs());
                 if (fetchLatest) {
-                    state.lastLatestFetchAt = timestamp;
                     batch.add(new BatchItem(BATCH_ID_LATEST, "eth_getBlockByNumber",
                             mapper.createArrayNode().add("latest").add(false)));
                 }
@@ -237,6 +240,7 @@ public class HttpMonitorService {
                     if (latestEntry != null && !latestEntry.has("error")) {
                         latestBlock = EthHex.parseBlockFields(latestEntry.get("result"));
                         if (latestBlock != null) {
+                            state.lastLatestFetchAt = timestamp;
                             handleLatestBlock(node, state, latestBlock);
                         }
                     }
@@ -449,7 +453,7 @@ public class HttpMonitorService {
                                       JsonNode params) throws IOException, InterruptedException {
         int attempts = Math.max(0, maxRetries);
         IOException lastIo = null;
-        String outcome = "success";
+        String outcome = RPC_OUTCOME_SUCCESS;
         int retries = 0;
         Observation observation = startRpcObservation("single", method, httpUrl);
         try (Observation.Scope scope = observation.openScope()) {
@@ -457,7 +461,7 @@ public class HttpMonitorService {
                 try {
                     return sendRpcOnce(httpUrl, headers, readTimeoutMs, connectTimeoutMs, method, params);
                 } catch (HttpStatusException statusEx) {
-                    outcome = "http-status";
+                    outcome = RPC_OUTCOME_HTTP_STATUS;
                     observation.error(statusEx);
                     if (!shouldRetryStatus(statusEx.getStatusCode()) || attempt == attempts) {
                         throw statusEx;
@@ -466,7 +470,7 @@ public class HttpMonitorService {
                     observation.event(Observation.Event.of("retry"));
                     sleepBackoff(retryBackoffMs, attempt);
                 } catch (IOException ioEx) {
-                    outcome = "io";
+                    outcome = RPC_OUTCOME_IO;
                     observation.error(ioEx);
                     if (isHostDownConnectError(ioEx)) {
                         throw ioEx;
@@ -479,7 +483,7 @@ public class HttpMonitorService {
                     observation.event(Observation.Event.of("retry"));
                     sleepBackoff(retryBackoffMs, attempt);
                 } catch (InterruptedException interruptedEx) {
-                    outcome = "interrupted";
+                    outcome = RPC_OUTCOME_INTERRUPTED;
                     observation.error(interruptedEx);
                     throw interruptedEx;
                 }
@@ -714,7 +718,7 @@ public class HttpMonitorService {
             throws IOException, InterruptedException {
         int attempts = Math.max(0, node.maxRetries());
         IOException lastIo = null;
-        String outcome = "success";
+        String outcome = RPC_OUTCOME_SUCCESS;
         int retries = 0;
         Observation observation = startRpcObservation("batch", "batch", node.http());
         observation.lowCardinalityKeyValue("rpc.batch_size", Integer.toString(items.size()));
@@ -723,7 +727,7 @@ public class HttpMonitorService {
                 try {
                     return sendBatchRpcOnce(node.http(), node.headers(), node.readTimeoutMs(), node.connectTimeoutMs(), items);
                 } catch (HttpStatusException statusEx) {
-                    outcome = "http-status";
+                    outcome = RPC_OUTCOME_HTTP_STATUS;
                     observation.error(statusEx);
                     if (!shouldRetryStatus(statusEx.getStatusCode()) || attempt == attempts) {
                         throw statusEx;
@@ -732,7 +736,7 @@ public class HttpMonitorService {
                     observation.event(Observation.Event.of("retry"));
                     sleepBackoff(node.retryBackoffMs(), attempt);
                 } catch (IOException ioEx) {
-                    outcome = "io";
+                    outcome = RPC_OUTCOME_IO;
                     observation.error(ioEx);
                     if (isHostDownConnectError(ioEx)) {
                         throw ioEx;
@@ -745,7 +749,7 @@ public class HttpMonitorService {
                     observation.event(Observation.Event.of("retry"));
                     sleepBackoff(node.retryBackoffMs(), attempt);
                 } catch (InterruptedException interruptedEx) {
-                    outcome = "interrupted";
+                    outcome = RPC_OUTCOME_INTERRUPTED;
                     observation.error(interruptedEx);
                     throw interruptedEx;
                 }
