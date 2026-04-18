@@ -10,9 +10,11 @@ rpc:
   anomaly-detection:
     high-latency-ms: 1000
     long-delay-block-count: 30
-  # Polling intervals: optimal = 1s (matches Arbitrum's ~1s block time), sparse = 30s
+    stale-block-threshold-ms: 5000
+    block-gap-threshold: 20
+  # Polling intervals: optimal = 500ms (Arbitrum Sepolia blocks are sub-second), sparse = 30s
   requests:
-    optimal-poll-interval-ms: 1000
+    optimal-poll-interval-ms: 500
     sparse-poll-interval-ms: 30000
   nodes:
     - name: arbitrum.io

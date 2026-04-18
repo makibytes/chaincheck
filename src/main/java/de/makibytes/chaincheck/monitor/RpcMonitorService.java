@@ -114,7 +114,7 @@ public class RpcMonitorService {
         boolean hasConsensusNode = properties.getConsensus() != null && properties.getConsensus().hasConfiguredReferenceNode();
         
         if (hasConsensusNode) {
-            this.referenceStrategy = new ConfiguredReferenceStrategy(configuredSource, configuredReferenceNodeKey);
+            this.referenceStrategy = new ConfiguredReferenceStrategy(configuredSource, configuredReferenceNodeKey, referenceBlockVoting);
         } else {
             // No consensus node: use majority voting across execution nodes
             this.referenceStrategy = new VotingReferenceStrategy(nodeRegistry, blockVotingService, referenceBlockVoting, referenceNodeSelector, blockAgreementTracker, store);
@@ -323,7 +323,6 @@ public class RpcMonitorService {
                 node.key(),
                 sample,
                 node.anomalyDelayMs(),
-                properties.getAnomalyDetection().getStaleBlockThresholdMs(),
                 lastBlock,
                 lastHash,
                 state != null ? state.lastHttpBlockNumber : null);

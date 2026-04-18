@@ -78,6 +78,10 @@ public class ConfiguredReferenceSource {
         return configuredReferenceNodeKey;
     }
 
+    public BlockConfidenceTracker getBlockConfidenceTracker() {
+        return blockConfidenceTracker;
+    }
+
     boolean isSafePollingEnabled() {
         return consensusNode.isSafePollingEnabled();
     }

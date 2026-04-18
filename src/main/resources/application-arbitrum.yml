@@ -10,9 +10,12 @@ rpc:
   anomaly-detection:
     high-latency-ms: 1000
     long-delay-block-count: 30
-  # Polling intervals: optimal = 1s (matches Arbitrum's ~0.25s block time, capped to avoid rate-limits), sparse = 30s
+    # Arbitrum Nitro produces blocks every ~250ms — tight ageMs tolerance, generous block-gap
+    stale-block-threshold-ms: 5000
+    block-gap-threshold: 20
+  # Polling intervals: optimal = 500ms (Arbitrum block time is ~0.25s; 500ms is a public-RPC rate-limit compromise), sparse = 30s
   requests:
-    optimal-poll-interval-ms: 1000
+    optimal-poll-interval-ms: 500
     sparse-poll-interval-ms: 30000
   nodes:
     - name: arb1.arbitrum.io

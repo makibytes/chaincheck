@@ -25,6 +25,8 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import org.springframework.stereotype.Component;
 
+import de.makibytes.chaincheck.config.ChainCheckProperties;
+import de.makibytes.chaincheck.config.ChainCheckProperties.AnomalyDetection;
 import de.makibytes.chaincheck.model.AnomalyEvent;
 import de.makibytes.chaincheck.model.AnomalyType;
 import de.makibytes.chaincheck.model.MetricSample;
@@ -34,6 +36,17 @@ import de.makibytes.chaincheck.model.MetricSource;
 public class AnomalyDetector {
 
     private final AtomicLong idSequence = new AtomicLong(1);
+    private final AnomalyDetection detection;
+
+    public AnomalyDetector() {
+        this(null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public AnomalyDetector(ChainCheckProperties properties) {
+        AnomalyDetection cfg = properties != null ? properties.getAnomalyDetection() : null;
+        this.detection = cfg != null ? cfg : new AnomalyDetection();
+    }
 
     public AnomalyEvent wrongHead(String nodeKey,
                                   Instant timestamp,
@@ -95,7 +108,6 @@ public class AnomalyDetector {
     public List<AnomalyEvent> detect(String nodeKey,
                                      MetricSample sample,
                                      long anomalyDelayMs,
-                                     long staleBlockThresholdMs,
                                      Long previousBlockNumber,
                                      String previousBlockHash,
                                      Long currentNodeHttpBlockNumber) {
@@ -108,7 +120,7 @@ public class AnomalyDetector {
         }
 
         anomalies.addAll(detectLatencyAnomalies(nodeKey, sample, anomalyDelayMs, now));
-        anomalies.addAll(detectStaleBlockAnomalies(nodeKey, sample, staleBlockThresholdMs, now));
+        anomalies.addAll(detectStaleBlockAnomalies(nodeKey, sample, detection.getStaleBlockThresholdMs(), now));
         anomalies.addAll(detectBlockAnomalies(nodeKey, sample, previousBlockNumber, previousBlockHash, currentNodeHttpBlockNumber, now));
 
         return anomalies;
@@ -192,7 +204,8 @@ public class AnomalyDetector {
                     anomalies.add(createReorgAnomaly(nodeKey, sample, now, "Block height decreased",
                             "Previous height " + previousBlockNumber + ", current " + currentBlockNumber, reorgDepth));
                 }
-            } else if (source == MetricSource.WS && currentNodeHttpBlockNumber != null && currentNodeHttpBlockNumber - currentBlockNumber >= 5) {
+            } else if (source == MetricSource.WS && currentNodeHttpBlockNumber != null
+                    && currentNodeHttpBlockNumber - currentBlockNumber >= detection.getBlockGapThreshold()) {
                 anomalies.add(createBlockGapAnomaly(nodeKey, sample, now, currentNodeHttpBlockNumber - currentBlockNumber));
             } else if (currentBlockNumber.equals(previousBlockNumber)) {
                 detectSameHeightAnomalies(nodeKey, sample, previousBlockHash, currentBlockHash, currentParentHash, allowReorgDetection, anomalies, now);

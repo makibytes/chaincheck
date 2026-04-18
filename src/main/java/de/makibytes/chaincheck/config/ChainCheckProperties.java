@@ -584,6 +584,7 @@ public class ChainCheckProperties {
         private Integer longDelayBlockCount = 15;
         private long highLatencyMs = 2000;
         private long staleBlockThresholdMs = 30000;
+        private long blockGapThreshold = 5;
 
         public Integer getLongDelayBlockCount() {
             return longDelayBlockCount;
@@ -607,6 +608,14 @@ public class ChainCheckProperties {
 
         public void setStaleBlockThresholdMs(long staleBlockThresholdMs) {
             this.staleBlockThresholdMs = staleBlockThresholdMs;
+        }
+
+        public long getBlockGapThreshold() {
+            return blockGapThreshold;
+        }
+
+        public void setBlockGapThreshold(long blockGapThreshold) {
+            this.blockGapThreshold = blockGapThreshold;
         }
     }
 }

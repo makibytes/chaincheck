@@ -26,6 +26,7 @@ public record FleetNodeSummary(
     boolean wsUp,
     int healthScore,
     String healthLabel,
+    String healthScoreHint,
     double uptimePercent,
     double p95LatencyMs,
     double p95HeadDelayMs,

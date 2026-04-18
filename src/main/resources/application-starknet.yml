@@ -9,6 +9,10 @@ rpc:
   get-finalized-blocks: false
   scale-change-ms: 5000
   scale-max-ms: 120000
+  anomaly-detection:
+    # Starknet block time ~30s — 6 blocks of staleness, 2 blocks of gap
+    stale-block-threshold-ms: 180000
+    block-gap-threshold: 2
   # Polling intervals: optimal = 30s (matches Starknet's variable ~30s block time), sparse = 120s
   requests:
     optimal-poll-interval-ms: 30000
