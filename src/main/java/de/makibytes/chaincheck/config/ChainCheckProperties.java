@@ -291,6 +291,10 @@ public class ChainCheckProperties {
             this.requestProfile = requestProfile;
         }
 
+        public void setRequests(RequestProfile requests) {
+            this.requestProfile = requests;
+        }
+
         public AnomalyDetection getAnomalyDetection() {
             return anomalyDetection;
         }
@@ -600,6 +604,10 @@ public class ChainCheckProperties {
 
         public void setHighLatencyMs(long highLatencyMs) {
             this.highLatencyMs = highLatencyMs;
+        }
+
+        public void setHighLatency(long highLatency) {
+            this.highLatencyMs = highLatency;
         }
 
         public long getStaleBlockThresholdMs() {

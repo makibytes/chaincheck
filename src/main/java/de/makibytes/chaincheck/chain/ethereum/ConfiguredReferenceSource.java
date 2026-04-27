@@ -139,9 +139,10 @@ public class ConfiguredReferenceSource {
         Instant now = Instant.now();
         return switch (confidence) {
             case NEW -> {
-                Long number = state.lastWsBlockNumber != null ? state.lastWsBlockNumber : state.lastHttpBlockNumber;
-                String hash = state.lastWsBlockHash != null ? state.lastWsBlockHash : state.lastHttpBlockHash;
-                Instant observedAt = state.lastWsEventReceivedAt != null ? state.lastWsEventReceivedAt : now;
+                boolean hasWsHead = state.lastWsBlockNumber != null && state.lastWsBlockHash != null;
+                Long number = hasWsHead ? state.lastWsBlockNumber : state.lastHttpBlockNumber;
+                String hash = hasWsHead ? state.lastWsBlockHash : state.lastHttpBlockHash;
+                Instant observedAt = hasWsHead && state.lastWsEventReceivedAt != null ? state.lastWsEventReceivedAt : now;
                 yield number == null || hash == null
                         ? null
                         : new ReferenceObservation(number, hash, null, observedAt, observedAt, null);

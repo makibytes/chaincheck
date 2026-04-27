@@ -63,6 +63,7 @@ public class InMemoryMetricsStore {
     private final Map<String, NavigableMap<Instant, AnomalyAggregate>> anomalyAggregatesByNode = new ConcurrentHashMap<>();
     private final Map<String, NavigableMap<Instant, AnomalyAggregate>> anomalyDailyAggregatesByNode = new ConcurrentHashMap<>();
     private final Map<Long, AnomalyEvent> anomalyById = new ConcurrentHashMap<>();
+    private final Map<String, Set<Long>> aggregatedAnomalyIdsByNode = new ConcurrentHashMap<>();
     private final Map<String, Long> latestHttpBlockNumber = new ConcurrentHashMap<>();
     private final Map<String, Long> latestBlockNumber = new ConcurrentHashMap<>();
     private final Map<String, Instant> latestBlockTimestampByNode = new ConcurrentHashMap<>();
@@ -102,9 +103,9 @@ public class InMemoryMetricsStore {
     public void addSample(String nodeKey, MetricSample sample) {
         rawSamplesByNode.computeIfAbsent(nodeKey, key -> new ConcurrentLinkedDeque<>()).add(sample);
         if (sample.getBlockNumber() != null) {
-            latestBlockNumber.put(nodeKey, sample.getBlockNumber());
+            latestBlockNumber.merge(nodeKey, sample.getBlockNumber(), Math::max);
             if (sample.getSource() == MetricSource.HTTP) {
-                latestHttpBlockNumber.put(nodeKey, sample.getBlockNumber());
+                latestHttpBlockNumber.merge(nodeKey, sample.getBlockNumber(), Math::max);
             }
         }
         if (sample.getBlockTimestamp() != null) {
@@ -282,10 +283,14 @@ public class InMemoryMetricsStore {
     private void aggregateRawAnomalies(String nodeKey, Instant rawCutoff) {
         Deque<AnomalyEvent> anomalies = rawAnomaliesByNode.get(nodeKey);
         if (anomalies != null) {
+            Set<Long> aggregatedIds = aggregatedAnomalyIdsByNode.computeIfAbsent(nodeKey, key -> ConcurrentHashMap.newKeySet());
             // Iterate through anomalies older than the raw cutoff for aggregation
             // but DO NOT remove them - keep raw anomalies for 30 days
             for (AnomalyEvent event : anomalies) {
                 if (event.getTimestamp().isBefore(rawCutoff)) {
+                    if (!aggregatedIds.add(event.getId())) {
+                        continue;
+                    }
                     Instant bucketStart = truncateToMinute(event.getTimestamp());
                     AnomalyAggregate aggregate = anomalyAggregatesByNode
                             .computeIfAbsent(nodeKey, key -> new ConcurrentSkipListMap<>())
@@ -308,6 +313,10 @@ public class InMemoryMetricsStore {
                 }
                 anomalies.pollFirst();
                 anomalyById.remove(event.getId());
+                Set<Long> aggregatedIds = aggregatedAnomalyIdsByNode.get(nodeKey);
+                if (aggregatedIds != null) {
+                    aggregatedIds.remove(event.getId());
+                }
             }
         }
     }

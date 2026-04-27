@@ -852,7 +852,7 @@ public class DashboardService {
     }
 
     private AnomalyRow createAnomalyRow(AnomalyEvent firstEvent, AnomalyEvent lastEvent, int count, boolean isFirstRowForSource) {
-        String details = resolveAnomalyDetails(lastEvent);
+        String details = resolveAnomalyDetails(firstEvent);
         if (count == 1) {
             // Single anomaly - use standard format
             return new AnomalyRow(
@@ -866,22 +866,21 @@ public class DashboardService {
                     firstEvent.getParentHash(),
                     details);
         } else {
-            // Multiple anomalies - show time range and use newest ID
+            // Multiple anomalies are sorted newest-first; keep row details on the current event.
             // Only show "(ongoing)" for the first row per source if not closed
-            String endLabel = (isFirstRowForSource && !lastEvent.isClosed())
+            String endLabel = (isFirstRowForSource && !firstEvent.isClosed())
                     ? "(ongoing)"
                     : TIMESTAMP_FORMATTER.format(firstEvent.getTimestamp());
             String timeRange = TIMESTAMP_FORMATTER.format(lastEvent.getTimestamp()) + " ↔ " + endLabel;
-            String message = lastEvent.getMessage(); // Use the latest message
             return new AnomalyRow(
-                    lastEvent.getId(), // Use newest ID for details link
+                    firstEvent.getId(),
                     timeRange,
                     firstEvent.getType().name(),
                     firstEvent.getSource().name(),
-                    message,
-                    lastEvent.getBlockNumber(),
-                    lastEvent.getBlockHash(),
-                    lastEvent.getParentHash(),
+                    firstEvent.getMessage(),
+                    firstEvent.getBlockNumber(),
+                    firstEvent.getBlockHash(),
+                    firstEvent.getParentHash(),
                     details,
                     count,
                     true);

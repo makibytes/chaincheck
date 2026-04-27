@@ -151,6 +151,22 @@ class InMemoryMetricsStoreAggregationTest {
         assertEquals(600L, aggregate.getMaxFinalizedDelayMs());
     }
 
+    @Test
+    @DisplayName("aggregateOldData: raw anomalies are aggregated only once")
+    void rawAnomaliesAreNotCountedAgainOnSubsequentRuns() {
+        InMemoryMetricsStore store = new InMemoryMetricsStore();
+        Instant now = Instant.now();
+        Instant anomalyTime = now.minus(Duration.ofHours(3)).truncatedTo(ChronoUnit.MINUTES);
+
+        store.addAnomaly(NODE_KEY, anomalyAt(anomalyTime, 1L));
+        store.aggregateOldData();
+        store.aggregateOldData();
+
+        List<AnomalyAggregate> aggregates = store.getAggregatedAnomaliesSince(NODE_KEY, now.minus(Duration.ofDays(1)));
+        assertEquals(1, aggregates.size());
+        assertEquals(1, aggregates.getFirst().getTotalCount());
+    }
+
     private MetricSample sampleAt(Instant timestamp) {
         return MetricSample.builder(timestamp, MetricSource.HTTP)
                 .success(true)
