@@ -4,12 +4,17 @@ rpc:
   title: "Avalanche C-Chain"
   title-color: "#e84142"
   get-safe-blocks: false
-  get-finalized-blocks: false
+  # Avalanche C-Chain uses Snowman consensus: blocks reach finality in ~1-2s.
+  # coreth v0.12+ supports eth_getBlockByNumber("finalized").
+  get-finalized-blocks: true
   scale-change-ms: 500
   scale-max-ms: 30000
   anomaly-detection:
     high-latency-ms: 2000
     long-delay-block-count: 15
+    # 2s block time: 30s = 15 blocks of tolerated staleness
+    stale-block-threshold-ms: 30000
+    block-gap-threshold: 5
   # Polling intervals: optimal = 2s (matches Avalanche's ~2s block time), sparse = 30s
   requests:
     optimal-poll-interval-ms: 2000

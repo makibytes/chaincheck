@@ -11,6 +11,9 @@ rpc:
   anomaly-detection:
     high-latency-ms: 3000
     long-delay-block-count: 10
+    # 3s block time: 30s = 10 blocks of tolerated staleness
+    stale-block-threshold-ms: 30000
+    block-gap-threshold: 5
   # Polling intervals: optimal = 3s (matches Tron's ~3s block time), sparse = 30s
   requests:
     optimal-poll-interval-ms: 3000

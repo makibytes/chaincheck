@@ -37,11 +37,13 @@ public class BlockVotingService {
 
     /**
      * Records a vote for a block hash at a given confidence level from a node.
+     * Hashes are normalized to lowercase to prevent case-sensitivity splits across nodes.
      */
     public void recordBlock(String nodeKey, long blockNumber, String blockHash, Confidence confidence) {
+        String normalizedHash = blockHash != null ? blockHash.toLowerCase() : null;
         blockVotes.computeIfAbsent(blockNumber, k -> new ConcurrentHashMap<>())
                 .computeIfAbsent(confidence, k -> new ConcurrentHashMap<>())
-                .computeIfAbsent(blockHash, k -> ConcurrentHashMap.newKeySet())
+                .computeIfAbsent(normalizedHash, k -> ConcurrentHashMap.newKeySet())
                 .add(nodeKey);
     }
 

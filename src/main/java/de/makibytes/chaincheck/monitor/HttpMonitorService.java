@@ -279,8 +279,13 @@ public class HttpMonitorService {
             Long safeDelayMs = null;
             Long finalizedDelayMs = null;
 
-            boolean wsDataFresh = state.lastWsBlockTimestamp != null
-                    && Duration.between(state.lastWsBlockTimestamp, timestamp).toSeconds() < RpcMonitorService.WS_FRESH_SECONDS;
+            // WS is fresh only when the socket is connected AND we received an event recently.
+            // lastWsBlockTimestamp is the block's own production time (chain clock), not the
+            // receive time — using it for liveness conflates chain slowness with WS death.
+            boolean wsDataFresh = state.webSocketRef.get() != null
+                    && state.lastWsEventReceivedAt != null
+                    && Duration.between(state.lastWsEventReceivedAt, timestamp).toSeconds() < RpcMonitorService.WS_FRESH_SECONDS
+                    && state.lastWsBlockTimestamp != null;
 
             if (wsDataFresh) {
                 headDelayMs = Duration.between(state.lastWsBlockTimestamp, timestamp).toMillis();
