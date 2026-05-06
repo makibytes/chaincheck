@@ -17,14 +17,17 @@ Each blockchain profile sets two fields:
 
 The `ModeType` values and their behaviours:
 
-| Mode Type | Chains | WS newHead handling |
-|-----------|--------|---------------------|
-| `ETHEREUM` | Ethereum | Calls `eth_getBlockByHash` immediately; block number from event is **discarded**; requires a consensus (beacon) node for full finality |
-| `COSMOS` | Polygon, BNB Chain, and similar PoS chains | Trusts event payload directly; majority-vote reference; per-node finality |
-| `OPTIMISM` | Base, Optimism, Arbitrum | Trusts event payload directly; L2 sequencer guarantees sequential delivery |
-| `ZK` | zkSync Era, Starknet | Trusts event payload directly; ZK-proof finality model |
-| `AVALANCHE` | Avalanche C-Chain | Trusts event payload directly; Snowman consensus |
-| `TRON` | Tron | Trusts event payload directly; Ethereum-compatible JSON-RPC via TronGrid |
+| Mode Type | Chains | WS newHead handling | Protocol |
+|-----------|--------|---------------------|----------|
+| `ETHEREUM` | Ethereum | Calls `eth_getBlockByHash` immediately after newHeads; block number from event is **discarded**; requires a consensus (beacon) node for full finality | EVM JSON-RPC |
+| `COSMOS` | Polygon, BNB Chain, and similar PoS chains | Trusts event payload directly; majority-vote reference; per-node finality | EVM JSON-RPC |
+| `OPTIMISM` | Base, Optimism, Arbitrum | Trusts event payload directly; L2 sequencer guarantees sequential delivery | EVM JSON-RPC |
+| `ZK` | zkSync Era | Trusts event payload directly; ZK-proof finality model | EVM JSON-RPC |
+| `AVALANCHE` | Avalanche C-Chain | Trusts event payload directly; Snowman consensus; near-instant finality | EVM JSON-RPC |
+| `TRON` | Tron | Trusts event payload directly; Ethereum-compatible JSON-RPC via TronGrid | EVM JSON-RPC |
+| `SOLANA` | Solana | `slotSubscribe` WS → follow-up `getBlock` HTTP per slot; base58 hashes; `confirmed`/`finalized` commitment levels | Solana JSON-RPC |
+| `COSMOS_SDK` | Cosmos Hub, Osmosis, CometBFT chains | Full block in WS NewBlock event; no extra HTTP fetch; BFT instant finality | CometBFT RPC (HTTP GET) |
+| `STARKNET` | Starknet | `starknet_subscribeNewHeads` WS; full header in event; `starknet_*` JSON-RPC; integer block numbers | Starknet JSON-RPC |
 
 ---
 
@@ -63,7 +66,9 @@ nodes:
 | `optimism` | Optimism Mainnet | `OPTIMISM` | ~2 s | 2 s | 30 s | `--spring.profiles.active=optimism` |
 | `arbitrum` | Arbitrum One | `OPTIMISM` | ~0.25 s | 1 s | 30 s | `--spring.profiles.active=arbitrum` |
 | `zksync` | zkSync Era | `ZK` | ~1–2 s | 2 s | 30 s | `--spring.profiles.active=zksync` |
-| `starknet` | Starknet Mainnet | `ZK` | ~30 s | 30 s | 120 s | `--spring.profiles.active=starknet` ⚠️ |
+| `starknet` | Starknet Mainnet | `STARKNET` | ~30 s | 30 s | 120 s | `--spring.profiles.active=starknet` |
+| `solana` | Solana Mainnet-Beta | `SOLANA` | ~0.4 s | 0.4 s | 5 s | `--spring.profiles.active=solana` |
+| `cosmos` | Cosmos Hub | `COSMOS_SDK` | ~6 s | 6 s | 30 s | `--spring.profiles.active=cosmos` |
 | `avalanche` | Avalanche C-Chain | `AVALANCHE` | ~2 s | 2 s | 30 s | `--spring.profiles.active=avalanche` |
 | `tron` | Tron Mainnet | `TRON` | ~3 s | 3 s | 30 s | `--spring.profiles.active=tron` |
 
@@ -79,7 +84,8 @@ nodes:
 | `optimism-sepolia` | Optimism Sepolia | `optimism` | `--spring.profiles.active=optimism-sepolia` |
 | `arbitrum-sepolia` | Arbitrum Sepolia | `arbitrum` | `--spring.profiles.active=arbitrum-sepolia` |
 | `zksync-sepolia` | zkSync Sepolia | `zksync` | `--spring.profiles.active=zksync-sepolia` |
-| `starknet-sepolia` | Starknet Sepolia | `starknet` | `--spring.profiles.active=starknet-sepolia` ⚠️ |
+| `starknet-sepolia` | Starknet Sepolia | `starknet` | `--spring.profiles.active=starknet-sepolia` |
+| `solana-devnet` | Solana Devnet | `solana` | `--spring.profiles.active=solana-devnet` |
 | `avalanche-fuji` | Avalanche Fuji | `avalanche` | `--spring.profiles.active=avalanche-fuji` |
 | `tron-shasta` | Tron Shasta | `tron` | `--spring.profiles.active=tron-shasta` |
 
@@ -87,9 +93,17 @@ nodes:
 
 ## Notes
 
-### ⚠️ Starknet
+### Starknet
 
-Starknet uses a **non-EVM RPC protocol** (`starknet_blockNumber`, `starknet_getBlockWithTxHashes`, etc.) instead of the standard Ethereum JSON-RPC. ChainCheck currently speaks only Ethereum JSON-RPC (`eth_blockNumber`, `eth_getBlockByNumber`). A Starknet-specific adapter must be implemented before the `starknet` or `starknet-sepolia` profiles will function correctly. The YAML files are provided as configuration placeholders.
+Starknet uses the **`starknet_*` JSON-RPC protocol** (`starknet_blockNumber`, `starknet_getBlockWithTxHashes`, etc.). ChainCheck's `StarknetProtocol` adapter handles this natively. Block numbers are plain integers (not hex). Finality stages: `PENDING` → `ACCEPTED_ON_L2` (default, ~seconds) → `ACCEPTED_ON_L1` (hours; not tracked by default). WebSocket subscriptions (`starknet_subscribeNewHeads`) are supported on Pathfinder and Juno nodes; HTTP polling is used as fallback.
+
+### Solana
+
+Solana uses `slotSubscribe` WebSocket subscriptions (not `eth_subscribe`). Each slot notification triggers a follow-up `getBlock` HTTP call to retrieve full block data. Block hashes are base58-encoded (not hex). Commitment levels map to ChainCheck tags: `processed` = latest, `confirmed` = safe (~1.6 s), `finalized` = finalized (~13 s).
+
+### Cosmos Hub / CometBFT Chains
+
+Cosmos SDK chains use CometBFT's **HTTP GET RPC** (`GET /status`, `GET /block?height=N`) instead of JSON-RPC POST. WebSocket subscriptions use CometBFT's `subscribe` method with the query `tm.event='NewBlock'`. Block hashes are uppercase hex without `0x` prefix (stored lowercase in ChainCheck). BFT consensus provides instant finality — every committed block is final, so `get-safe-blocks` and `get-finalized-blocks` should be `false`. The WS URL must include the `/websocket` path suffix (e.g., `wss://my-node:26657/websocket`).
 
 ### Tron
 

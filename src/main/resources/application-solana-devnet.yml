@@ -1,0 +1,31 @@
+rpc:
+  mode: solana-devnet
+  mode-type: solana
+  title: "Solana Devnet"
+  title-color: "#9945ff"
+  get-safe-blocks: true
+  get-finalized-blocks: true
+  ws-gap-recovery-enabled: true
+  ws-gap-recovery-max-blocks: 20
+  scale-change-ms: 200
+  scale-max-ms: 10000
+  anomaly-detection:
+    high-latency-ms: 2000
+    long-delay-block-count: 20
+    stale-block-threshold-ms: 10000
+    block-gap-threshold: 20
+  requests:
+    optimal-poll-interval-ms: 400
+    sparse-poll-interval-ms: 5000
+  nodes:
+    - name: devnet.solana.com
+      http: https://api.devnet.solana.com
+      ws: wss://api.devnet.solana.com
+    - name: publicnode.com
+      http: https://solana-devnet-rpc.publicnode.com
+      ws: wss://solana-devnet-rpc.publicnode.com
+      requests: sparse
+    - name: drpc.org
+      http: https://solana-devnet.drpc.org
+      ws: wss://solana-devnet.drpc.org
+      requests: sparse

@@ -56,6 +56,53 @@ class ChainCheckPropertiesBindingTest {
                 });
     }
 
+    @Test
+    @DisplayName("SOLANA mode-type binds and sets correct poll defaults")
+    void bindsSolanaModeType() {
+        contextRunner
+                .withPropertyValues(
+                        "rpc.mode-type=solana",
+                        "rpc.nodes[0].name=Sol Node",
+                        "rpc.nodes[0].http=http://sol.example")
+                .run(context -> {
+                    ChainCheckProperties props = context.getBean(ChainCheckProperties.class);
+                    assertEquals(ChainCheckProperties.ModeType.SOLANA, props.getModeType());
+                    assertEquals(400L, props.getRequests().getOptimalPollIntervalMs());
+                    assertEquals(5_000L, props.getRequests().getSparsePollIntervalMs());
+                });
+    }
+
+    @Test
+    @DisplayName("COSMOS_SDK mode-type binds (relaxed: cosmos_sdk → COSMOS_SDK)")
+    void bindsCosmosSdkModeType() {
+        contextRunner
+                .withPropertyValues(
+                        "rpc.mode-type=cosmos_sdk",
+                        "rpc.nodes[0].name=Cosmos Node",
+                        "rpc.nodes[0].http=http://cosmos.example")
+                .run(context -> {
+                    ChainCheckProperties props = context.getBean(ChainCheckProperties.class);
+                    assertEquals(ChainCheckProperties.ModeType.COSMOS_SDK, props.getModeType());
+                    assertEquals(6_000L, props.getRequests().getOptimalPollIntervalMs());
+                });
+    }
+
+    @Test
+    @DisplayName("STARKNET mode-type binds and sets correct poll defaults")
+    void bindsStarknetModeType() {
+        contextRunner
+                .withPropertyValues(
+                        "rpc.mode-type=starknet",
+                        "rpc.nodes[0].name=SN Node",
+                        "rpc.nodes[0].http=http://sn.example")
+                .run(context -> {
+                    ChainCheckProperties props = context.getBean(ChainCheckProperties.class);
+                    assertEquals(ChainCheckProperties.ModeType.STARKNET, props.getModeType());
+                    assertEquals(30_000L, props.getRequests().getOptimalPollIntervalMs());
+                    assertEquals(120_000L, props.getRequests().getSparsePollIntervalMs());
+                });
+    }
+
     @EnableConfigurationProperties(ChainCheckProperties.class)
     static class Config {
     }

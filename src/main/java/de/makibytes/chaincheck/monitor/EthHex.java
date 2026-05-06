@@ -81,7 +81,7 @@ public final class EthHex {
         return bytes;
     }
 
-    static RpcMonitorService.BlockInfo parseBlockFields(JsonNode result) {
+    public static RpcMonitorService.BlockInfo parseBlockFields(JsonNode result) {
         if (result == null || result.isNull()) {
             return null;
         }

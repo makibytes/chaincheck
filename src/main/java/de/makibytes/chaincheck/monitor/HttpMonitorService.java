@@ -47,6 +47,9 @@ import de.makibytes.chaincheck.model.AnomalyType;
 import de.makibytes.chaincheck.model.MetricSample;
 import de.makibytes.chaincheck.model.MetricSource;
 import de.makibytes.chaincheck.monitor.NodeRegistry.NodeDefinition;
+import de.makibytes.chaincheck.monitor.protocol.BlockEvent;
+import de.makibytes.chaincheck.monitor.protocol.ChainProtocol;
+import de.makibytes.chaincheck.monitor.protocol.RpcRequest;
 import de.makibytes.chaincheck.store.InMemoryMetricsStore;
 import io.micrometer.observation.Observation;
 import io.micrometer.observation.ObservationRegistry;
@@ -71,6 +74,7 @@ public class HttpMonitorService {
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
     private final Map<String, RpcMonitorService.NodeState> nodeStates;
     private final ObservationRegistry observationRegistry;
+    private final ChainProtocol protocol;
 
     public HttpMonitorService(RpcMonitorService monitor,
                               NodeRegistry nodeRegistry,
@@ -78,7 +82,8 @@ public class HttpMonitorService {
                               AnomalyDetector detector,
                               ChainCheckProperties properties,
                               Map<String, RpcMonitorService.NodeState> nodeStates,
-                              ObservationRegistry observationRegistry) {
+                              ObservationRegistry observationRegistry,
+                              ChainProtocol protocol) {
         this.monitor = monitor;
         this.nodeRegistry = nodeRegistry;
         this.store = store;
@@ -86,6 +91,22 @@ public class HttpMonitorService {
         this.properties = properties;
         this.nodeStates = nodeStates;
         this.observationRegistry = observationRegistry;
+        this.protocol = protocol;
+    }
+
+    /** Backwards-compatible constructor for tests that do not supply a protocol. */
+    public HttpMonitorService(RpcMonitorService monitor,
+                              NodeRegistry nodeRegistry,
+                              InMemoryMetricsStore store,
+                              AnomalyDetector detector,
+                              ChainCheckProperties properties,
+                              Map<String, RpcMonitorService.NodeState> nodeStates,
+                              ObservationRegistry observationRegistry) {
+        this(monitor, nodeRegistry, store, detector, properties, nodeStates, observationRegistry,
+                new de.makibytes.chaincheck.monitor.protocol.EvmProtocol(
+                        new ObjectMapper().findAndRegisterModules(),
+                        properties != null ? properties.getModeType()
+                                : de.makibytes.chaincheck.config.ChainCheckProperties.ModeType.ETHEREUM));
     }
 
     public void pollNodes() {
@@ -124,7 +145,8 @@ public class HttpMonitorService {
             boolean hasWs = node.ws() != null && !node.ws().isBlank();
 
             List<BatchItem> batch = new ArrayList<>();
-            batch.add(new BatchItem(BATCH_ID_BLOCK_NUMBER, "eth_blockNumber", mapper.createArrayNode()));
+            RpcRequest bnReq = protocol.buildBlockNumberRequest();
+            batch.add(new BatchItem(BATCH_ID_BLOCK_NUMBER, bnReq.method(), bnReq.params()));
 
             String wsBlockTag = null;
             boolean fetchLatest = false;
@@ -141,21 +163,21 @@ public class HttpMonitorService {
                     wsBlockTag = "latest";
                 }
                 logger.debug("HTTP poll ({}) pollCounter={} blockTag={}", node.name(), state.pollCounter, wsBlockTag);
-                batch.add(new BatchItem(BATCH_ID_CHECKPOINT, "eth_getBlockByNumber",
-                        mapper.createArrayNode().add(wsBlockTag).add(false)));
+                RpcRequest cpReq = protocol.buildBlockByTagRequest(wsBlockTag);
+                batch.add(new BatchItem(BATCH_ID_CHECKPOINT, cpReq.method(), cpReq.params()));
             } else {
                 if (safeEnabled) {
-                    batch.add(new BatchItem(BATCH_ID_SAFE, "eth_getBlockByNumber",
-                            mapper.createArrayNode().add("safe").add(false)));
+                    RpcRequest safeReq = protocol.buildBlockByTagRequest("safe");
+                    batch.add(new BatchItem(BATCH_ID_SAFE, safeReq.method(), safeReq.params()));
                 }
                 fetchLatest = shouldFetchLatest(state, timestamp, node.pollIntervalMs());
                 if (fetchLatest) {
-                    batch.add(new BatchItem(BATCH_ID_LATEST, "eth_getBlockByNumber",
-                            mapper.createArrayNode().add("latest").add(false)));
+                    RpcRequest latestReq = protocol.buildBlockByTagRequest("latest");
+                    batch.add(new BatchItem(BATCH_ID_LATEST, latestReq.method(), latestReq.params()));
                 }
                 if (finalizedEnabled) {
-                    batch.add(new BatchItem(BATCH_ID_FINALIZED, "eth_getBlockByNumber",
-                            mapper.createArrayNode().add("finalized").add(false)));
+                    RpcRequest finReq = protocol.buildBlockByTagRequest("finalized");
+                    batch.add(new BatchItem(BATCH_ID_FINALIZED, finReq.method(), finReq.params()));
                 }
             }
 
@@ -169,7 +191,7 @@ public class HttpMonitorService {
                 monitor.recordFailure(node, MetricSource.HTTP, "Could not fetch block number");
                 return;
             }
-            Long blockNumber = EthHex.parseLong(bnEntry.get("result").asText());
+            Long blockNumber = protocol.parseBlockNumberResponse(bnEntry.get("result"));
             if (blockNumber == null) {
                 monitor.recordFailure(node, MetricSource.HTTP, "Could not fetch block number");
                 return;
@@ -187,7 +209,7 @@ public class HttpMonitorService {
                     monitor.recordFailure(node, MetricSource.HTTP, wsBlockTag + " block not found");
                     return;
                 }
-                RpcMonitorService.BlockInfo checkpointBlock = EthHex.parseBlockFields(cpEntry.get("result"));
+                RpcMonitorService.BlockInfo checkpointBlock = protocol.parseBlockByTagResponse(cpEntry.get("result"), wsBlockTag);
                 if (checkpointBlock == null) {
                     monitor.recordFailure(node, MetricSource.HTTP, wsBlockTag + " block not found");
                     return;
@@ -224,7 +246,7 @@ public class HttpMonitorService {
                         monitor.recordFailure(node, MetricSource.HTTP, "safe block not found");
                         return;
                     }
-                    safeBlock = EthHex.parseBlockFields(safeEntry.get("result"));
+                    safeBlock = protocol.parseBlockByTagResponse(safeEntry.get("result"), "safe");
                     if (safeBlock == null) {
                         monitor.recordFailure(node, MetricSource.HTTP, "safe block not found");
                         return;
@@ -238,7 +260,7 @@ public class HttpMonitorService {
                 if (fetchLatest) {
                     JsonNode latestEntry = results.get(BATCH_ID_LATEST);
                     if (latestEntry != null && !latestEntry.has("error")) {
-                        latestBlock = EthHex.parseBlockFields(latestEntry.get("result"));
+                        latestBlock = protocol.parseBlockByTagResponse(latestEntry.get("result"), "latest");
                         if (latestBlock != null) {
                             state.lastLatestFetchAt = timestamp;
                             handleLatestBlock(node, state, latestBlock);
@@ -252,7 +274,7 @@ public class HttpMonitorService {
                         monitor.recordFailure(node, MetricSource.HTTP, "finalized block not found");
                         return;
                     }
-                    finalizedBlock = EthHex.parseBlockFields(finalizedEntry.get("result"));
+                    finalizedBlock = protocol.parseBlockByTagResponse(finalizedEntry.get("result"), "finalized");
                     if (finalizedBlock == null) {
                         monitor.recordFailure(node, MetricSource.HTTP, "finalized block not found");
                         return;
@@ -361,45 +383,39 @@ public class HttpMonitorService {
                 .build());
     }
 
-    private Long fetchBlockNumber(NodeDefinition node) throws IOException, InterruptedException {
-        JsonNode response = sendRpcWithRetry(
-                node.http(),
-                node.headers(),
-                node.readTimeoutMs(),
-                node.maxRetries(),
-                node.retryBackoffMs(),
-                node.connectTimeoutMs(),
-                "eth_blockNumber",
-                mapper.createArrayNode());
-        if (response.has("error")) {
-            throw new IOException(response.get("error").toString());
-        }
-        JsonNode result = response.get("result");
-        if (result == null || result.isNull()) {
-            return null;
-        }
-        return EthHex.parseLong(result.asText());
-    }
-
-    private RpcMonitorService.BlockInfo fetchBlockByTag(NodeDefinition node, String blockTag) throws IOException, InterruptedException {
-        return fetchBlockByTag(node.http(), node.readTimeoutMs(), node.headers(), node.maxRetries(), node.retryBackoffMs(), node.connectTimeoutMs(), blockTag);
-    }
-
     RpcMonitorService.BlockInfo fetchBlockByNumber(NodeDefinition node, long blockNumber) throws IOException, InterruptedException {
-        String hex = formatBlockNumberHex(blockNumber);
-        return fetchBlockByTag(node.http(), node.readTimeoutMs(), node.headers(), node.maxRetries(), node.retryBackoffMs(), node.connectTimeoutMs(), hex);
-    }
-
-    RpcMonitorService.BlockInfo fetchBlockByHash(NodeDefinition node, String blockHash) throws IOException, InterruptedException {
-        JsonNode params = mapper.createArrayNode()
-                .add(blockHash)
-                .add(false);
-        JsonNode response = sendRpcWithRetry(node.http(), node.headers(), node.readTimeoutMs(), 
-                node.maxRetries(), node.retryBackoffMs(), node.connectTimeoutMs(), "eth_getBlockByHash", params);
+        RpcRequest req = protocol.buildBlockByNumberRequest(blockNumber);
+        JsonNode response = sendRpcRequest(node, req);
         if (response.has("error")) {
             throw new IOException(response.get("error").toString());
         }
-        return EthHex.parseBlockFields(response.get("result"));
+        return protocol.parseBlockByNumberResponse(response.get("result"));
+    }
+
+    /**
+     * Fetches a block using the identifier from a WS notification (block hash for EVM, slot string
+     * for Solana).  Used by WsMonitorService after a newHeads / slotNotification event.
+     */
+    RpcMonitorService.BlockInfo fetchBlockByHash(NodeDefinition node, String identifier) throws IOException, InterruptedException {
+        BlockEvent syntheticEvent = new BlockEvent(identifier, null, null, null, null, false);
+        RpcRequest req = protocol.buildFetchAfterWsEventRequest(syntheticEvent);
+        JsonNode response = sendRpcRequest(node, req);
+        if (response.has("error")) {
+            throw new IOException(response.get("error").toString());
+        }
+        return protocol.parseFetchAfterWsEventResponse(response.get("result"));
+    }
+
+    private JsonNode sendRpcRequest(NodeDefinition node, RpcRequest req) throws IOException, InterruptedException {
+        if ("GET".equals(protocol.httpMethod())) {
+            JsonNode raw = sendGetWithRetry(node, req.method(), req.params());
+            // Unwrap CometBFT's "result" envelope so callers get the inner object
+            JsonNode inner = raw.path("result");
+            return inner.isMissingNode() ? raw : inner;
+        }
+        return sendRpcWithRetry(node.http(), node.headers(), node.readTimeoutMs(),
+                node.maxRetries(), node.retryBackoffMs(), node.connectTimeoutMs(),
+                req.method(), req.params());
     }
 
     private void checkWebSocketHealth(NodeDefinition node, RpcMonitorService.NodeState state, Long blockNumber) {
@@ -427,26 +443,6 @@ public class HttpMonitorService {
         }
     }
 
-    private RpcMonitorService.BlockInfo fetchBlockByTag(String httpUrl,
-                                                        long readTimeoutMs,
-                                                        Map<String, String> headers,
-                                                        int maxRetries,
-                                                        long retryBackoffMs,
-                                                        long connectTimeoutMs,
-                                                        String blockTag) throws IOException, InterruptedException {
-        JsonNode params = mapper.createArrayNode()
-                .add(blockTag)
-                .add(false);
-        JsonNode response = sendRpcWithRetry(httpUrl, headers, readTimeoutMs, maxRetries, retryBackoffMs, connectTimeoutMs, "eth_getBlockByNumber", params);
-        if (response.has("error")) {
-            throw new IOException(response.get("error").toString());
-        }
-        return EthHex.parseBlockFields(response.get("result"));
-    }
-
-    private String formatBlockNumberHex(long blockNumber) {
-        return "0x" + Long.toHexString(blockNumber);
-    }
 
     private JsonNode sendRpcWithRetry(String httpUrl,
                                       Map<String, String> headers,
@@ -719,6 +715,10 @@ public class HttpMonitorService {
 
     private Map<Integer, JsonNode> sendBatchRpcWithRetry(NodeDefinition node, List<BatchItem> items)
             throws IOException, InterruptedException {
+        // CometBFT (GET protocol) has no JSON-RPC batch support; execute each call sequentially
+        if ("GET".equals(protocol.httpMethod())) {
+            return sendGetBatch(node, items);
+        }
         int attempts = Math.max(0, node.maxRetries());
         IOException lastIo = null;
         String outcome = RPC_OUTCOME_SUCCESS;
@@ -807,6 +807,93 @@ public class HttpMonitorService {
             }
         }
         return results;
+    }
+
+    /**
+     * Executes a "batch" of GET requests sequentially for protocols that use HTTP GET
+     * (e.g. CometBFT).  Each item is sent as a separate GET call; the result map uses
+     * the same id-keyed structure as the POST batch path so callers are unaffected.
+     */
+    private Map<Integer, JsonNode> sendGetBatch(NodeDefinition node, List<BatchItem> items)
+            throws IOException, InterruptedException {
+        Map<Integer, JsonNode> results = new HashMap<>();
+        for (BatchItem item : items) {
+            JsonNode response = sendGetWithRetry(node, item.method(), item.params());
+            // Wrap in a batch-compatible envelope: { id, result }
+            ObjectNode envelope = mapper.createObjectNode();
+            envelope.put("id", item.id());
+            if (response.has("error")) {
+                envelope.set("error", response.get("error"));
+            } else {
+                // CometBFT wraps its payload in a "result" field; pass it through
+                JsonNode inner = response.path("result");
+                envelope.set("result", inner.isMissingNode() ? response : inner);
+            }
+            results.put(item.id(), envelope);
+        }
+        return results;
+    }
+
+    private JsonNode sendGetWithRetry(NodeDefinition node, String path, JsonNode queryParams)
+            throws IOException, InterruptedException {
+        int attempts = Math.max(0, node.maxRetries());
+        IOException lastIo = null;
+        for (int attempt = 0; attempt <= attempts; attempt++) {
+            try {
+                return sendGetOnce(node.http(), node.headers(), node.readTimeoutMs(),
+                        node.connectTimeoutMs(), path, queryParams);
+            } catch (HttpStatusException statusEx) {
+                if (!shouldRetryStatus(statusEx.getStatusCode()) || attempt == attempts) {
+                    throw statusEx;
+                }
+                sleepBackoff(node.retryBackoffMs(), attempt);
+            } catch (IOException ioEx) {
+                if (isHostDownConnectError(ioEx) || attempt == attempts) {
+                    throw ioEx;
+                }
+                lastIo = ioEx;
+                sleepBackoff(node.retryBackoffMs(), attempt);
+            }
+        }
+        if (lastIo != null) {
+            throw lastIo;
+        }
+        throw new IOException("GET request failed after retries");
+    }
+
+    private JsonNode sendGetOnce(String baseUrl, Map<String, String> headers,
+                                  long readTimeoutMs, long connectTimeoutMs,
+                                  String path, JsonNode queryParams)
+            throws IOException, InterruptedException {
+        // Build query string from JsonNode object fields
+        StringBuilder url = new StringBuilder(baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl);
+        url.append(path);
+        if (queryParams != null && queryParams.isObject() && !queryParams.isEmpty()) {
+            url.append('?');
+            boolean first = true;
+            var fields = queryParams.fields();
+            while (fields.hasNext()) {
+                var entry = fields.next();
+                if (!first) {
+                    url.append('&');
+                }
+                url.append(entry.getKey()).append('=').append(entry.getValue().asText());
+                first = false;
+            }
+        }
+        HttpRequest.Builder builder = HttpRequest.newBuilder()
+                .uri(URI.create(url.toString()))
+                .GET();
+        if (readTimeoutMs > 0) {
+            builder.timeout(Duration.ofMillis(readTimeoutMs));
+        }
+        headers.forEach(builder::header);
+        HttpClient client = getHttpClient(connectTimeoutMs);
+        HttpResponse<String> response = client.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+        if (response.statusCode() != 200) {
+            throw new HttpStatusException(response.statusCode(), url.toString());
+        }
+        return mapper.readTree(response.body());
     }
 
     private Observation startRpcObservation(String kind, String method, String httpUrl) {

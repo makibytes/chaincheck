@@ -1,0 +1,40 @@
+rpc:
+  mode: cosmos
+  mode-type: cosmos_sdk
+  title: "Cosmos Hub"
+  title-color: "#2e3148"
+  # BFT instant finality — every committed block is final; no safe/finalized distinction
+  get-safe-blocks: false
+  get-finalized-blocks: false
+  scale-change-ms: 1000
+  scale-max-ms: 30000
+  anomaly-detection:
+    high-latency-ms: 3000
+    long-delay-block-count: 5
+    # ~6s block time: 30s = 5 blocks of tolerated staleness
+    stale-block-threshold-ms: 30000
+    block-gap-threshold: 3
+  # Optimal = 6s (matches Cosmos Hub's ~6s block time), sparse = 30s
+  requests:
+    optimal-poll-interval-ms: 6000
+    sparse-poll-interval-ms: 30000
+  # CometBFT RPC endpoints (port 26657 typically).
+  # WS URL must include the /websocket path suffix.
+  nodes:
+    - name: cosmos.directory
+      http: https://rpc.cosmos.directory/cosmoshub
+      ws: wss://rpc.cosmos.directory/cosmoshub/websocket
+    - name: polkachu.com
+      http: https://cosmos-rpc.polkachu.com
+      ws: wss://cosmos-rpc.polkachu.com/websocket
+      requests: sparse
+    - name: publicnode.com
+      http: https://cosmos-rpc.publicnode.com:443
+      ws: wss://cosmos-rpc.publicnode.com:443/websocket
+      requests: sparse
+    - name: stakeworld.io
+      http: https://cosmos-rpc.stakeworld.io
+      requests: sparse
+    - name: nodestake.top
+      http: https://rpc.cosmos.nodestake.top
+      requests: sparse

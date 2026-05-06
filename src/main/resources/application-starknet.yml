@@ -1,8 +1,6 @@
 rpc:
-  # NOTE: Starknet uses a non-EVM RPC protocol (starknet_blockNumber etc.) and requires
-  # a Starknet-specific RPC adapter in ChainCheck before it will function correctly.
   mode: starknet
-  mode-type: zk
+  mode-type: starknet
   title: "Starknet Mainnet"
   title-color: "#ec796b"
   get-safe-blocks: false
@@ -17,6 +15,8 @@ rpc:
   requests:
     optimal-poll-interval-ms: 30000
     sparse-poll-interval-ms: 120000
+  # WS is supported by Pathfinder and Juno nodes via starknet_subscribeNewHeads.
+  # Nodes without a ws: entry fall back to HTTP polling automatically.
   nodes:
     - name: publicnode.com
       http: https://starknet-rpc.publicnode.com
