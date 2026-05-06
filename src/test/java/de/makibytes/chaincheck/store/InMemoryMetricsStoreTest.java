@@ -155,6 +155,34 @@ class InMemoryMetricsStoreTest {
     }
 
     @Test
+    @DisplayName("getLatestBlockNumber: historical HTTP samples should not regress latest block")
+    void testGetLatestBlockNumber_DoesNotRegress() {
+        Instant now = Instant.now();
+        MetricSample latest = MetricSample.builder(now, MetricSource.HTTP)
+                .success(true)
+                .latencyMs(100)
+                .blockNumber(100L)
+                .blockTimestamp(now)
+                .blockHash("0xlatest")
+                .parentHash("0xparent")
+                .build();
+        MetricSample recoveredHistorical = MetricSample.builder(now.plusSeconds(1), MetricSource.HTTP)
+                .success(true)
+                .latencyMs(100)
+                .blockNumber(95L)
+                .blockTimestamp(now.minusSeconds(60))
+                .blockHash("0xhistorical")
+                .parentHash("0xparent")
+                .build();
+
+        store.addSample("node1", latest);
+        store.addSample("node1", recoveredHistorical);
+
+        assertEquals(100L, store.getLatestBlockNumber("node1"));
+        assertEquals(100L, store.getLatestKnownBlockNumber("node1"));
+    }
+
+    @Test
     @DisplayName("concurrent access: should handle concurrent operations safely")
     void testConcurrentOperations() throws InterruptedException {
         Thread thread1 = new Thread(() -> {

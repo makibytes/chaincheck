@@ -17,6 +17,7 @@
 - **First-Seen Delta**: In multi-node setups, shows which node saw each block first and how many milliseconds behind each node was
 - **Canonical Rate & Block Quality**: Tracks what fraction of observed blocks ended up in the canonical chain (orphan detection via parent-hash linkage)
 - **Health Score**: Composite 0–100 score per node, combining uptime, latency, head delay, and error rate
+- **Hardened Reference Selection**: In voting mode, reference nodes are chosen from the last hour of data with heavy weighting for uptime, latency, and delay; nodes with poor uptime or many recent anomalies are excluded
 - **Attestation Tracking** (Ethereum only): Beacon committee attestation rounds per block (1–3 rounds = ~33%/67%/90% canonical confidence)
 - **Metric Aggregation**: Raw samples (2 hours) roll up into minutely aggregates (3 days) and hourly aggregates (30 days)
 - **Persistent Snapshots**: Optional on-disk JSON snapshots survive restarts
@@ -89,6 +90,8 @@ The Fleet Overview is the entry point. It presents every configured RPC node as 
 
 Click **Details →** on any row to drill into the per-node view.
 
+In majority-voting mode, the highlighted reference node is **not** just the node with the latest head. ChainCheck evaluates roughly the last hour of samples and anomalies, strongly prefers nodes with high uptime plus low latency/head delay/finality delay, and excludes nodes with poor recent uptime or too many recent anomalies.
+
 ### Per-Node Details (`/node?node=KEY`)
 
 The Details page shows the full picture for a single node:
@@ -140,6 +143,7 @@ Mode types `COSMOS`, `OPTIMISM`, `ZK`, `AVALANCHE`, and `TRON` all share the sam
 - No delayed HTTP verification call
 - Safe and finalized blocks tracked per execution node from its own HTTP polling
 - Reference head determined by **majority voting** unless an explicit consensus node is configured via `rpc.consensus.http`
+- When voting is used, the reference **node** is selected from healthy candidates only: the last hour is scored with strong emphasis on uptime, latency, and block delays, while recent anomalies and downtime apply heavy penalties or outright disqualification
 
 The key differences between these types are the default polling intervals and semantic intent — see [BLOCKCHAINS.md](BLOCKCHAINS.md).
 

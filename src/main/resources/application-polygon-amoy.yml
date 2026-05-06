@@ -10,6 +10,8 @@ rpc:
   anomaly-detection:
     high-latency-ms: 2000
     long-delay-block-count: 15
+    stale-block-threshold-ms: 30000
+    block-gap-threshold: 5
   requests:
     optimal-poll-interval-ms: 2000
     sparse-poll-interval-ms: 30000

@@ -48,8 +48,8 @@ class MetricsCacheTest {
                 0, 0,
                 // delayCount, reorgCount, blockGapCount, rateLimitCount, timeoutCount, wrongHeadCount, conflictCount, errorAnomalyCount
                 0, 0, 0, 0, 0, 0, 0, 0,
-                // canonicalRatePercent, invalidBlockCount, wrongHeadRatePercent, maxReorgDepth, maxGapSize, avgFirstSeenDeltaMs, p95FirstSeenDeltaMs, healthScore
-                100.0, 0, 0.0, 0, 0, 0.0, 0.0, 0);
+                // canonicalRatePercent, invalidBlockCount, wrongHeadRatePercent, maxReorgDepth, maxGapSize, avgFirstSeenDeltaMs, p95FirstSeenDeltaMs, healthScore, healthScoreHint
+                100.0, 0, 0.0, 0, 0, 0.0, 0.0, 0, "");
         return DashboardView.create(
                 TimeRange.HOURS_2, summary, List.of(), List.of(), List.of(),
                 ChartBuilder.ChartData.empty(), ChartBuilder.DelayChartData.empty(),

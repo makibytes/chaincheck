@@ -10,6 +10,11 @@ rpc:
   anomaly-detection:
     high-latency-ms: 2000
     long-delay-block-count: 15
+    # 2s block time: 30s = 15 blocks of tolerated staleness
+    stale-block-threshold-ms: 30000
+    # Heimdall checkpoint finality takes ~256+ Bor blocks (~8 min); gap threshold is for
+    # newHead events only (WS vs HTTP head lag), not finality.
+    block-gap-threshold: 5
   # Polling intervals: optimal = 2s (matches Polygon's 2s block time), sparse = 30s
   requests:
     optimal-poll-interval-ms: 2000

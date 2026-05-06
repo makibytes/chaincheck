@@ -41,7 +41,13 @@ public class ChainCheckProperties {
         OPTIMISM,
         ZK,
         AVALANCHE,
-        TRON
+        TRON,
+        /** Solana mainnet-beta / devnet — slot-based, slotSubscribe WS, base58 hashes. */
+        SOLANA,
+        /** Cosmos SDK / CometBFT chains — GET-based REST RPC, instant BFT finality. */
+        COSMOS_SDK,
+        /** Starknet — starknet_* JSON-RPC, ACCEPTED_ON_L2 / ACCEPTED_ON_L1 finality. */
+        STARKNET
     }
 
     public enum RequestProfile {
@@ -213,10 +219,21 @@ public class ChainCheckProperties {
     @PostConstruct
     public void applyRequestDefaults() {
         if (requests.getOptimalPollIntervalMs() <= 0) {
-            requests.setOptimalPollIntervalMs(modeType == ModeType.ETHEREUM ? 12_000L : 2_000L);
+            requests.setOptimalPollIntervalMs(switch (modeType) {
+                case ETHEREUM   -> 12_000L;
+                case SOLANA     ->    400L;
+                case COSMOS_SDK ->  6_000L;
+                case STARKNET   -> 30_000L;
+                default         ->  2_000L;
+            });
         }
         if (requests.getSparsePollIntervalMs() <= 0) {
-            requests.setSparsePollIntervalMs(modeType == ModeType.ETHEREUM ? 60_000L : 30_000L);
+            requests.setSparsePollIntervalMs(switch (modeType) {
+                case ETHEREUM   -> 60_000L;
+                case SOLANA     ->  5_000L;
+                case STARKNET   -> 120_000L;
+                default         -> 30_000L;
+            });
         }
     }
 
@@ -289,6 +306,10 @@ public class ChainCheckProperties {
 
         public void setRequestProfile(RequestProfile requestProfile) {
             this.requestProfile = requestProfile;
+        }
+
+        public void setRequests(RequestProfile requests) {
+            this.requestProfile = requests;
         }
 
         public AnomalyDetection getAnomalyDetection() {
@@ -584,6 +605,7 @@ public class ChainCheckProperties {
         private Integer longDelayBlockCount = 15;
         private long highLatencyMs = 2000;
         private long staleBlockThresholdMs = 30000;
+        private long blockGapThreshold = 5;
 
         public Integer getLongDelayBlockCount() {
             return longDelayBlockCount;
@@ -601,12 +623,24 @@ public class ChainCheckProperties {
             this.highLatencyMs = highLatencyMs;
         }
 
+        public void setHighLatency(long highLatency) {
+            this.highLatencyMs = highLatency;
+        }
+
         public long getStaleBlockThresholdMs() {
             return staleBlockThresholdMs;
         }
 
         public void setStaleBlockThresholdMs(long staleBlockThresholdMs) {
             this.staleBlockThresholdMs = staleBlockThresholdMs;
+        }
+
+        public long getBlockGapThreshold() {
+            return blockGapThreshold;
+        }
+
+        public void setBlockGapThreshold(long blockGapThreshold) {
+            this.blockGapThreshold = blockGapThreshold;
         }
     }
 }

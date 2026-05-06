@@ -1,0 +1,40 @@
+rpc:
+  mode: solana
+  mode-type: solana
+  title: "Solana Mainnet-Beta"
+  title-color: "#9945ff"
+  # confirmed = safe (~1.6s, >2/3 supermajority); finalized = ~13s (32-slot max-lockout)
+  get-safe-blocks: true
+  get-finalized-blocks: true
+  ws-gap-recovery-enabled: true
+  ws-gap-recovery-max-blocks: 10
+  scale-change-ms: 200
+  scale-max-ms: 5000
+  anomaly-detection:
+    high-latency-ms: 1000
+    long-delay-block-count: 20
+    # 400ms slots: 5s = ~12 slots of tolerated staleness
+    stale-block-threshold-ms: 5000
+    block-gap-threshold: 10
+  # Optimal = 400ms (1 poll/slot), sparse = 5s for rate-limited public endpoints
+  requests:
+    optimal-poll-interval-ms: 400
+    sparse-poll-interval-ms: 5000
+  nodes:
+    - name: mainnet-beta.solana.com
+      http: https://api.mainnet-beta.solana.com
+      ws: wss://api.mainnet-beta.solana.com
+    - name: publicnode.com
+      http: https://solana-rpc.publicnode.com
+      ws: wss://solana-rpc.publicnode.com
+      requests: sparse
+    - name: drpc.org
+      http: https://solana.drpc.org
+      ws: wss://solana.drpc.org
+      requests: sparse
+    - name: 1RPC
+      http: https://1rpc.io/sol
+      requests: sparse
+    - name: Ankr
+      http: https://rpc.ankr.com/solana
+      requests: sparse

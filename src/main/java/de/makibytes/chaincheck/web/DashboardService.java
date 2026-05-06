@@ -508,7 +508,10 @@ public class DashboardService {
                 .filter(s -> s.getSource() == MetricSource.HTTP && s.getTimestamp().isAfter(threeMinAgo) && s.isSuccess())
                 .count();
         boolean isCurrentlyDown = httpConfigured && recentHttp > 0 && recentHttpSuccess == 0;
-        int healthScore = healthScoreCalculator.calculateHealthScore(uptimePercent, p95Latency, newBlockStats.p95(), errors, total, isCurrentlyDown, wsConfigured, wsUp);
+        HealthScoreCalculator.HealthScoreBreakdown healthBreakdown = healthScoreCalculator.computeBreakdown(
+                uptimePercent, p95Latency, newBlockStats.p95(), errors, total, isCurrentlyDown, wsConfigured, wsUp);
+        int healthScore = healthBreakdown.total();
+        String healthScoreHint = HealthScoreCalculator.buildHint(healthBreakdown);
 
         // Last block age
         Instant lastBlockTs = store.getLatestBlockTimestamp(nodeKey);
@@ -555,7 +558,8 @@ public class DashboardService {
             maxGapSize,
             avgFirstSeenDeltaMs,
             p95FirstSeenDeltaMs,
-            healthScore);
+            healthScore,
+            healthScoreHint);
 
         DashboardView view = DashboardView.create(
                 range, summary, anomalies, anomalyRows, sampleRows,
@@ -658,14 +662,17 @@ public class DashboardService {
                     .filter(s -> s.getSource() == MetricSource.HTTP && s.getTimestamp().isAfter(threeMinAgo) && s.isSuccess())
                     .count();
             boolean isCurrentlyDown = httpConfigured && recentHttp > 0 && recentHttpSuccess == 0;
-            int healthScore = healthScoreCalculator.calculateHealthScore(uptime, p95Lat, p95Head, errors, total, isCurrentlyDown, wsConfigured, wsUp);
+            HealthScoreCalculator.HealthScoreBreakdown healthBreakdown = healthScoreCalculator.computeBreakdown(
+                    uptime, p95Lat, p95Head, errors, total, isCurrentlyDown, wsConfigured, wsUp);
+            int healthScore = healthBreakdown.total();
             String healthLabel = FleetNodeSummary.labelForScore(healthScore);
+            String healthScoreHint = HealthScoreCalculator.buildHint(healthBreakdown);
             String sparkline = sparklineBuilder.buildPoints(raw, now, properties.getSparklineDataSource());
             String coloredPaths = sparklineBuilder.buildColoredPaths(raw, now, properties.getSparklineDataSource());
 
             summaries.add(new FleetNodeSummary(
                     nk, node.name(), httpConfigured, wsConfigured, httpUp, wsUp,
-                    healthScore, healthLabel, uptime, p95Lat, p95Head, blockLag,
+                    healthScore, healthLabel, healthScoreHint, uptime, p95Lat, p95Head, blockLag,
                     latestBlock, lastBlockAgeMs, anomalyCount, wsDisconnects,
                     nk.equals(referenceNodeKey), sparkline, coloredPaths));
         }
@@ -845,7 +852,7 @@ public class DashboardService {
     }
 
     private AnomalyRow createAnomalyRow(AnomalyEvent firstEvent, AnomalyEvent lastEvent, int count, boolean isFirstRowForSource) {
-        String details = resolveAnomalyDetails(lastEvent);
+        String details = resolveAnomalyDetails(firstEvent);
         if (count == 1) {
             // Single anomaly - use standard format
             return new AnomalyRow(
@@ -859,22 +866,21 @@ public class DashboardService {
                     firstEvent.getParentHash(),
                     details);
         } else {
-            // Multiple anomalies - show time range and use newest ID
+            // Multiple anomalies are sorted newest-first; keep row details on the current event.
             // Only show "(ongoing)" for the first row per source if not closed
-            String endLabel = (isFirstRowForSource && !lastEvent.isClosed())
+            String endLabel = (isFirstRowForSource && !firstEvent.isClosed())
                     ? "(ongoing)"
                     : TIMESTAMP_FORMATTER.format(firstEvent.getTimestamp());
             String timeRange = TIMESTAMP_FORMATTER.format(lastEvent.getTimestamp()) + " ↔ " + endLabel;
-            String message = lastEvent.getMessage(); // Use the latest message
             return new AnomalyRow(
-                    lastEvent.getId(), // Use newest ID for details link
+                    firstEvent.getId(),
                     timeRange,
                     firstEvent.getType().name(),
                     firstEvent.getSource().name(),
-                    message,
-                    lastEvent.getBlockNumber(),
-                    lastEvent.getBlockHash(),
-                    lastEvent.getParentHash(),
+                    firstEvent.getMessage(),
+                    firstEvent.getBlockNumber(),
+                    firstEvent.getBlockHash(),
+                    firstEvent.getParentHash(),
                     details,
                     count,
                     true);

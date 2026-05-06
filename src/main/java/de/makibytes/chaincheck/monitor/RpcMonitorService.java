@@ -38,7 +38,10 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import de.makibytes.chaincheck.chain.cosmos.BlockVotingCoordinator;
+import de.makibytes.chaincheck.monitor.protocol.ChainProtocol;
+import de.makibytes.chaincheck.monitor.protocol.ChainProtocolFactory;
 import de.makibytes.chaincheck.chain.cosmos.BlockVotingService;
 import de.makibytes.chaincheck.chain.cosmos.ReferenceNodeSelector;
 import de.makibytes.chaincheck.chain.cosmos.VotingReferenceStrategy;
@@ -114,7 +117,7 @@ public class RpcMonitorService {
         boolean hasConsensusNode = properties.getConsensus() != null && properties.getConsensus().hasConfiguredReferenceNode();
         
         if (hasConsensusNode) {
-            this.referenceStrategy = new ConfiguredReferenceStrategy(configuredSource, configuredReferenceNodeKey);
+            this.referenceStrategy = new ConfiguredReferenceStrategy(configuredSource, configuredReferenceNodeKey, referenceBlockVoting);
         } else {
             // No consensus node: use majority voting across execution nodes
             this.referenceStrategy = new VotingReferenceStrategy(nodeRegistry, blockVotingService, referenceBlockVoting, referenceNodeSelector, blockAgreementTracker, store);
@@ -123,8 +126,9 @@ public class RpcMonitorService {
         ObservationRegistry observationRegistry = observationRegistryProvider != null
                 ? observationRegistryProvider.getIfAvailable(() -> ObservationRegistry.NOOP)
                 : ObservationRegistry.NOOP;
-        this.httpMonitorService = new HttpMonitorService(this, nodeRegistry, store, detector, properties, nodeStates, observationRegistry);
-        this.wsMonitorService = new WsMonitorService(this, nodeRegistry, store, detector, properties, nodeStates, httpMonitorService);
+        ChainProtocol protocol = ChainProtocolFactory.create(properties.getModeType(), new ObjectMapper().findAndRegisterModules());
+        this.httpMonitorService = new HttpMonitorService(this, nodeRegistry, store, detector, properties, nodeStates, observationRegistry, protocol);
+        this.wsMonitorService = new WsMonitorService(this, nodeRegistry, store, detector, properties, nodeStates, httpMonitorService, protocol);
     }
 
     /**
@@ -323,7 +327,6 @@ public class RpcMonitorService {
                 node.key(),
                 sample,
                 node.anomalyDelayMs(),
-                properties.getAnomalyDetection().getStaleBlockThresholdMs(),
                 lastBlock,
                 lastHash,
                 state != null ? state.lastHttpBlockNumber : null);
@@ -358,7 +361,7 @@ public class RpcMonitorService {
         return switch (error) {
             case HttpTimeoutException timeoutException -> "HTTP timeout: " + timeoutException.getMessage();
             case ConnectException connectException -> "Connect error: " + connectException.getMessage();
-            case HttpMonitorService.HttpStatusException statusException ->
+            case HttpStatusException statusException ->
                     "HTTP " + statusException.getStatusCode() + ": " + statusException.getMessage();
             default -> error.getMessage();
         };
@@ -674,8 +677,8 @@ public class RpcMonitorService {
         return source == MetricSource.HTTP ? state.lastHttpBlockHash : state.lastWsBlockHash;
     }
 
-    record BlockInfo(Long blockNumber, String blockHash, String parentHash,
-                     Integer transactionCount, Long gasPriceWei, Instant blockTimestamp) {
+    public record BlockInfo(Long blockNumber, String blockHash, String parentHash,
+                            Integer transactionCount, Long gasPriceWei, Instant blockTimestamp) {
     }
 
     public static class NodeState {

@@ -45,6 +45,8 @@ import de.makibytes.chaincheck.model.AnomalyType;
 import de.makibytes.chaincheck.model.MetricSample;
 import de.makibytes.chaincheck.model.MetricSource;
 import de.makibytes.chaincheck.monitor.NodeRegistry.NodeDefinition;
+import de.makibytes.chaincheck.monitor.protocol.BlockEvent;
+import de.makibytes.chaincheck.monitor.protocol.ChainProtocol;
 import de.makibytes.chaincheck.store.InMemoryMetricsStore;
 
 public class WsMonitorService {
@@ -59,6 +61,7 @@ public class WsMonitorService {
     private final ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
     private final Map<String, RpcMonitorService.NodeState> nodeStates;
     private final HttpMonitorService httpMonitorService;
+    private final ChainProtocol protocol;
     private final ExecutorService recoveryExecutor = Executors.newVirtualThreadPerTaskExecutor();
     // Bounded memory tracking:
     // - recoveryAttemptByNodeAndBlock: cleaned up entries older than RECOVERY_ATTEMPT_DEDUP_WINDOW (10s)
@@ -77,7 +80,8 @@ public class WsMonitorService {
                             AnomalyDetector detector,
                             ChainCheckProperties properties,
                             Map<String, RpcMonitorService.NodeState> nodeStates,
-                            HttpMonitorService httpMonitorService) {
+                            HttpMonitorService httpMonitorService,
+                            ChainProtocol protocol) {
         this.monitor = monitor;
         this.nodeRegistry = nodeRegistry;
         this.store = store;
@@ -85,6 +89,22 @@ public class WsMonitorService {
         this.properties = properties;
         this.nodeStates = nodeStates;
         this.httpMonitorService = httpMonitorService;
+        this.protocol = protocol;
+    }
+
+    /** Backwards-compatible constructor for tests that do not supply a protocol. */
+    public WsMonitorService(RpcMonitorService monitor,
+                            NodeRegistry nodeRegistry,
+                            InMemoryMetricsStore store,
+                            AnomalyDetector detector,
+                            ChainCheckProperties properties,
+                            Map<String, RpcMonitorService.NodeState> nodeStates,
+                            HttpMonitorService httpMonitorService) {
+        this(monitor, nodeRegistry, store, detector, properties, nodeStates, httpMonitorService,
+                new de.makibytes.chaincheck.monitor.protocol.EvmProtocol(
+                        new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules(),
+                        properties != null ? properties.getModeType()
+                                : de.makibytes.chaincheck.config.ChainCheckProperties.ModeType.ETHEREUM));
     }
 
     public void ensureWebSocket() {
@@ -193,8 +213,7 @@ public class WsMonitorService {
             if (tracker != null) {
                 tracker.onConnect();
             }
-            String subscribe = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"eth_subscribe\",\"params\":[\"newHeads\"]}";
-            webSocket.sendText(subscribe, true);
+            webSocket.sendText(protocol.subscribeMessage(), true);
         }
 
         @Override
@@ -253,22 +272,17 @@ public class WsMonitorService {
         private void handleWsMessage(String payload) {
             try {
                 JsonNode root = mapper.readTree(payload);
-                if (root.has("method") && "eth_subscription".equals(root.get("method").asText())) {
-                    JsonNode result = root.path("params").path("result");
-                    RpcMonitorService.BlockInfo blockInfo = EthHex.parseBlockFields(result);
-                    String blockHash = blockInfo != null ? blockInfo.blockHash() : null;
-                    String parentHash = blockInfo != null ? blockInfo.parentHash() : null;
-                    Instant blockTimestamp = blockInfo != null ? blockInfo.blockTimestamp() : null;
-                    Long blockNumber = blockInfo != null ? blockInfo.blockNumber() : null;
-
-                    Instant now = Instant.now();
-                    state.lastWsEventReceivedAt = now;
-
-                    if (properties.getModeType() == ChainCheckProperties.ModeType.ETHEREUM && blockHash != null) {
-                        handleEthereumNewHead(node, blockHash, now);
-                    } else {
-                        handleCosmosNewHead(node, blockNumber, blockHash, parentHash, blockTimestamp, now);
-                    }
+                if (!protocol.isNewBlockNotification(root)) {
+                    return;
+                }
+                Instant now = Instant.now();
+                state.lastWsEventReceivedAt = now;
+                BlockEvent event = protocol.parseWsNotification(root);
+                if (protocol.requiresHttpFetchAfterWsEvent()) {
+                    handleBlockWithHttpFetch(node, event.identifier(), event.blockNumber(), now);
+                } else {
+                    handleDirectBlockEvent(node, event.blockNumber(), event.blockHash(),
+                            event.parentHash(), event.blockTimestamp(), now);
                 }
             } catch (IOException | RuntimeException ex) {
                 logger.error("WebSocket message handling failure ({}): {}", node.name(), ex.getMessage());
@@ -276,17 +290,20 @@ public class WsMonitorService {
             }
         }
 
-        private void handleEthereumNewHead(NodeDefinition node, String eventHash, Instant now) {
+        private void handleBlockWithHttpFetch(NodeDefinition node, String eventIdentifier, Long eventBlockNumber, Instant now) {
             try {
-                RpcMonitorService.BlockInfo fullBlock = httpMonitorService.fetchBlockByHash(node, eventHash);
+                RpcMonitorService.BlockInfo fullBlock = httpMonitorService.fetchBlockByHash(node, eventIdentifier);
                 if (fullBlock == null || fullBlock.blockHash() == null) {
-                    logger.warn("Failed to fetch full block by hash {} for node {}", eventHash, node.name());
+                    logger.warn("Failed to fetch block for identifier {} for node {}", eventIdentifier, node.name());
                     return;
                 }
 
                 String blockHash = fullBlock.blockHash();
                 String parentHash = fullBlock.parentHash();
-                Long blockNumber = fullBlock.blockNumber();
+                // Prefer the block number carried by the WS notification (e.g. Solana slot from
+                // slotNotification) over the one parsed from the HTTP response body.  For Solana,
+                // getBlock returns parentSlot, so parentSlot+1 is wrong whenever slots were skipped.
+                Long blockNumber = eventBlockNumber != null ? eventBlockNumber : fullBlock.blockNumber();
                 Instant blockTimestamp = fullBlock.blockTimestamp();
 
                 ChainTracker tracker = chainTrackers.computeIfAbsent(node.key(), ChainTracker::new);
@@ -353,7 +370,6 @@ public class WsMonitorService {
                             node.key(),
                             sample,
                             node.anomalyDelayMs(),
-                            properties.getAnomalyDetection().getStaleBlockThresholdMs(),
                             null,
                             null,
                             state.lastHttpBlockNumber);
@@ -378,7 +394,7 @@ public class WsMonitorService {
             }
         }
 
-        private void handleCosmosNewHead(NodeDefinition node,
+        private void handleDirectBlockEvent(NodeDefinition node,
                 Long blockNumber, String blockHash, String parentHash, Instant blockTimestamp, Instant now) {
 
             Long headDelayMs = null;
@@ -428,7 +444,6 @@ public class WsMonitorService {
                         node.key(),
                         sample,
                         node.anomalyDelayMs(),
-                        properties.getAnomalyDetection().getStaleBlockThresholdMs(),
                         state.lastWsBlockNumber,
                         state.lastWsBlockHash,
                         state.lastHttpBlockNumber);
@@ -635,8 +650,14 @@ public class WsMonitorService {
             long startNanos = System.nanoTime();
             try {
                 RpcMonitorService.BlockInfo block = httpMonitorService.fetchBlockByNumber(node, blockNumber);
-                if (block == null || block.blockNumber() == null || block.blockHash() == null) {
+                if (block == null || block.blockHash() == null) {
                     throw new IOException("block " + blockNumber + " not found");
+                }
+                // Use the requested slot/block number as canonical; Solana getBlock returns
+                // parentSlot in the body, so parentSlot+1 is wrong when slots were skipped.
+                if (block.blockNumber() == null || !block.blockNumber().equals(blockNumber)) {
+                    block = new RpcMonitorService.BlockInfo(blockNumber, block.blockHash(), block.parentHash(),
+                            block.transactionCount(), block.gasPriceWei(), block.blockTimestamp());
                 }
 
                 long latencyMs = (System.nanoTime() - startNanos) / 1_000_000;

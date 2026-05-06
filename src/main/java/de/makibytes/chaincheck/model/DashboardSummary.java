@@ -57,7 +57,8 @@ public record DashboardSummary(long totalSamples,
                                long maxGapSize,
                                double avgFirstSeenDeltaMs,
                                double p95FirstSeenDeltaMs,
-                               int healthScore) {
+                               int healthScore,
+                               String healthScoreHint) {
 
     public long getTotalSamples() {
         return totalSamples;
@@ -221,5 +222,9 @@ public record DashboardSummary(long totalSamples,
 
     public int getHealthScore() {
         return healthScore;
+    }
+
+    public String getHealthScoreHint() {
+        return healthScoreHint;
     }
 }

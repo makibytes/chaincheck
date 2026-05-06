@@ -6,6 +6,10 @@ rpc:
   get-safe-blocks: false
   get-finalized-blocks: false
   scale-max-ms: 60000
+  anomaly-detection:
+    # ~5 blocks of tolerance for 12s block time
+    stale-block-threshold-ms: 60000
+    block-gap-threshold: 3
   # Polling intervals: optimal = 12s (1 poll/block), sparse = 60s (rate-limited public nodes)
   requests:
     optimal-poll-interval-ms: 12000

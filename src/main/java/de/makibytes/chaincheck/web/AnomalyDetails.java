@@ -19,43 +19,17 @@ package de.makibytes.chaincheck.web;
 
 import java.time.Instant;
 
-public class AnomalyDetails {
-
-    private final long id;
-    private final String nodeKey;
-    private final String nodeName;
-    private final Instant timestamp;
-    private final String source;
-    private final String type;
-    private final String message;
-    private final Long blockNumber;
-    private final String blockHash;
-    private final String parentHash;
-    private final String details;
-
-    public AnomalyDetails(long id,
-                          String nodeKey,
-                          String nodeName,
-                          Instant timestamp,
-                          String source,
-                          String type,
-                          String message,
-                          Long blockNumber,
-                          String blockHash,
-                          String parentHash,
-                          String details) {
-        this.id = id;
-        this.nodeKey = nodeKey;
-        this.nodeName = nodeName;
-        this.timestamp = timestamp;
-        this.source = source;
-        this.type = type;
-        this.message = message;
-        this.blockNumber = blockNumber;
-        this.blockHash = blockHash;
-        this.parentHash = parentHash;
-        this.details = details;
-    }
+public record AnomalyDetails(long id,
+                             String nodeKey,
+                             String nodeName,
+                             Instant timestamp,
+                             String source,
+                             String type,
+                             String message,
+                             Long blockNumber,
+                             String blockHash,
+                             String parentHash,
+                             String details) {
 
     public long getId() {
         return id;

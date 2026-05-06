@@ -20,10 +20,10 @@ import org.springframework.stereotype.Component;
 /**
  * Calculates node health scores based on multiple weighted factors.
  * Health score ranges from 0 (completely unhealthy) to 100 (perfect health).
- * 
+ *
  * Score composition:
  * - Uptime: 30% weight
- * - Latency P95: 20% weight  
+ * - Latency P95: 20% weight
  * - Head delay P95: 15% weight
  * - Anomaly rate: 10% weight
  * - WebSocket connection: 25% weight (if configured)
@@ -37,90 +37,137 @@ public class HealthScoreCalculator {
     private static final double HEAD_DELAY_WEIGHT = 15.0;
     private static final double ANOMALY_WEIGHT = 10.0;
     private static final double WS_WEIGHT = 25.0;
-    
+
     // Thresholds for score degradation
     private static final double LATENCY_THRESHOLD_MS = 2000.0;
     private static final double HEAD_DELAY_THRESHOLD_MS = 10000.0;
     private static final double ANOMALY_RATE_MULTIPLIER = 10.0;
-    
-    /**
-     * Computes health score for a node based on observed metrics.
-     * 
-     * @param uptimePercent uptime percentage (0-100)
-     * @param p95LatencyMs 95th percentile latency in milliseconds
-     * @param p95HeadDelayMs 95th percentile head delay in milliseconds
-     * @param errorCount number of errors
-     * @param totalRequests total number of requests
-     * @param isCurrentlyDown true if node is currently down
-     * @param wsConfigured true if WebSocket monitoring is configured for this node
-     * @param wsUp true if WebSocket is currently connected
-     * @return health score (0-100)
-     */
-    public int calculateHealthScore(double uptimePercent, double p95LatencyMs, double p95HeadDelayMs, 
+
+    public record HealthScoreBreakdown(
+            int total,
+            double uptimeScore,
+            double latencyScore,
+            double headDelayScore,
+            double anomalyScore,
+            double wsScore,
+            double uptimePercent,
+            double p95LatencyMs,
+            double p95HeadDelayMs,
+            long errorCount,
+            long totalRequests,
+            boolean wsConfigured,
+            boolean wsUp,
+            boolean down) {
+    }
+
+    public int calculateHealthScore(double uptimePercent, double p95LatencyMs, double p95HeadDelayMs,
                                     long errorCount, long totalRequests, boolean isCurrentlyDown,
                                     boolean wsConfigured, boolean wsUp) {
-        // Node is completely down
-        if (isCurrentlyDown || (totalRequests > 0 && uptimePercent <= 0.0)) {
-            return 0;
-        }
-        
-        // Calculate component scores
+        return computeBreakdown(uptimePercent, p95LatencyMs, p95HeadDelayMs,
+                errorCount, totalRequests, isCurrentlyDown, wsConfigured, wsUp).total();
+    }
+
+    public HealthScoreBreakdown computeBreakdown(double uptimePercent, double p95LatencyMs, double p95HeadDelayMs,
+                                                 long errorCount, long totalRequests, boolean isCurrentlyDown,
+                                                 boolean wsConfigured, boolean wsUp) {
+        boolean down = isCurrentlyDown || (totalRequests > 0 && uptimePercent <= 0.0);
         double uptimeScore = calculateUptimeScore(uptimePercent);
         double latencyScore = calculateLatencyScore(p95LatencyMs);
         double headDelayScore = calculateHeadDelayScore(p95HeadDelayMs);
         double anomalyScore = calculateAnomalyScore(errorCount, totalRequests);
-        
-        // WebSocket penalty: if configured but down, apply a moderate penalty
-        // A node with good HTTP can still reach 40-45 points even with WS down
-        if (wsConfigured && !wsUp) {
-            double baseScore = uptimeScore + latencyScore + headDelayScore + anomalyScore;
-            // Apply penalty: lose half the WS weight (12.5) instead of full weight
-            return Math.max(0, (int) Math.round(baseScore - (WS_WEIGHT / 2.0)));
+
+        double wsScore;
+        int total;
+        if (down) {
+            wsScore = 0;
+            total = 0;
+        } else if (wsConfigured && !wsUp) {
+            // Configured but disconnected: lose half the WS weight instead of the full weight
+            wsScore = -(WS_WEIGHT / 2.0);
+            double sum = uptimeScore + latencyScore + headDelayScore + anomalyScore + wsScore;
+            total = Math.max(0, (int) Math.round(sum));
+        } else {
+            wsScore = wsConfigured ? WS_WEIGHT : 0;
+            double sum = uptimeScore + latencyScore + headDelayScore + anomalyScore + wsScore;
+            total = (int) Math.round(sum);
         }
-        
-        // Add full WS score if configured and up
-        double wsScore = wsConfigured && wsUp ? WS_WEIGHT : 0;
-        
-        // Combine scores and round to integer
-        double totalScore = uptimeScore + latencyScore + headDelayScore + anomalyScore + wsScore;
-        return (int) Math.round(totalScore);
+
+        return new HealthScoreBreakdown(total, uptimeScore, latencyScore, headDelayScore,
+                anomalyScore, wsScore, uptimePercent, p95LatencyMs, p95HeadDelayMs,
+                errorCount, totalRequests, wsConfigured, wsUp, down);
     }
-    
+
+    /**
+     * Formats a plain-text tooltip explaining the breakdown. Rendered via
+     * {@code data-hint} which sets {@code textContent} — newlines become visible
+     * line breaks via CSS {@code white-space: pre-line}.
+     */
+    public static String buildHint(HealthScoreBreakdown b) {
+        if (b.down()) {
+            return "Score is 0: node has been continuously down for 3+ minutes.";
+        }
+        StringBuilder s = new StringBuilder();
+        s.append("Health ").append(b.total()).append("/100 — weighted sum of 5 factors:\n");
+        s.append("• Uptime ").append(fmtPercent(b.uptimePercent()))
+                .append(" → ").append(fmtScore(b.uptimeScore())).append("/30\n");
+        s.append("• Latency P95 ").append(fmtMs(b.p95LatencyMs()))
+                .append(" → ").append(fmtScore(b.latencyScore())).append("/20 (0 at ≥2000ms)\n");
+        s.append("• Head delay P95 ").append(fmtMs(b.p95HeadDelayMs()))
+                .append(" → ").append(fmtScore(b.headDelayScore())).append("/15 (0 at ≥10s)\n");
+        double errorRate = b.totalRequests() == 0 ? 0.0 : (100.0 * b.errorCount() / b.totalRequests());
+        s.append("• Error rate ").append(fmtPercent(errorRate))
+                .append(" → ").append(fmtScore(b.anomalyScore())).append("/10 (0 at ≥10%)\n");
+        if (!b.wsConfigured()) {
+            s.append("• WebSocket not configured → 0/25 (not counted)");
+        } else if (b.wsUp()) {
+            s.append("• WebSocket connected → 25/25");
+        } else {
+            s.append("• WebSocket disconnected → −12.5 penalty (of 25)");
+        }
+        return s.toString();
+    }
+
+    private static String fmtPercent(double v) {
+        return String.format("%.1f%%", v);
+    }
+
+    private static String fmtMs(double v) {
+        if (v <= 0) return "0ms";
+        if (v >= 1000) return String.format("%.2fs", v / 1000.0);
+        return String.format("%.0fms", v);
+    }
+
+    private static String fmtScore(double v) {
+        return String.format("%.1f", v);
+    }
+
     private double calculateUptimeScore(double uptimePercent) {
-        // Uptime is already 0-100, just apply weight
         return uptimePercent * (UPTIME_WEIGHT / 100.0);
     }
-    
+
     private double calculateLatencyScore(double p95LatencyMs) {
-        // Score degrades linearly from max weight at 0ms to 0 at threshold
         double ratio = Math.min(1.0, p95LatencyMs / LATENCY_THRESHOLD_MS);
         double score = 1.0 - ratio;
         return LATENCY_WEIGHT * Math.max(0.0, score);
     }
-    
+
     private double calculateHeadDelayScore(double p95HeadDelayMs) {
-        // No delay means full score
         if (p95HeadDelayMs <= 0) {
             return HEAD_DELAY_WEIGHT;
         }
-        
-        // Score degrades linearly from max weight at 0ms to 0 at threshold
         double ratio = Math.min(1.0, p95HeadDelayMs / HEAD_DELAY_THRESHOLD_MS);
         double score = 1.0 - ratio;
         return HEAD_DELAY_WEIGHT * Math.max(0.0, score);
     }
-    
+
     private double calculateAnomalyScore(long errorCount, long totalRequests) {
         if (totalRequests == 0) {
             return ANOMALY_WEIGHT;
         }
-        
-        // Calculate error rate and apply multiplier for sensitivity
         double errorRate = (double) errorCount / totalRequests;
         double adjustedRate = errorRate * ANOMALY_RATE_MULTIPLIER;
         double ratio = Math.min(1.0, adjustedRate);
         double score = 1.0 - ratio;
-        
         return ANOMALY_WEIGHT * Math.max(0.0, score);
     }
 }

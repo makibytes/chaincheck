@@ -28,6 +28,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import de.makibytes.chaincheck.chain.shared.BlockAgreementTracker;
+import de.makibytes.chaincheck.chain.shared.BlockConfidenceTracker;
 import de.makibytes.chaincheck.chain.shared.Confidence;
 import de.makibytes.chaincheck.model.AnomalyEvent;
 import de.makibytes.chaincheck.model.AnomalyType;
@@ -103,26 +104,29 @@ public class BlockVotingCoordinator {
                                  boolean warmupComplete,
                                  Map<String, RpcMonitorService.NodeState> nodeStates) {
         blockVotingService.performVoting(currentReferenceNodeKey);
-        emitWrongHeadForOrphanedWsNewHeads(now, warmupComplete);
+        detectWrongHeads(blockVotingService.getBlockConfidenceTracker(), now, warmupComplete);
         blockAgreementTracker.penalize(oldBlocks, blockVotingService.getBlockConfidenceTracker(), blockVotingService.getBlockVotes());
         blockAgreementTracker.awardPoints(oldBlocks, blockVotingService.getBlockConfidenceTracker(), blockVotingService.getBlockVotes());
     }
 
     /**
      * Emits WRONG_HEAD anomalies for WS newHead samples whose block hash is not part of the
-     * canonical chain. Detection is anchored to SAFE or FINALIZED consensus: once the majority
-     * of nodes agree on a canonical hash for a block at a given confidence level, any WS newHead
-     * sample with a different hash at the same block number is an orphan.
+     * canonical chain. Detection is anchored to SAFE or FINALIZED consensus: once a block is
+     * confirmed canonical at SAFE or FINALIZED confidence, any WS newHead sample with a different
+     * hash at the same block number is an orphan.
      *
-     * <p>This avoids false positives for nodes that are merely lagging (they will eventually catch
+     * <p>Call this from either voting mode (tracker populated by majority voting) or configured
+     * consensus-node mode (tracker populated from beacon observations).
+     *
+     * <p>Avoids false positives for nodes that are merely lagging (they will eventually catch
      * up and report the same canonical hash), while reliably flagging nodes that were on a fork.
      */
-    private void emitWrongHeadForOrphanedWsNewHeads(Instant now, boolean warmupComplete) {
-        if (!warmupComplete) {
+    public void detectWrongHeads(BlockConfidenceTracker tracker, Instant now, boolean warmupComplete) {
+        if (!warmupComplete || tracker == null) {
             return;
         }
 
-        Map<Long, Map<Confidence, String>> confirmedBlocks = blockVotingService.getBlockConfidenceTracker().getBlocks();
+        Map<Long, Map<Confidence, String>> confirmedBlocks = tracker.getBlocks();
         Instant lookback = now.minus(Duration.ofHours(2));
 
         for (Map.Entry<Long, Map<Confidence, String>> entry : confirmedBlocks.entrySet()) {

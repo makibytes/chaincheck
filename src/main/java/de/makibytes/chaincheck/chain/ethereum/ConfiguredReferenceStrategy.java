@@ -20,6 +20,7 @@ package de.makibytes.chaincheck.chain.ethereum;
 import java.time.Instant;
 import java.util.Map;
 
+import de.makibytes.chaincheck.chain.cosmos.BlockVotingCoordinator;
 import de.makibytes.chaincheck.chain.shared.Confidence;
 import de.makibytes.chaincheck.chain.shared.ReferenceStrategy;
 import de.makibytes.chaincheck.config.ChainCheckProperties;
@@ -33,12 +34,16 @@ public class ConfiguredReferenceStrategy implements ReferenceStrategy {
 
     private final ConfiguredReferenceSource source;
     private final String configuredReferenceNodeKey;
+    private final BlockVotingCoordinator blockVotingCoordinator;
     private RpcMonitorService.ReferenceState currentReference;
     private String currentReferenceNodeKey;
 
-    public ConfiguredReferenceStrategy(ConfiguredReferenceSource source, String configuredReferenceNodeKey) {
+    public ConfiguredReferenceStrategy(ConfiguredReferenceSource source,
+                                       String configuredReferenceNodeKey,
+                                       BlockVotingCoordinator blockVotingCoordinator) {
         this.source = source;
         this.configuredReferenceNodeKey = configuredReferenceNodeKey;
+        this.blockVotingCoordinator = blockVotingCoordinator;
     }
 
     @Override
@@ -56,6 +61,7 @@ public class ConfiguredReferenceStrategy implements ReferenceStrategy {
         ConfiguredReferenceSource.ReferenceUpdate update = source.refresh();
         currentReference = update.referenceState();
         currentReferenceNodeKey = update.referenceNodeKey();
+        blockVotingCoordinator.detectWrongHeads(source.getBlockConfidenceTracker(), now, warmupComplete);
     }
 
     @Override

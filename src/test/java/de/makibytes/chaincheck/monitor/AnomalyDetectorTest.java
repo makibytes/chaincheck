@@ -53,7 +53,7 @@ class AnomalyDetectorTest {
             .error("Connection timeout")
             .build();
 
-        var anomalies = detector.detect("node1", sample, 1000, 30000L, null, null, null);
+        var anomalies = detector.detect("node1", sample, 1000, null, null, null);
 
         assertEquals(1, anomalies.size());
         assertEquals(AnomalyType.TIMEOUT, anomalies.get(0).getType());
@@ -71,7 +71,7 @@ class AnomalyDetectorTest {
             .error(longError)
             .build();
 
-        var anomalies = detector.detect("node1", sample, 1000, 30000L, null, null, null);
+        var anomalies = detector.detect("node1", sample, 1000, null, null, null);
 
         assertEquals(1, anomalies.size());
         assertTrue(anomalies.get(0).getMessage().length() <= 53, "Message should be truncated to ~50 chars + '...'");
@@ -89,7 +89,7 @@ class AnomalyDetectorTest {
             .parentHash("0xparent")
             .build();
 
-        var anomalies = detector.detect("node1", sample, 1000, 30000L, 1233L, "0xprevblock", null);
+        var anomalies = detector.detect("node1", sample, 1000, 1233L, "0xprevblock", null);
 
         assertTrue(anomalies.stream().anyMatch(a -> a.getType() == AnomalyType.DELAY),
                 "Should detect high latency anomaly");
@@ -107,7 +107,7 @@ class AnomalyDetectorTest {
             .parentHash("0xparent")
             .build();
 
-        var anomalies = detector.detect("node1", sample, 1000, 30000L, 1233L, "0xprevblock", null);
+        var anomalies = detector.detect("node1", sample, 1000, 1233L, "0xprevblock", null);
 
         assertTrue(anomalies.stream().noneMatch(a -> a.getType() == AnomalyType.DELAY),
                 "Should not detect latency below threshold");
@@ -125,7 +125,7 @@ class AnomalyDetectorTest {
             .parentHash("0xparent")
             .build();
 
-        var anomalies = detector.detect("node1", sample, 1000, 30000L, 1233L, "0xprevblock", null);
+        var anomalies = detector.detect("node1", sample, 1000, 1233L, "0xprevblock", null);
 
         assertTrue(anomalies.stream().anyMatch(a -> a.getType() == AnomalyType.REORG),
                 "Should detect block reorg");
@@ -143,7 +143,7 @@ class AnomalyDetectorTest {
             .parentHash("0xparent")
             .build();
 
-        var anomalies = detector.detect("node1", sample, 1000, 30000L, 1233L, "0xprevblock", 1240L);
+        var anomalies = detector.detect("node1", sample, 1000, 1233L, "0xprevblock", 1240L);
 
         assertTrue(anomalies.stream().anyMatch(a -> a.getType() == AnomalyType.BLOCK_GAP),
                 "WebSocket should detect block gap when WS is behind HTTP");
@@ -161,7 +161,7 @@ class AnomalyDetectorTest {
             .parentHash("0xparent")
             .build();
 
-        var anomalies = detector.detect("node1", sample, 1000, 30000L, 1233L, "0xprevblock", null);
+        var anomalies = detector.detect("node1", sample, 1000, 1233L, "0xprevblock", null);
 
         assertTrue(anomalies.stream().noneMatch(a -> a.getType() == AnomalyType.BLOCK_GAP),
                 "HTTP should not detect block gaps");
@@ -179,7 +179,7 @@ class AnomalyDetectorTest {
             .parentHash("0xprevblock")
             .build();
 
-        var anomalies = detector.detect("node1", sample, 1000, 30000L, 1233L, "0xprevblock", null);
+        var anomalies = detector.detect("node1", sample, 1000, 1233L, "0xprevblock", null);
 
         assertEquals(0, anomalies.size(), "Successful normal block should not generate anomalies");
     }
@@ -196,7 +196,7 @@ class AnomalyDetectorTest {
             .parentHash("0xparent")
             .build();
 
-        List<AnomalyEvent> anomalies = detector.detect("node1", sample, 1000, 30000L, 1233L, "0xprevblock", null);
+        List<AnomalyEvent> anomalies = detector.detect("node1", sample, 1000, 1233L, "0xprevblock", null);
 
         assertEquals(1, anomalies.size());
         AnomalyEvent reorg = anomalies.get(0);
@@ -217,7 +217,7 @@ class AnomalyDetectorTest {
             .parentHash("0xdifferentparent")
             .build();
 
-        List<AnomalyEvent> anomalies = detector.detect("node1", sample, 1000, 30000L, 1233L, "0xprevblock", null);
+        List<AnomalyEvent> anomalies = detector.detect("node1", sample, 1000, 1233L, "0xprevblock", null);
 
         assertEquals(1, anomalies.size());
         AnomalyEvent reorg = anomalies.get(0);
@@ -233,7 +233,7 @@ class AnomalyDetectorTest {
             .error("http 429 rate limit exceeded")
             .build();
 
-        List<AnomalyEvent> anomalies = detector.detect("node1", sample, 1000, 30000L, null, null, null);
+        List<AnomalyEvent> anomalies = detector.detect("node1", sample, 1000, null, null, null);
 
         assertEquals(1, anomalies.size());
         assertEquals(AnomalyType.RATE_LIMIT, anomalies.get(0).getType());
@@ -251,7 +251,7 @@ class AnomalyDetectorTest {
             .parentHash("0xparent")
             .build();
 
-        List<AnomalyEvent> anomalies = detector.detect("node1", sample, 1000, 30000L, 1233L, "0xprevblock", null);
+        List<AnomalyEvent> anomalies = detector.detect("node1", sample, 1000, 1233L, "0xprevblock", null);
 
         AnomalyEvent reorg = anomalies.stream()
                 .filter(a -> a.getType() == AnomalyType.REORG)
@@ -273,7 +273,7 @@ class AnomalyDetectorTest {
             .build();
 
         // HTTP is at 1240, WS is at 1230 — gap = 10 blocks
-        List<AnomalyEvent> anomalies = detector.detect("node1", sample, 1000, 30000L, 1220L, "0xprevblock", 1240L);
+        List<AnomalyEvent> anomalies = detector.detect("node1", sample, 1000, 1220L, "0xprevblock", 1240L);
 
         AnomalyEvent gap = anomalies.stream()
                 .filter(a -> a.getType() == AnomalyType.BLOCK_GAP)
@@ -290,7 +290,7 @@ class AnomalyDetectorTest {
             .error("")
             .build();
 
-        List<AnomalyEvent> anomalies = detector.detect("node1", sample, 1000, 30000L, null, null, null);
+        List<AnomalyEvent> anomalies = detector.detect("node1", sample, 1000, null, null, null);
 
         assertEquals(1, anomalies.size());
         assertEquals("RPC error", anomalies.get(0).getMessage(),
@@ -304,7 +304,7 @@ class AnomalyDetectorTest {
             .success(false)
             .build();
 
-        List<AnomalyEvent> anomalies = detector.detect("node1", sample, 1000, 30000L, null, null, null);
+        List<AnomalyEvent> anomalies = detector.detect("node1", sample, 1000, null, null, null);
 
         assertEquals(1, anomalies.size());
         assertEquals("RPC error", anomalies.get(0).getMessage(),
@@ -355,7 +355,7 @@ class AnomalyDetectorTest {
             .blockTimestamp(oldBlockTimestamp)
             .build();
 
-        List<AnomalyEvent> anomalies = detector.detect("node1", sample, 10000, 30000L, 1233L, "0xprevblock", null);
+        List<AnomalyEvent> anomalies = detector.detect("node1", sample, 10000, 1233L, "0xprevblock", null);
 
         assertTrue(anomalies.stream().anyMatch(a -> a.getType() == AnomalyType.STALE && "Stale block".equals(a.getMessage())),
                 "Old HTTP block should trigger stale block STALE anomaly");
@@ -373,7 +373,7 @@ class AnomalyDetectorTest {
             .blockTimestamp(Instant.now())
             .build();
 
-        List<AnomalyEvent> anomalies = detector.detect("node1", sample, 10000, 30000L, 1233L, "0xprevblock", null);
+        List<AnomalyEvent> anomalies = detector.detect("node1", sample, 10000, 1233L, "0xprevblock", null);
 
         assertTrue(anomalies.stream().noneMatch(a -> "Stale block".equals(a.getMessage())),
                 "Fresh block should not trigger stale block anomaly");
@@ -393,7 +393,7 @@ class AnomalyDetectorTest {
             .safeDelayMs(5000L)
             .build();
 
-        List<AnomalyEvent> anomalies = detector.detect("node1", sample, 10000, 30000L, null, null, null);
+        List<AnomalyEvent> anomalies = detector.detect("node1", sample, 10000, null, null, null);
 
         assertTrue(anomalies.stream().noneMatch(a -> "Stale block".equals(a.getMessage())),
                 "Safe checkpoint sample should not trigger stale block anomaly");
@@ -412,7 +412,7 @@ class AnomalyDetectorTest {
             .blockTimestamp(oldBlockTimestamp)
             .build();
 
-        List<AnomalyEvent> anomalies = detector.detect("node1", sample, 10000, 30000L, null, null, null);
+        List<AnomalyEvent> anomalies = detector.detect("node1", sample, 10000, null, null, null);
 
         assertTrue(anomalies.stream().noneMatch(a -> "Stale block".equals(a.getMessage())),
                 "WS sample should not trigger stale block anomaly");
@@ -426,7 +426,7 @@ class AnomalyDetectorTest {
             .error("HTTP 408 Request Timeout")
             .build();
 
-        List<AnomalyEvent> anomalies = detector.detect("node1", sample, 1000, 30000L, null, null, null);
+        List<AnomalyEvent> anomalies = detector.detect("node1", sample, 1000, null, null, null);
 
         assertEquals(1, anomalies.size());
         assertEquals(AnomalyType.TIMEOUT, anomalies.get(0).getType(),

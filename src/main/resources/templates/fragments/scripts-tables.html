@@ -12,6 +12,14 @@
 
     const normalizeText = (value) => (value ?? '').toString().toLowerCase();
 
+    const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+    }[char]));
+
     // Generic table handler
     const createTableHandler = ({
         bodyId,
@@ -121,7 +129,7 @@
             body.innerHTML = '';
             for (let i = start; i < end; i += 1) {
                 const row = document.createElement('tr');
-                row.innerHTML = renderRowFunc(filteredData[i]);
+                row.innerHTML = renderRowFunc(filteredData[i], i);
                 body.appendChild(row);
             }
             if (pageInfo) {
@@ -197,7 +205,7 @@
 
         const blockDisplay = s.blockNumber ? String(s.blockNumber) : '-';
 
-        const statusText = s.status === 'NEW' ? '' : (s.status ?? '-');
+        const statusText = s.status === 'NEW' ? '' : escapeHtml(s.status ?? '-');
         let statusDisplay = statusText;
         if (statusBadgeFragments.length > 0) {
             statusDisplay = statusText
@@ -228,16 +236,18 @@
             }
         }
 
+        const sampleIndex = samples.indexOf(s);
+
         return `
-        <td>${s.time ?? '-'}</td>
+        <td>${escapeHtml(s.time ?? '-')}</td>
         <td>${sourceDisplay || '-'}</td>
         <td>${statusDisplay}</td>
-        <td>${s.latencyMs !== null && s.latencyMs !== undefined ? s.latencyMs + ' ms' : 'n/a'}</td>
+        <td>${s.latencyMs !== null && s.latencyMs !== undefined ? escapeHtml(s.latencyMs) + ' ms' : 'n/a'}</td>
         ${deltaCell}
-        <td>${blockDisplay}</td>
-        <td>${s.transactionCount ?? '-'}</td>
-        <td>${s.gasPriceWei ? (s.gasPriceWei / 1_000_000_000).toFixed(4) : '-'}</td>
-        <td><button class="button ghost sample-link" data-hash="${s.blockHash ?? ''}">Open</button></td>
+        <td>${escapeHtml(blockDisplay)}</td>
+        <td>${escapeHtml(s.transactionCount ?? '-')}</td>
+        <td>${s.gasPriceWei ? escapeHtml((s.gasPriceWei / 1_000_000_000).toFixed(4)) : '-'}</td>
+        <td><button class="button ghost sample-link" data-index="${sampleIndex}">Open</button></td>
     `;
     };
 
@@ -263,17 +273,17 @@
     ].join(' ').toLowerCase();
 
     const renderAnomalyRow = (a) => {
-        let messageContent = a.message ?? '-';
+        let messageContent = escapeHtml(a.message ?? '-');
         if (a.count > 1) {
             messageContent += ` <span class="count-badge">${a.count}</span>`;
         }
 
-        const openButton = `<button class="button ghost anomaly-link" data-id="${a.id ?? ''}">Open</button>`;
+        const openButton = `<button class="button ghost anomaly-link" data-id="${escapeHtml(a.id ?? '')}">Open</button>`;
 
         return `
-        <td>${a.time ?? '-'}</td>
-        <td>${a.type ?? '-'}</td>
-        <td>${a.source ?? '-'}</td>
+        <td>${escapeHtml(a.time ?? '-')}</td>
+        <td>${escapeHtml(a.type ?? '-')}</td>
+        <td>${escapeHtml(a.source ?? '-')}</td>
         <td>${messageContent}</td>
         <td>${openButton}</td>
     `;

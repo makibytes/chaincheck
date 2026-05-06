@@ -69,10 +69,10 @@ public class NodeRegistry {
             long pollIntervalMs = node.getRequestProfile() == ChainCheckProperties.RequestProfile.SPARSE
                     ? properties.getRequests().getSparsePollIntervalMs()
                     : properties.getRequests().getOptimalPollIntervalMs();
-                long nodeHighLatencyMs = node.getAnomalyDetection() != null
+            long nodeHighLatencyMs = node.getAnomalyDetection() != null
                     ? node.getAnomalyDetection().getHighLatencyMs()
                     : -1;
-                long anomalyDelayMs = nodeHighLatencyMs > 0
+            long anomalyDelayMs = nodeHighLatencyMs > 0
                     ? nodeHighLatencyMs
                     : properties.getAnomalyDetection().getHighLatencyMs();
             boolean safeBlocksEnabled = properties.isGetSafeBlocks();

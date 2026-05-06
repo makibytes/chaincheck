@@ -8,7 +8,7 @@
 
     const copyBtn = (text) => {
         if (!text) return '';
-        return `<button class="copy-btn" onclick="copyToClipboard('${text}')" title="Copy full hash">📋</button>`;
+        return `<button class="copy-btn" data-copy="${escapeHtml(text)}" title="Copy full hash">📋</button>`;
     };
 
     // Generic toggle function
@@ -99,19 +99,19 @@
 
             anomalyContent.innerHTML = `
             <div class="detail-grid">
-                <div><span class="label">ID</span><span>${payload.id ?? '-'}</span></div>
-                <div><span class="label">Node</span><span>${payload.nodeName ?? payload.nodeKey ?? '-'}</span></div>
-                <div><span class="label">Time</span><span>${timeText}</span></div>
-                <div><span class="label">Type</span><span>${payload.type ?? '-'}</span></div>
-                <div><span class="label">Source</span><span>${payload.source ?? '-'}</span></div>
-                <div><span class="label">Block</span><span>${payload.blockNumber ?? '-'}</span></div>
-                <div><span class="label">Block Hash</span><span class="hash-container">${formatHash(payload.blockHash)} ${copyBtn(payload.blockHash)}</span></div>
-                <div><span class="label">Parent Hash</span><span class="hash-container">${formatHash(payload.parentHash)} ${copyBtn(payload.parentHash)}</span></div>
-                <div><span class="label">Message</span><span>${payload.message ?? '-'}</span></div>
+                <div><span class="label">ID</span><span>${escapeHtml(payload.id ?? '-')}</span></div>
+                <div><span class="label">Node</span><span>${escapeHtml(payload.nodeName ?? payload.nodeKey ?? '-')}</span></div>
+                <div><span class="label">Time</span><span>${escapeHtml(timeText)}</span></div>
+                <div><span class="label">Type</span><span>${escapeHtml(payload.type ?? '-')}</span></div>
+                <div><span class="label">Source</span><span>${escapeHtml(payload.source ?? '-')}</span></div>
+                <div><span class="label">Block</span><span>${escapeHtml(payload.blockNumber ?? '-')}</span></div>
+                <div><span class="label">Block Hash</span><span class="hash-container">${escapeHtml(formatHash(payload.blockHash))} ${copyBtn(payload.blockHash)}</span></div>
+                <div><span class="label">Parent Hash</span><span class="hash-container">${escapeHtml(formatHash(payload.parentHash))} ${copyBtn(payload.parentHash)}</span></div>
+                <div><span class="label">Message</span><span>${escapeHtml(payload.message ?? '-')}</span></div>
             </div>
             <div class="detail-block">
                 <span class="label">Details</span>
-                <pre>${detailsText}</pre>
+                <pre>${escapeHtml(detailsText)}</pre>
             </div>
         `;
         };
@@ -155,6 +155,14 @@
         });
     };
 
+    document.addEventListener('click', (event) => {
+        const target = event.target;
+        if (target && target.classList && target.classList.contains('copy-btn')) {
+            event.preventDefault();
+            window.copyToClipboard(target.getAttribute('data-copy'));
+        }
+    });
+
     const openSampleDetails = (sample) => {
         if (!sample || !sampleContent) {
             return;
@@ -178,12 +186,12 @@
         }
         const statusBadgeHtml = statusBadgeFragments.join(' ');
         const blockDisplay = `${sample.blockNumber ?? '-'}`;
-        const statusText = sample.status === 'NEW' ? '' : (sample.status ?? '-');
+        const statusText = sample.status === 'NEW' ? '' : escapeHtml(sample.status ?? '-');
         const statusDisplay = statusBadgeHtml
             ? (statusText ? `${statusText} ${statusBadgeHtml}` : statusBadgeHtml)
             : statusText;
         const attestationDisplay = sample.attestationConfidence != null
-            ? `${sample.attestationSlot ?? 0}/3 rounds (${sample.attestationConfidence.toFixed(1)}%)`
+            ? `${escapeHtml(sample.attestationSlot ?? 0)}/3 rounds (${escapeHtml(sample.attestationConfidence.toFixed(1))}%)`
             : 'n/a';
         const firstSeenDisplay = multiNodeConfigured
             ? (sample.firstSeenDeltaMs === 0
@@ -197,16 +205,16 @@
             : '';
         sampleContent.innerHTML = `
             <div class="detail-grid">
-                <div><span class="label">Block</span><span>${blockDisplay}</span></div>
-                <div><span class="label">Block Time</span><span>${sample.blockTime ?? '-'}</span></div>
-                <div><span class="label">Sources</span><span>${(sample.sources || []).join(', ') || '-'}</span></div>
+                <div><span class="label">Block</span><span>${escapeHtml(blockDisplay)}</span></div>
+                <div><span class="label">Block Time</span><span>${escapeHtml(sample.blockTime ?? '-')}</span></div>
+                <div><span class="label">Sources</span><span>${escapeHtml((sample.sources || []).join(', ') || '-')}</span></div>
                 <div><span class="label">Status</span><span>${statusDisplay}</span></div>
-                <div><span class="label">Latency</span><span>${sample.latencyMs != null ? sample.latencyMs + ' ms' : 'n/a'}</span></div>
+                <div><span class="label">Latency</span><span>${sample.latencyMs != null ? escapeHtml(sample.latencyMs) + ' ms' : 'n/a'}</span></div>
                 ${firstSeenRow}
                 <div><span class="label">Attestation</span><span>${attestationDisplay}</span></div>
-                <div><span class="label">Transactions</span><span>${sample.transactionCount ?? 'n/a'}</span></div>
-                <div><span class="label">Block Hash</span><span class="hash-container">${formatHash(sample.blockHash)} ${copyBtn(sample.blockHash)}</span></div>
-                <div><span class="label">Parent Hash</span><span class="hash-container">${formatHash(sample.parentHash)} ${copyBtn(sample.parentHash)}</span></div>
+                <div><span class="label">Transactions</span><span>${escapeHtml(sample.transactionCount ?? 'n/a')}</span></div>
+                <div><span class="label">Block Hash</span><span class="hash-container">${escapeHtml(formatHash(sample.blockHash))} ${copyBtn(sample.blockHash)}</span></div>
+                <div><span class="label">Parent Hash</span><span class="hash-container">${escapeHtml(formatHash(sample.parentHash))} ${copyBtn(sample.parentHash)}</span></div>
             </div>
         `;
         openSampleModal();
@@ -229,8 +237,8 @@
             const target = event.target;
             if (target && target.classList && target.classList.contains('sample-link')) {
                 event.preventDefault();
-                const blockHash = target.getAttribute('data-hash');
-                const sample = samples.find(entry => entry.blockHash === blockHash);
+                const sampleIndex = Number(target.getAttribute('data-index'));
+                const sample = Number.isInteger(sampleIndex) ? samples[sampleIndex] : null;
                 openSampleDetails(sample);
             }
         });

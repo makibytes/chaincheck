@@ -46,7 +46,7 @@ class BlockVotingServiceTest {
 
         service.performVoting("node1"); // node1 (minority hash A) is reference
 
-        assertEquals("0xBBB", service.getBlockConfidenceTracker().getHash(100L, Confidence.NEW),
+        assertEquals("0xbbb", service.getBlockConfidenceTracker().getHash(100L, Confidence.NEW),
                 "Majority of 3 should win over minority reference node");
     }
 
@@ -60,7 +60,7 @@ class BlockVotingServiceTest {
 
         service.performVoting("ref");
 
-        assertEquals("0xBBB", service.getBlockConfidenceTracker().getHash(100L, Confidence.NEW),
+        assertEquals("0xbbb", service.getBlockConfidenceTracker().getHash(100L, Confidence.NEW),
                 "2-node majority should win over 1-node reference");
     }
 
@@ -74,7 +74,7 @@ class BlockVotingServiceTest {
 
         service.performVoting("ref"); // reference is on hash B
 
-        assertEquals("0xBBB", service.getBlockConfidenceTracker().getHash(100L, Confidence.NEW),
+        assertEquals("0xbbb", service.getBlockConfidenceTracker().getHash(100L, Confidence.NEW),
                 "Reference node should break a genuine tie in its favour");
     }
 
@@ -87,7 +87,7 @@ class BlockVotingServiceTest {
 
         service.performVoting("node1");
 
-        assertEquals("0xCCC", service.getBlockConfidenceTracker().getHash(200L, Confidence.NEW));
+        assertEquals("0xccc", service.getBlockConfidenceTracker().getHash(200L, Confidence.NEW));
     }
 
     @Test
@@ -99,7 +99,7 @@ class BlockVotingServiceTest {
 
         service.performVoting(null);
 
-        assertEquals("0xDDD", service.getBlockConfidenceTracker().getHash(300L, Confidence.NEW));
+        assertEquals("0xddd", service.getBlockConfidenceTracker().getHash(300L, Confidence.NEW));
     }
 
     @Test
@@ -107,7 +107,7 @@ class BlockVotingServiceTest {
     void clearVotes_resets_state() {
         service.recordBlock("node1", 100L, "0xAAA", Confidence.NEW);
         service.performVoting(null);
-        assertEquals("0xAAA", service.getBlockConfidenceTracker().getHash(100L, Confidence.NEW));
+        assertEquals("0xaaa", service.getBlockConfidenceTracker().getHash(100L, Confidence.NEW));
 
         service.clearVotes();
         service.performVoting(null);
@@ -126,8 +126,8 @@ class BlockVotingServiceTest {
 
         service.performVoting(null);
 
-        assertEquals("0xSAFE", service.getBlockConfidenceTracker().getHash(50L, Confidence.SAFE));
-        assertEquals("0xFIN",  service.getBlockConfidenceTracker().getHash(40L, Confidence.FINALIZED));
+        assertEquals("0xsafe", service.getBlockConfidenceTracker().getHash(50L, Confidence.SAFE));
+        assertEquals("0xfin",  service.getBlockConfidenceTracker().getHash(40L, Confidence.FINALIZED));
         assertNull(service.getBlockConfidenceTracker().getHash(50L, Confidence.NEW));
     }
 }
