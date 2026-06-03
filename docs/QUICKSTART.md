@@ -7,7 +7,7 @@ This guide will help you get ChainCheck up and running in minutes.
 ## Prerequisites
 
 - Java 25 or higher installed
-- Access to one or more Ethereum/Polygon RPC endpoints
+- Access to one or more blockchain RPC endpoints
 
 ### Check Java Version
 
@@ -55,6 +55,8 @@ server:
   port: 8080
 
 rpc:
+  mode: polygon
+  mode-type: cosmos
   title: "Polygon Mainnet"
   title-color: "#8247e5"
   get-safe-blocks: false
@@ -62,10 +64,9 @@ rpc:
   anomaly-detection:
     high-latency-ms: 2000
   nodes:
-    - name: polygon-rpc.com
+    - name: polygon-rpc.com       # defaults to optimal — polls every 2 s
       http: https://polygon-rpc.com
       ws: wss://polygon-rpc.com
-      poll-interval-ms: 1000
 ```
 
 ### Minimal Configuration
@@ -74,6 +75,7 @@ The absolute minimum configuration requires just one node:
 
 ```yaml
 rpc:
+  mode-type: cosmos
   nodes:
     - name: my-node
       http: https://polygon-rpc.com
@@ -120,7 +122,7 @@ You should see the ChainCheck dashboard with real-time metrics.
 Create a `Dockerfile`:
 
 ```dockerfile
-FROM eclipse-temurin:21-jre-alpine
+FROM eclipse-temurin:25-jre-alpine
 WORKDIR /app
 COPY chaincheck-*.jar app.jar
 COPY application.yml application.yml
@@ -148,7 +150,7 @@ After=network.target
 Type=simple
 User=chaincheck
 WorkingDirectory=/opt/chaincheck
-ExecStart=/usr/bin/java -jar /opt/chaincheck/chaincheck-2.0.0.jar
+ExecStart=/usr/bin/java -jar /opt/chaincheck/chaincheck-2.1.0.jar
 Restart=on-failure
 RestartSec=10
 
@@ -170,21 +172,19 @@ To monitor multiple nodes, add them to your configuration:
 
 ```yaml
 rpc:
+  mode-type: cosmos
   get-safe-blocks: false
   get-finalized-blocks: false
+  anomaly-detection:
+    high-latency-ms: 2000
   nodes:
     - name: Node 1
       http: https://rpc1.example.com
       ws: wss://rpc1.example.com
-      poll-interval-ms: 1000
-      anomaly-detection:
-        high-latency-ms: 2000
 
-    - name: Node 2
+    - name: Node 2 (rate-limited public endpoint)
       http: https://rpc2.example.com
-      poll-interval-ms: 1500
-      anomaly-detection:
-        high-latency-ms: 3000
+      requests: sparse             # polls at sparse-poll-interval-ms instead of optimal
 ```
 
 Use the dropdown in the dashboard to switch between nodes.
@@ -225,9 +225,12 @@ Adjust the retention period or reduce polling frequency:
 
 ```yaml
 rpc:
+  requests:
+    optimal-poll-interval-ms: 5000  # Slower polling
   nodes:
     - name: my-node
-      poll-interval-ms: 5000  # Slower polling
+      http: https://your-rpc-endpoint
+      requests: sparse               # Or use sparse profile for even less frequent polling
 ```
 
 ## Next Steps

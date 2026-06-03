@@ -721,12 +721,12 @@ public class DashboardService {
                 .filter(h -> h != null && !h.isBlank())
                 .findFirst()
                 .orElse(null);
-            Instant blockTimestamp = samples.stream()
+        Instant blockTimestamp = samples.stream()
                 .map(MetricSample::getBlockTimestamp)
                 .filter(Objects::nonNull)
                 .findFirst()
                 .orElse(null);
-            String blockTime = blockTimestamp == null ? null : TIMESTAMP_FORMATTER.format(blockTimestamp);
+        String blockTime = blockTimestamp == null ? null : TIMESTAMP_FORMATTER.format(blockTimestamp);
         Integer transactionCount = samples.stream()
                 .map(MetricSample::getTransactionCount)
                 .filter(tc -> tc != null)
@@ -769,8 +769,8 @@ public class DashboardService {
                 blockTime,
                 hasSafe,
                 hasFinalized,
-                            false,
-                            false,
+                false,
+                false,
                 transactionCount,
                 gasPriceWei,
                 attConf,

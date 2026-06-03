@@ -8,7 +8,7 @@
 
 - **Fleet Overview**: Default start page shows all configured nodes at a glance with health scores, latency, block lag, and connection status — no more guessing which node is healthy
 - **Per-Node Details**: Drill into any node for a full latency chart, block-finality timeline, anomaly log, and sample-by-sample breakdown
-- **Multi-Chain Architecture**: Six behavioral chain types (Ethereum, Cosmos, Optimism, ZK, Avalanche, Tron) each tuned to the chain's finality model — see [BLOCKCHAINS.md](BLOCKCHAINS.md) for all supported profiles
+- **Multi-Chain Architecture**: Nine behavioral chain types (Ethereum, Cosmos, Optimism, ZK, Avalanche, Tron, Solana, Cosmos SDK, Starknet) each tuned to the chain's finality model — see [BLOCKCHAINS.md](BLOCKCHAINS.md) for all supported profiles
 - **Real-Time Monitoring**: Tracks latency and error rates for both HTTP polling and WebSocket `newHeads` subscriptions
 - **Checkpoint Propagation Delays**: Measures head, safe, and finalized block delays to track how fast a node follows the canonical chain
 - **Anomaly Detection**: Automatically flags block skips, reorgs (with depth), rate limits, timeouts, wrong heads, and connection drops
@@ -115,7 +115,7 @@ ChainCheck uses two orthogonal fields to describe a chain:
 | `rpc.mode` | `String` | Concrete chain name — informational only (e.g., `"ethereum"`, `"polygon"`) |
 | `rpc.mode-type` | enum | Behavioral chain type — controls WS newHead processing and polling defaults |
 
-Six behavioral mode types are supported. See [BLOCKCHAINS.md](BLOCKCHAINS.md) for all supported chains and testnet profiles.
+Nine behavioral mode types are supported. See [BLOCKCHAINS.md](BLOCKCHAINS.md) for all supported chains and testnet profiles.
 
 ### Ethereum Mode (`rpc.mode-type: ethereum`)
 
@@ -311,7 +311,7 @@ See [BLOCKCHAINS.md](BLOCKCHAINS.md) for the complete list of supported profiles
 | Key | Default | Description |
 |-----|---------|-------------|
 | `mode` | — | Concrete chain name (informational — e.g., `"ethereum"`, `"polygon"`) |
-| `mode-type` | `cosmos` | Behavioral chain type: `ethereum`, `cosmos`, `optimism`, `zk`, `avalanche`, or `tron` |
+| `mode-type` | `cosmos` | Behavioral chain type: `ethereum`, `cosmos`, `optimism`, `zk`, `avalanche`, `tron`, `solana`, `cosmos_sdk`, or `starknet` |
 | `title` | `ChainCheck` | Dashboard title shown in the header |
 | `title-color` | — | CSS color for the title text |
 | `get-safe-blocks` | `false` | Poll `eth_getBlockByNumber("safe")` on execution nodes |
@@ -346,7 +346,7 @@ Controls HTTP polling intervals for all nodes in this profile. Each node selects
 |-----|---------|-------------|
 | `high-latency-ms` | `2000` | HTTP latency above this triggers a `DELAY` anomaly |
 | `long-delay-block-count` | `15` | Head delay above N blocks triggers a `DELAY` anomaly |
-| `stale-block-threshold-ms` | `30000` | HTTP latest block older than this triggers a `DELAY` anomaly |
+| `stale-block-threshold-ms` | `30000` | HTTP latest block older than this triggers a `STALE` anomaly |
 
 #### Consensus node (`rpc.consensus.*` — Ethereum mode only)
 
@@ -437,11 +437,16 @@ de.makibytes.chaincheck
 ├── config      — ChainCheckProperties (rpc.* YAML binding)
 ├── model       — MetricSample, AnomalyEvent, AnomalyType, TimeRange, ...
 ├── monitor     — RpcMonitorService, HttpMonitorService, WsMonitorService,
-│                 AnomalyDetector, NodeRegistry, ChainTracker
-├── reference   — ReferenceNodeSelector, ConfiguredReferenceStrategy,
-│   ├── node      VotingReferenceStrategy, ConsensusNodeClient
-│   ├── attestation  AttestationTracker
-│   └── block    BlockVotingService, ReferenceBlocks
+│   │             AnomalyDetector, NodeRegistry, ChainTracker
+│   └── protocol  ChainProtocol, EvmProtocol, SolanaProtocol,
+│                 CosmosProtocol, StarknetProtocol
+├── chain
+│   ├── shared    BlockConfidenceTracker, BlockAgreementTracker, ReferenceStrategy
+│   ├── ethereum  ConfiguredReferenceStrategy, ConfiguredReferenceSource,
+│   │             ConsensusNodeClient
+│   │   └── attestation  AttestationTracker
+│   └── cosmos    VotingReferenceStrategy, BlockVotingService,
+│                 BlockVotingCoordinator, ReferenceNodeSelector
 ├── store       — InMemoryMetricsStore, SampleAggregate, AnomalyAggregate,
 │                 HistogramAccumulator
 └── web         — DashboardController, DashboardService, ChartBuilder,

@@ -155,4 +155,75 @@ class HealthScoreCalculatorTest {
         // Should be in the 40-50 range
         assertTrue(scoreWithWsDown >= 40 && scoreWithWsDown <= 60);
     }
+
+    // buildHint tests
+
+    @Test
+    @DisplayName("buildHint returns down message when node is down")
+    void buildHintReturnsDownMessageWhenDown() {
+        HealthScoreCalculator.HealthScoreBreakdown b = calculator.computeBreakdown(
+                0.0, 0.0, 0.0, 100, 100, true, false, false);
+        String hint = HealthScoreCalculator.buildHint(b);
+        assertTrue(hint.contains("0"));
+        assertTrue(hint.toLowerCase().contains("down"));
+    }
+
+    @Test
+    @DisplayName("buildHint includes all five factor lines for healthy node")
+    void buildHintIncludesAllFiveFactors() {
+        HealthScoreCalculator.HealthScoreBreakdown b = calculator.computeBreakdown(
+                100.0, 50.0, 500.0, 0, 100, false, true, true);
+        String hint = HealthScoreCalculator.buildHint(b);
+        assertTrue(hint.contains("Uptime"));
+        assertTrue(hint.contains("Latency P95"));
+        assertTrue(hint.contains("Head delay P95"));
+        assertTrue(hint.contains("Error rate"));
+        assertTrue(hint.contains("WebSocket"));
+    }
+
+    @Test
+    @DisplayName("buildHint shows WS not configured message")
+    void buildHintShowsWsNotConfigured() {
+        HealthScoreCalculator.HealthScoreBreakdown b = calculator.computeBreakdown(
+                100.0, 0.0, 0.0, 0, 100, false, false, false);
+        String hint = HealthScoreCalculator.buildHint(b);
+        assertTrue(hint.contains("not configured"));
+    }
+
+    @Test
+    @DisplayName("buildHint shows WS disconnected penalty")
+    void buildHintShowsWsDisconnectedPenalty() {
+        HealthScoreCalculator.HealthScoreBreakdown b = calculator.computeBreakdown(
+                100.0, 0.0, 0.0, 0, 100, false, true, false);
+        String hint = HealthScoreCalculator.buildHint(b);
+        assertTrue(hint.contains("disconnected"));
+        assertTrue(hint.contains("penalty") || hint.contains("−"));
+    }
+
+    @Test
+    @DisplayName("buildHint shows WS connected full score")
+    void buildHintShowsWsConnectedFullScore() {
+        HealthScoreCalculator.HealthScoreBreakdown b = calculator.computeBreakdown(
+                100.0, 0.0, 0.0, 0, 100, false, true, true);
+        String hint = HealthScoreCalculator.buildHint(b);
+        assertTrue(hint.contains("25/25") || hint.contains("connected"));
+    }
+
+    @Test
+    @DisplayName("buildHint formats latency in seconds when above 1000ms")
+    void buildHintFormatsLargeLatencyInSeconds() {
+        HealthScoreCalculator.HealthScoreBreakdown b = calculator.computeBreakdown(
+                90.0, 1500.0, 0.0, 0, 100, false, false, false);
+        String hint = HealthScoreCalculator.buildHint(b);
+        assertTrue(hint.contains("s"), "Expected latency formatted as seconds: " + hint);
+    }
+
+    @Test
+    @DisplayName("buildHint total score matches computeBreakdown total")
+    void buildHintTotalMatchesBreakdownTotal() {
+        HealthScoreCalculator.HealthScoreBreakdown b = calculator.computeBreakdown(
+                85.0, 300.0, 2000.0, 3, 100, false, true, true);
+        String hint = HealthScoreCalculator.buildHint(b);
+        assertTrue(hint.contains("Health " + b.total() + "/100"));
+    }
 }

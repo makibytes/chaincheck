@@ -35,7 +35,7 @@ This document describes how ChainCheck detects and closes each anomaly type. The
 
 ## DELAY
 
-Three independent delay signals use the same anomaly type:
+Two independent delay signals use the same anomaly type:
 
 **1) High latency**
 - A successful RPC sample whose latency is greater than or equal to the configured `rpc.anomaly-detection.high-latency-ms`.
@@ -46,7 +46,9 @@ Three independent delay signals use the same anomaly type:
 - In default mode, reference comparisons start after auto reference selection has enough data.
 - In configured mode (`rpc.consensus.http`), the consensus node is used directly as reference source.
 
-**3) Stale block**
+## STALE
+
+**When it triggers**
 - A successful HTTP `latest` sample whose block timestamp is older than `rpc.anomaly-detection.stale-block-threshold-ms` (default 30 000 ms).
 - Only HTTP `latest` samples are checked; safe and finalized checkpoint samples are excluded because their blocks are intentionally old.
 

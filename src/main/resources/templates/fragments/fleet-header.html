@@ -4,4 +4,13 @@
                 th:text="' · ' + ${appTitle}"
                 th:style="'font-weight: bold; color: ' + ${appTitleColor} + ';'"></span></h1>
     </div>
+    <div class="header-controls">
+        <div class="range-selector">
+            <span>Range:</span>
+            <a th:each="r : ${ranges}"
+               th:href="@{/(range=${r.key})}"
+               th:text="${r.key}"
+               th:classappend="${r} == ${range} ? 'active' : ''"></a>
+        </div>
+    </div>
 </header>
