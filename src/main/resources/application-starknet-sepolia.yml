@@ -5,14 +5,15 @@ rpc:
   title-color: "#ec796b"
   get-safe-blocks: false
   get-finalized-blocks: false
-  scale-change-ms: 5000
-  scale-max-ms: 120000
+  scale-change-ms: 1000
+  scale-max-ms: 60000
   anomaly-detection:
-    stale-block-threshold-ms: 180000
+    # Starknet v0.14 (Sep 2025) cut block time from ~30s to 4-6s; see mainnet profile.
+    stale-block-threshold-ms: 60000
     block-gap-threshold: 2
   requests:
-    optimal-poll-interval-ms: 30000
-    sparse-poll-interval-ms: 120000
+    optimal-poll-interval-ms: 5000
+    sparse-poll-interval-ms: 30000
   nodes:
     - name: starknet-sepolia-rpc.publicnode.com
       http: https://starknet-sepolia-rpc.publicnode.com

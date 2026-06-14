@@ -16,7 +16,11 @@
 - **Unified Block View**: Merges WebSocket and HTTP samples by block hash for complete block lifecycle tracking
 - **First-Seen Delta**: In multi-node setups, shows which node saw each block first and how many milliseconds behind each node was
 - **Canonical Rate & Block Quality**: Tracks what fraction of observed blocks ended up in the canonical chain (orphan detection via parent-hash linkage)
-- **Health Score**: Composite 0–100 score per node, combining uptime, latency, head delay, and error rate
+- **Solana sync-lag detection**: On Solana, ChainCheck calls `getHealth` each poll and flags nodes that self-report lagging the cluster tip (`SYNC_LAG` anomaly with the exact slots-behind count), at no extra request
+- **Solana node metadata**: On a slow cadence ChainCheck records each Solana node's software version (`getVersion`) and observed network TPS / slot time (`getRecentPerformanceSamples`) — shown as a version badge in the fleet table and a Network card on the node page
+- **Health Score**: Composite 0–100 score per node, combining uptime, latency, head delay, error rate, and WebSocket status; unmeasurable factors (no WebSocket configured, no head-delay data) are excluded and the score rescaled to /100, so nodes are judged only on what is actually measured
+- **Fleet Summary Strip**: At-a-glance totals above the fleet table — nodes online, excellent nodes, nodes needing attention, anomaly count, and chain head
+- **Live Refresh**: The Fleet Overview auto-refreshes every 10 seconds; per-node pages refresh status panels every 10 seconds and chart/table data every 60 seconds while preserving scroll position, chart legend selections, and toggles. Pausable and persisted per browser; refreshes are skipped while a modal, tooltip, or text selection is open, and historical views are never auto-refreshed
 - **Hardened Reference Selection**: In voting mode, reference nodes are chosen from the last hour of data with heavy weighting for uptime, latency, and delay; nodes with poor uptime or many recent anomalies are excluded
 - **Attestation Tracking** (Ethereum only): Beacon committee attestation rounds per block (1–3 rounds = ~33%/67%/90% canonical confidence)
 - **Metric Aggregation**: Raw samples (2 hours) roll up into minutely aggregates (3 days) and hourly aggregates (30 days)
@@ -50,10 +54,11 @@ mvn spring-boot:run -Dspring-boot.run.profiles=ethereum
 # Polygon mainnet — uses application-polygon.yml
 mvn spring-boot:run -Dspring-boot.run.profiles=polygon
 
-# Base, Optimism, Arbitrum, zkSync, Avalanche, Tron — same pattern
+# Base, Optimism, Arbitrum, zkSync, Avalanche, BNB Chain, Tron — same pattern
 mvn spring-boot:run -Dspring-boot.run.profiles=base
 mvn spring-boot:run -Dspring-boot.run.profiles=arbitrum
 mvn spring-boot:run -Dspring-boot.run.profiles=avalanche
+mvn spring-boot:run -Dspring-boot.run.profiles=bnb
 
 # Testnets
 mvn spring-boot:run -Dspring-boot.run.profiles=ethereum-sepolia

@@ -69,6 +69,9 @@ public class ReferenceNodeSelector {
     private static final double RATE_LIMIT_ANOMALY_PENALTY = 50.0;
     private static final double TIMEOUT_ANOMALY_PENALTY = 90.0;
     private static final double WRONG_HEAD_ANOMALY_PENALTY = 400.0;
+    // Solana-only (getHealth); never emitted on Cosmos, but a node behind the cluster tip
+    // is a strong "do not use as reference" signal. Present for switch exhaustiveness.
+    private static final double SYNC_LAG_ANOMALY_PENALTY = 200.0;
 
     private final NodeSwitchPolicy switchPolicy;
 
@@ -210,6 +213,7 @@ public class ReferenceNodeSelector {
                 case RATE_LIMIT -> RATE_LIMIT_ANOMALY_PENALTY;
                 case TIMEOUT -> TIMEOUT_ANOMALY_PENALTY;
                 case WRONG_HEAD -> WRONG_HEAD_ANOMALY_PENALTY;
+                case SYNC_LAG -> SYNC_LAG_ANOMALY_PENALTY;
                 case CONFLICT -> 0.0; // CONFLICT is never emitted; kept for exhaustive switch
             };
         }

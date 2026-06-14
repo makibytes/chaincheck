@@ -102,4 +102,63 @@ public interface ChainProtocol {
 
     /** Whether blocks carry a parent-block identifier for chain-linkage (reorg detection). */
     boolean supportsParentHash();
+
+    // ── Node health probe (optional) ──────────────────────────────────────
+
+    /**
+     * Optional per-node self-health probe. Solana exposes {@code getHealth}, which reports
+     * whether the node is within {@code HEALTH_CHECK_SLOT_DISTANCE} of the cluster tip — a
+     * direct "is this node keeping up?" signal that other chains can only approximate via
+     * cross-node comparison. Returns empty for chains without such a probe (the default).
+     */
+    default java.util.Optional<RpcRequest> buildHealthRequest() {
+        return java.util.Optional.empty();
+    }
+
+    /**
+     * Parses the health-probe response. Receives the full JSON-RPC envelope
+     * ({@code {id,result}} or {@code {id,error}}) because some chains report the lag inside
+     * the error object (Solana returns code {@code -32005} with {@code data.numSlotsBehind}).
+     *
+     * @return slots/blocks behind the cluster tip: {@code 0} when healthy, a positive count
+     *         when behind, {@code -1} when the node reports unhealthy without a parseable
+     *         count, or {@code null} when no health information is available.
+     */
+    default Integer parseHealthSlotsBehind(JsonNode envelope) {
+        return null;
+    }
+
+    // ── Node metadata probes (optional, polled infrequently) ──────────────
+
+    /**
+     * Optional node software-version probe (Solana {@code getVersion}). Returns empty for
+     * chains where ChainCheck does not track a version. Polled on a slow cadence since the
+     * value changes only across node restarts/upgrades.
+     */
+    default java.util.Optional<RpcRequest> buildVersionRequest() {
+        return java.util.Optional.empty();
+    }
+
+    /** Parses the version-probe {@code result} into a display string, or {@code null}. */
+    default String parseVersion(JsonNode result) {
+        return null;
+    }
+
+    /**
+     * Optional network-performance probe (Solana {@code getRecentPerformanceSamples}). Each
+     * node answers from its own view, so divergent readings are themselves a signal. Polled
+     * on a slow cadence. Returns empty for chains without such a method.
+     */
+    default java.util.Optional<RpcRequest> buildPerformanceRequest() {
+        return java.util.Optional.empty();
+    }
+
+    /**
+     * Parses the performance-probe {@code result} into observed network throughput.
+     * @return {@code [tps, meanSlotTimeMs]}, either element nullable, or {@code null} if
+     *         the response carries no usable samples.
+     */
+    default double[] parsePerformance(JsonNode result) {
+        return null;
+    }
 }

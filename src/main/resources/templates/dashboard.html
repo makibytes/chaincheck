@@ -13,8 +13,10 @@
 
 <body>
     <div th:replace="~{fragments/header :: header}"></div>
-    <div th:replace="~{fragments/summary :: summary}"></div>
-    <div th:replace="~{fragments/rpc-status :: rpcStatus}"></div>
+    <div id="live-status">
+        <div th:replace="~{fragments/summary :: summary}"></div>
+        <div th:replace="~{fragments/rpc-status :: rpcStatus}"></div>
+    </div>
     <div th:replace="~{fragments/anomaly-modal :: anomalyModal}"></div>
     <div th:replace="~{fragments/sample-modal :: sampleModal}"></div>
     <div th:replace="~{fragments/chart-panel :: chartPanel}"></div>
@@ -22,6 +24,7 @@
     <div th:replace="~{fragments/samples-panel :: samplesPanel}"></div>
     <div class="app-version" th:text="|ChainCheck v${appVersion}|"></div>
     <div th:replace="~{fragments/scripts :: scripts}"></div>
+    <div th:replace="~{fragments/scripts-live-node :: scripts-live-node}"></div>
 </body>
 
 </html>

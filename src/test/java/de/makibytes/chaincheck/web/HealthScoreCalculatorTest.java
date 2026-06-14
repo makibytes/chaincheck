@@ -39,11 +39,12 @@ class HealthScoreCalculatorTest {
     }
 
     @Test
-    @DisplayName("perfect health without WS returns 75")
-    void perfectHealthWithoutWsReturns75() {
-        // Weights: Uptime 30% + Latency 20% + Head delay 15% + Anomaly 10% = 75% (WS 25% not configured)
+    @DisplayName("perfect health without WS is rescaled to 100")
+    void perfectHealthWithoutWsReturns100() {
+        // WS not configured and no head-delay data: the measured factors are rescaled
+        // to /100, so a flawless HTTP-only node reaches the Excellent badge (>= 80).
         int score = calculator.calculateHealthScore(100.0, 0.0, 0.0, 0, 100, false, false, false);
-        assertEquals(75, score);
+        assertEquals(100, score);
     }
 
     @Test
@@ -63,19 +64,19 @@ class HealthScoreCalculatorTest {
     @Test
     @DisplayName("high latency degrades score")
     void highLatencyDegradesScore() {
-        // High latency (2000ms threshold) - at threshold scores ~55-60
+        // Latency at the 2000ms threshold zeroes the latency factor; head delay has
+        // no data (p95 = 0) so it is excluded: (30 + 0 + 10) / 60 * 100 = 67
         int score = calculator.calculateHealthScore(100.0, 2000.0, 0.0, 0, 100, false, false, false);
-        assertTrue(score < 75);
-        assertTrue(score >= 50);
+        assertEquals(67, score);
     }
 
     @Test
     @DisplayName("high head delay degrades score")
     void highHeadDelayDegradesScore() {
-        // High head delay (10000ms threshold) - at threshold scores ~60-65
+        // Head delay at the 10s threshold zeroes the head-delay factor:
+        // (30 + 20 + 0 + 10) / 75 * 100 = 80
         int score = calculator.calculateHealthScore(100.0, 0.0, 10000.0, 0, 100, false, false, false);
-        assertTrue(score < 75);
-        assertTrue(score >= 55);
+        assertEquals(80, score);
     }
 
     @Test
@@ -84,65 +85,65 @@ class HealthScoreCalculatorTest {
         // 50% error rate (adjusted to 5.0, capped at 1.0 = zero anomaly score)
         // Uptime: 50 * 0.30 = 15, Latency: 20, Head delay: 15, Anomaly: 0
         int score = calculator.calculateHealthScore(50.0, 0.0, 0.0, 50, 100, false, false, false);
-        assertEquals(50, score); // 15 + 20 + 15 + 0 = 50
+        assertEquals(58, score); // head delay excluded: (15 + 20 + 0) / 60 * 100 = 58.3 -> 58
     }
 
     @Test
     @DisplayName("moderate degradation across all factors")
     void moderateDegradationAcrossAllFactors() {
         // Moderate degradation: 90% uptime, 500ms latency, 3000ms head delay, 5% error
-        // Should score around 55-65
+        // (27 + 15 + 10.5 + 5) / 75 * 100 = 76.7 -> 77
         int score = calculator.calculateHealthScore(90.0, 500.0, 3000.0, 5, 100, false, false, false);
-        assertTrue(score >= 50 && score <= 70);
+        assertTrue(score >= 70 && score <= 85);
     }
 
     @Test
     @DisplayName("no requests returns partial score based on metrics")
     void noRequestsReturnsPartialScore() {
-        // When there are no requests: Uptime: 0, Latency: 20, Head delay: 15, Anomaly: 10
+        // When there are no requests: Uptime: 0, Latency: 20, Anomaly: 10 (head delay excluded)
         int score = calculator.calculateHealthScore(0.0, 0.0, 0.0, 0, 0, false, false, false);
-        assertEquals(45, score); // 0 + 20 + 15 + 10 = 45
+        assertEquals(50, score); // (0 + 20 + 10) / 60 * 100 = 50
     }
 
     @Test
     @DisplayName("extreme latency bottoms out latency score")
     void extremeLatencyBottomsOutLatencyScore() {
-        // Latency well above threshold
+        // Latency well above threshold: (30 + 0 + 10) / 60 * 100 = 67
         int score = calculator.calculateHealthScore(100.0, 5000.0, 0.0, 0, 100, false, false, false);
-        assertTrue(score <= 60); // Lost significant score from latency component
+        assertTrue(score <= 75); // Lost the entire latency component
     }
 
     @Test
     @DisplayName("excellent node with minor issues")
     void excellentNodeWithMinorIssues() {
         // 99% uptime, 100ms latency, 1000ms head delay, 1% errors
-        // Expect around 70-75 without WS
+        // (29.7 + 19 + 13.5 + 9) / 75 * 100 = 94.9 -> 95
         int score = calculator.calculateHealthScore(99.0, 100.0, 1000.0, 1, 100, false, false, false);
-        assertTrue(score >= 65 && score <= 75); // Good without WS
+        assertTrue(score >= 90 && score <= 100); // Excellent without WS
     }
 
     @Test
-    @DisplayName("WS configured and up adds 25 points")
-    void wsConfiguredAndUpAdds25Points() {
-        // Same metrics but with WS up
+    @DisplayName("HTTP-only node is not penalized vs node with WS up")
+    void httpOnlyNodeScoresOnParWithWsUpNode() {
+        // Renormalization parity: identical HTTP metrics should yield near-identical
+        // scores whether WS is absent (rescaled /75 -> /100) or configured and up.
         int scoreWithoutWs = calculator.calculateHealthScore(90.0, 100.0, 0.0, 0, 100, false, false, false);
         int scoreWithWs = calculator.calculateHealthScore(90.0, 100.0, 0.0, 0, 100, false, true, true);
-        assertEquals(25, scoreWithWs - scoreWithoutWs);
+        assertTrue(Math.abs(scoreWithWs - scoreWithoutWs) <= 5);
     }
 
     @Test
     @DisplayName("WS configured but down applies moderate penalty")
     void wsConfiguredButDownAppliesModeratePenalty() {
         // Good HTTP metrics (95% uptime, 100ms latency, 100ms head delay, 0 anomalies)
-        // Without WS: ~72 points
-        // With WS down: ~60 points (loses ~12.5 point penalty instead of harsh reduction)
-        int scoreWithoutWs = calculator.calculateHealthScore(95.0, 100.0, 100.0, 0, 100, false, false, false);
+        // With WS up: ~97. With WS down: raw sum (~72) minus 12.5 penalty -> ~60.
+        int scoreWithWsUp = calculator.calculateHealthScore(95.0, 100.0, 100.0, 0, 100, false, true, true);
         int scoreWithWsDown = calculator.calculateHealthScore(95.0, 100.0, 100.0, 0, 100, false, true, false);
-        
-        // Should lose roughly 12.5 points (half of WS weight)
-        int penalty = scoreWithoutWs - scoreWithWsDown;
-        assertTrue(penalty >= 10 && penalty <= 15);
-        
+
+        // Disconnect costs the 25 WS points plus a 12.5 penalty (~37 total)
+        int penalty = scoreWithWsUp - scoreWithWsDown;
+        assertTrue(penalty >= 30 && penalty <= 45);
+
         // Node with good HTTP should still reach 40+ points even with WS down
         assertTrue(scoreWithWsDown >= 40);
     }
@@ -225,5 +226,30 @@ class HealthScoreCalculatorTest {
                 85.0, 300.0, 2000.0, 3, 100, false, true, true);
         String hint = HealthScoreCalculator.buildHint(b);
         assertTrue(hint.contains("Health " + b.total() + "/100"));
+    }
+
+    @Test
+    @DisplayName("missing head-delay data is excluded, not granted for free")
+    void missingHeadDelayIsExcludedNotGranted() {
+        // Same imperfect node (90% uptime, 100ms latency), once with head-delay data
+        // and once without. Without data the factor must not be a free 15 points:
+        // tracked:   (27 + 19 + 13.5*... ) — with a tiny 50ms delay, nearly full factor
+        // untracked: (27 + 19 + 10) / 60 * 100 = 93
+        int untracked = calculator.calculateHealthScore(90.0, 100.0, 0.0, 0, 100, false, false, false);
+        int trackedTiny = calculator.calculateHealthScore(90.0, 100.0, 50.0, 0, 100, false, false, false);
+        assertEquals(93, untracked);
+        // A node with excellent measured head delay may score slightly higher than one
+        // with no data at all — the unmeasured factor is no longer an automatic win.
+        assertTrue(trackedTiny >= untracked);
+    }
+
+    @Test
+    @DisplayName("buildHint marks head delay as not counted when no data exists")
+    void buildHintShowsHeadDelayNotCounted() {
+        HealthScoreCalculator.HealthScoreBreakdown b = calculator.computeBreakdown(
+                100.0, 50.0, 0.0, 0, 100, false, false, false);
+        String hint = HealthScoreCalculator.buildHint(b);
+        assertTrue(hint.contains("no data"));
+        assertTrue(hint.contains("rescaled"));
     }
 }

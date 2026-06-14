@@ -86,10 +86,7 @@ public class CosmosProtocol implements ChainProtocol {
         }
         // result.sync_info.latest_block_height is a string
         String heightStr = result.path("sync_info").path("latest_block_height").asText(null);
-        if (heightStr == null || heightStr.isBlank()) {
-            return null;
-        }
-        return Long.parseLong(heightStr);
+        return parseHeight(heightStr, "sync_info.latest_block_height");
     }
 
     @Override
@@ -140,7 +137,7 @@ public class CosmosProtocol implements ChainProtocol {
         String blockHash = value.path("block_id").path("hash").asText(null);
         JsonNode header = value.path("block").path("header");
         String heightStr = header.path("height").asText(null);
-        Long height = (heightStr != null && !heightStr.isBlank()) ? Long.parseLong(heightStr) : null;
+        Long height = (heightStr != null && !heightStr.isBlank()) ? parseHeight(heightStr, "NewBlock header.height") : null;
         String parentHash = header.path("last_block_id").path("hash").asText(null);
         Instant timestamp = parseRfc3339(header.path("time").asText(null));
 
@@ -197,7 +194,7 @@ public class CosmosProtocol implements ChainProtocol {
         if (heightStr == null || heightStr.isBlank()) {
             return null;
         }
-        Long height = Long.parseLong(heightStr);
+        Long height = parseHeight(heightStr, "block.header.height");
         String parentHash = header.path("last_block_id").path("hash").asText(null);
         Instant timestamp = parseRfc3339(header.path("time").asText(null));
         Integer txCount = null;
@@ -214,6 +211,23 @@ public class CosmosProtocol implements ChainProtocol {
         }
 
         return new RpcMonitorService.BlockInfo(height, blockHash, parentHash, txCount, null, timestamp);
+    }
+
+    /**
+     * CometBFT encodes heights as JSON strings. A malformed value (proxy error page,
+     * truncated body) must surface as an {@link IOException} with context — not as an
+     * unchecked NumberFormatException whose "For input string" message tells an operator
+     * nothing about which field of which response was broken.
+     */
+    private static Long parseHeight(String heightStr, String field) throws IOException {
+        if (heightStr == null || heightStr.isBlank()) {
+            return null;
+        }
+        try {
+            return Long.parseLong(heightStr.trim());
+        } catch (NumberFormatException ex) {
+            throw new IOException("Malformed CometBFT height in " + field + ": \"" + heightStr + "\"");
+        }
     }
 
     private static Instant parseRfc3339(String text) {

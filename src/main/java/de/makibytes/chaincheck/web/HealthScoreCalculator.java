@@ -27,6 +27,14 @@ import org.springframework.stereotype.Component;
  * - Head delay P95: 15% weight
  * - Anomaly rate: 10% weight
  * - WebSocket connection: 25% weight (if configured)
+ *
+ * Factors that a node cannot earn are excluded and the score is rescaled to /100,
+ * so nodes are only judged on what is actually measured:
+ * - No WebSocket configured: the WS factor (25) is excluded.
+ * - No head-delay data (P95 &le; 0, i.e. no first-seen timestamps): the head-delay
+ *   factor (15) is excluded instead of being granted for free.
+ * This way an HTTP-only node is neither structurally capped below the "Excellent"
+ * threshold nor handed unearned points for unmeasured factors.
  */
 @Component
 public class HealthScoreCalculator {
@@ -37,6 +45,9 @@ public class HealthScoreCalculator {
     private static final double HEAD_DELAY_WEIGHT = 15.0;
     private static final double ANOMALY_WEIGHT = 10.0;
     private static final double WS_WEIGHT = 25.0;
+
+    /** Weight of the factors every node can earn: uptime + latency + error rate. */
+    private static final double BASE_WEIGHT = UPTIME_WEIGHT + LATENCY_WEIGHT + ANOMALY_WEIGHT;
 
     // Thresholds for score degradation
     private static final double LATENCY_THRESHOLD_MS = 2000.0;
@@ -57,7 +68,8 @@ public class HealthScoreCalculator {
             long totalRequests,
             boolean wsConfigured,
             boolean wsUp,
-            boolean down) {
+            boolean down,
+            boolean headDelayTracked) {
     }
 
     public int calculateHealthScore(double uptimePercent, double p95LatencyMs, double p95HeadDelayMs,
@@ -71,30 +83,39 @@ public class HealthScoreCalculator {
                                                  long errorCount, long totalRequests, boolean isCurrentlyDown,
                                                  boolean wsConfigured, boolean wsUp) {
         boolean down = isCurrentlyDown || (totalRequests > 0 && uptimePercent <= 0.0);
+        // P95 head delay <= 0 means no first-seen data exists for this node (a measured
+        // P95 of exactly 0 ms is physically impossible); exclude the factor instead of
+        // granting it for free.
+        boolean headDelayTracked = p95HeadDelayMs > 0;
         double uptimeScore = calculateUptimeScore(uptimePercent);
         double latencyScore = calculateLatencyScore(p95LatencyMs);
-        double headDelayScore = calculateHeadDelayScore(p95HeadDelayMs);
+        double headDelayScore = headDelayTracked ? calculateHeadDelayScore(p95HeadDelayMs) : 0.0;
         double anomalyScore = calculateAnomalyScore(errorCount, totalRequests);
 
-        double wsScore;
+        double wsScore = 0;
         int total;
         if (down) {
-            wsScore = 0;
             total = 0;
-        } else if (wsConfigured && !wsUp) {
-            // Configured but disconnected: lose half the WS weight instead of the full weight
-            wsScore = -(WS_WEIGHT / 2.0);
-            double sum = uptimeScore + latencyScore + headDelayScore + anomalyScore + wsScore;
-            total = Math.max(0, (int) Math.round(sum));
         } else {
-            wsScore = wsConfigured ? WS_WEIGHT : 0;
-            double sum = uptimeScore + latencyScore + headDelayScore + anomalyScore + wsScore;
-            total = (int) Math.round(sum);
+            double sum = uptimeScore + latencyScore + anomalyScore;
+            double weight = BASE_WEIGHT;
+            if (headDelayTracked) {
+                sum += headDelayScore;
+                weight += HEAD_DELAY_WEIGHT;
+            }
+            if (wsConfigured) {
+                // Disconnected costs half the WS weight on top of the missing WS points
+                wsScore = wsUp ? WS_WEIGHT : -(WS_WEIGHT / 2.0);
+                sum += wsScore;
+                weight += WS_WEIGHT;
+            }
+            // Rescale earned points over the earnable weight to /100
+            total = Math.max(0, (int) Math.round(sum * (100.0 / weight)));
         }
 
         return new HealthScoreBreakdown(total, uptimeScore, latencyScore, headDelayScore,
                 anomalyScore, wsScore, uptimePercent, p95LatencyMs, p95HeadDelayMs,
-                errorCount, totalRequests, wsConfigured, wsUp, down);
+                errorCount, totalRequests, wsConfigured, wsUp, down, headDelayTracked);
     }
 
     /**
@@ -107,18 +128,28 @@ public class HealthScoreCalculator {
             return "Score is 0: node has been continuously down for 3+ minutes.";
         }
         StringBuilder s = new StringBuilder();
-        s.append("Health ").append(b.total()).append("/100 — weighted sum of 5 factors:\n");
+        int factors = 3 + (b.headDelayTracked() ? 1 : 0) + (b.wsConfigured() ? 1 : 0);
+        if (factors == 5) {
+            s.append("Health ").append(b.total()).append("/100 — weighted sum of 5 factors:\n");
+        } else {
+            s.append("Health ").append(b.total()).append("/100 — ").append(factors)
+                    .append(" measured factors, rescaled to /100:\n");
+        }
         s.append("• Uptime ").append(fmtPercent(b.uptimePercent()))
                 .append(" → ").append(fmtScore(b.uptimeScore())).append("/30\n");
         s.append("• Latency P95 ").append(fmtMs(b.p95LatencyMs()))
                 .append(" → ").append(fmtScore(b.latencyScore())).append("/20 (0 at ≥2000ms)\n");
-        s.append("• Head delay P95 ").append(fmtMs(b.p95HeadDelayMs()))
-                .append(" → ").append(fmtScore(b.headDelayScore())).append("/15 (0 at ≥10s)\n");
+        if (b.headDelayTracked()) {
+            s.append("• Head delay P95 ").append(fmtMs(b.p95HeadDelayMs()))
+                    .append(" → ").append(fmtScore(b.headDelayScore())).append("/15 (0 at ≥10s)\n");
+        } else {
+            s.append("• Head delay — no data → not counted (score rescaled)\n");
+        }
         double errorRate = b.totalRequests() == 0 ? 0.0 : (100.0 * b.errorCount() / b.totalRequests());
         s.append("• Error rate ").append(fmtPercent(errorRate))
                 .append(" → ").append(fmtScore(b.anomalyScore())).append("/10 (0 at ≥10%)\n");
         if (!b.wsConfigured()) {
-            s.append("• WebSocket not configured → 0/25 (not counted)");
+            s.append("• WebSocket not configured → not counted (score rescaled)");
         } else if (b.wsUp()) {
             s.append("• WebSocket connected → 25/25");
         } else {
@@ -152,9 +183,7 @@ public class HealthScoreCalculator {
     }
 
     private double calculateHeadDelayScore(double p95HeadDelayMs) {
-        if (p95HeadDelayMs <= 0) {
-            return HEAD_DELAY_WEIGHT;
-        }
+        // Callers gate on p95HeadDelayMs > 0 (untracked head delay is excluded, not scored)
         double ratio = Math.min(1.0, p95HeadDelayMs / HEAD_DELAY_THRESHOLD_MS);
         double score = 1.0 - ratio;
         return HEAD_DELAY_WEIGHT * Math.max(0.0, score);

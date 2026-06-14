@@ -1,0 +1,167 @@
+<th:block th:fragment="scripts-live-node">
+<script>
+    (function () {
+        'use strict';
+        // Tier 1: swap the server-rendered status panels (no JS state inside them).
+        // Tier 2: refresh chart/table data via a state-preserving page reload —
+        // the chart pipeline derives from page-scope constants, so a reload is the
+        // only correct way to get new data; the snapshot/restore below makes it
+        // invisible: scroll position, chart legend visibility, and the chart
+        // toggles all survive.
+        const STATUS_MS = 10000;
+        const DATA_MS = 60000;
+        const INTERACTION_GRACE_MS = 8000;
+        const STORAGE_KEY = 'chaincheck.live';
+        const STATE_KEY = 'chaincheck.nodeState';
+
+        const statusRegion = document.getElementById('live-status');
+        const toggle = document.getElementById('live-toggle');
+        if (!statusRegion || !toggle) return;
+
+        // Historical views (explicit end timestamp) are frozen in time — never refresh.
+        if (new URLSearchParams(window.location.search).has('end')) {
+            toggle.hidden = true;
+            restoreState(); // still restore if we navigated here from a live reload
+            return;
+        }
+
+        let enabled;
+        try { enabled = localStorage.getItem(STORAGE_KEY) !== 'off'; } catch (e) { enabled = true; }
+        let inflight = false;
+        let lastInteraction = 0;
+        ['pointerdown', 'keydown', 'wheel', 'touchstart'].forEach(function (evt) {
+            document.addEventListener(evt, function () { lastInteraction = Date.now(); }, { passive: true });
+        });
+
+        function render() {
+            toggle.classList.toggle('live-on', enabled);
+            toggle.querySelector('.live-label').textContent = enabled ? 'Live · 10s' : 'Paused';
+            toggle.setAttribute('aria-pressed', String(enabled));
+            toggle.title = enabled
+                ? 'Status refreshes every 10 seconds, charts every 60 seconds. Click to pause.'
+                : 'Auto-refresh paused. Click to resume.';
+        }
+
+        toggle.addEventListener('click', function () {
+            enabled = !enabled;
+            try { localStorage.setItem(STORAGE_KEY, enabled ? 'on' : 'off'); } catch (e) { /* private mode */ }
+            render();
+        });
+
+        function blocked() {
+            if (!enabled || document.hidden) return true;
+            if (document.querySelector('.modal:not(.hidden)')) return true;
+            const sel = window.getSelection();
+            if (sel && sel.type === 'Range') return true;
+            const tip = document.querySelector('.hint-tooltip');
+            if (tip && !tip.hidden) return true;
+            return false;
+        }
+
+        // ── Tier 1: status panel swap ─────────────────────────────────────
+        async function refreshStatus() {
+            if (blocked() || inflight) return;
+            inflight = true;
+            try {
+                const res = await fetch(window.location.href, {
+                    headers: { 'X-Requested-With': 'chaincheck-live' },
+                    cache: 'no-store'
+                });
+                if (!res.ok) return;
+                const doc = new DOMParser().parseFromString(await res.text(), 'text/html');
+                const next = doc.getElementById('live-status');
+                if (next) statusRegion.innerHTML = next.innerHTML;
+                // Mirror the header health badge without replacing the header
+                // (the node selector there holds a direct event listener).
+                const badge = document.querySelector('.app-header .health-badge');
+                const nextBadge = doc.querySelector('.app-header .health-badge');
+                if (badge && nextBadge) {
+                    badge.textContent = nextBadge.textContent;
+                    badge.className = nextBadge.className;
+                }
+                const hint = document.querySelector('.app-header .hint[data-hint]');
+                const nextHint = doc.querySelector('.app-header .hint[data-hint]');
+                if (hint && nextHint) hint.dataset.hint = nextHint.dataset.hint;
+                document.dispatchEvent(new CustomEvent('chaincheck:refreshed'));
+            } catch (e) {
+                // Network blip: keep the stale view, retry on the next tick.
+            } finally {
+                inflight = false;
+            }
+        }
+
+        // ── Tier 2: state-preserving data reload ──────────────────────────
+        function snapshotState() {
+            const state = { scrollY: window.scrollY, toggles: {}, datasetVisibility: {} };
+            ['toggleReferenceLines', 'toggleBounds'].forEach(function (id) {
+                const el = document.getElementById(id);
+                if (el) state.toggles[id] = el.checked;
+            });
+            if (window.Chart && typeof Chart.getChart === 'function') {
+                const chart = Chart.getChart('latencyChart');
+                if (chart) {
+                    chart.data.datasets.forEach(function (ds, i) {
+                        if (ds.label) state.datasetVisibility[ds.label] = chart.isDatasetVisible(i);
+                    });
+                }
+            }
+            try { sessionStorage.setItem(STATE_KEY, JSON.stringify(state)); } catch (e) { /* best effort */ }
+        }
+
+        function restoreState() {
+            let state = null;
+            try {
+                const raw = sessionStorage.getItem(STATE_KEY);
+                if (raw) {
+                    state = JSON.parse(raw);
+                    sessionStorage.removeItem(STATE_KEY);
+                }
+            } catch (e) { return; }
+            if (!state) return;
+            // Toggles first — their change handlers rebuild dataset visibility.
+            Object.keys(state.toggles || {}).forEach(function (id) {
+                const el = document.getElementById(id);
+                if (el && el.checked !== state.toggles[id]) {
+                    el.checked = state.toggles[id];
+                    el.dispatchEvent(new Event('change'));
+                }
+            });
+            // Then exact per-dataset legend visibility.
+            if (window.Chart && typeof Chart.getChart === 'function') {
+                const chart = Chart.getChart('latencyChart');
+                if (chart && state.datasetVisibility) {
+                    let changed = false;
+                    chart.data.datasets.forEach(function (ds, i) {
+                        if (ds.label && ds.label in state.datasetVisibility
+                                && chart.isDatasetVisible(i) !== state.datasetVisibility[ds.label]) {
+                            chart.setDatasetVisibility(i, state.datasetVisibility[ds.label]);
+                            changed = true;
+                        }
+                    });
+                    if (changed) chart.update('none');
+                }
+            }
+            // Scroll last, after the chart has laid out.
+            requestAnimationFrame(function () {
+                window.scrollTo(0, state.scrollY || 0);
+            });
+        }
+
+        function refreshData() {
+            if (blocked()) return;
+            if (Date.now() - lastInteraction < INTERACTION_GRACE_MS) return;
+            snapshotState();
+            window.location.reload();
+        }
+
+        document.addEventListener('visibilitychange', function () {
+            if (!document.hidden) refreshStatus();
+        });
+
+        restoreState();
+        setInterval(refreshStatus, STATUS_MS);
+        setInterval(refreshData, DATA_MS);
+        render();
+    })();
+</script>
+</th:block>

@@ -59,7 +59,7 @@ class MetricsCacheTest {
                 1, 50, 0, 1, 50, 0,
                 500, 30000, false,
                 generatedAt, null, false, null, false,
-                ChartGradientMode.NONE);
+                ChartGradientMode.NONE, null);
     }
 
     @Test
@@ -117,5 +117,17 @@ class MetricsCacheTest {
 
         assertTrue(cache.size() <= MetricsCache.MAX_ENTRIES + 1,
                 "Cache size should be bounded after eviction");
+    }
+
+    @Test
+    @DisplayName("live views (null end) hit the cache under the null key")
+    void liveViewNullEndKeyRoundTrips() {
+        // The live-view contract: getDashboard looks up with end == null, so the view
+        // must also be stored under the null key — storing under Instant.now() made
+        // every live lookup miss and silently disabled the cache for the hot path.
+        MetricsCache cache = new MetricsCache();
+        Instant now = Instant.now();
+        cache.put("node1", TimeRange.HOURS_2, null, createView(now));
+        assertNotNull(cache.get("node1", TimeRange.HOURS_2, null));
     }
 }

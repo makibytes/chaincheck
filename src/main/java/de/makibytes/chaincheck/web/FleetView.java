@@ -50,4 +50,24 @@ public class FleetView {
     public long getMaxBlockNumber() {
         return maxBlockNumber;
     }
+
+    /** Nodes currently reachable (health score above zero). */
+    public long getOnlineCount() {
+        return nodes.stream().filter(n -> n.healthScore() > 0).count();
+    }
+
+    /** Nodes with an "Excellent" health score (≥ 80). */
+    public long getHealthyCount() {
+        return nodes.stream().filter(n -> n.healthScore() >= 80).count();
+    }
+
+    /** Nodes needing attention (health score below 50, including down nodes). */
+    public long getAttentionCount() {
+        return nodes.stream().filter(n -> n.healthScore() < 50).count();
+    }
+
+    /** Sum of anomaly events across all nodes for the selected range. */
+    public long getTotalAnomalies() {
+        return nodes.stream().mapToLong(FleetNodeSummary::anomalyCount).sum();
+    }
 }

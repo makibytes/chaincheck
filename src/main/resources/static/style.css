@@ -1352,3 +1352,132 @@ pre {
     height: 28px;
     overflow: visible;
 }
+
+/* ===== Fleet Summary Strip ===== */
+.fleet-summary {
+    margin: var(--space-lg) auto 0;
+    max-width: 1400px;
+    width: 95%;
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-sm) var(--space-xl);
+    padding: var(--space-md) var(--space-lg);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+}
+
+.fleet-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 90px;
+}
+
+.fleet-stat-value {
+    font-family: "Space Grotesk", "Inter", sans-serif;
+    font-size: 1.25rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.2;
+}
+
+.fleet-stat-label {
+    font-size: 0.72rem;
+    font-weight: 500;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+}
+
+/* ===== Live Refresh Toggle ===== */
+.live-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    border: 1px solid var(--color-border-strong);
+    border-radius: 999px;
+    background: var(--color-surface);
+    color: var(--color-text-muted);
+    font: inherit;
+    font-size: 0.78rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: border-color var(--transition-base), color var(--transition-base);
+}
+
+.live-toggle:hover {
+    border-color: var(--color-text-subtle);
+    color: var(--color-text);
+}
+
+.live-toggle .live-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--color-text-subtle);
+    flex: none;
+}
+
+.live-toggle.live-on {
+    color: var(--color-text);
+    border-color: rgba(var(--color-success-rgb), 0.4);
+}
+
+.live-toggle.live-on .live-dot {
+    background: var(--color-success);
+    animation: live-pulse 2s ease-in-out infinite;
+}
+
+@keyframes live-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(var(--color-success-rgb), 0.45); }
+    50%      { box-shadow: 0 0 0 5px rgba(var(--color-success-rgb), 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .live-toggle.live-on .live-dot {
+        animation: none;
+    }
+    *, *::before, *::after {
+        transition-duration: 0.01ms !important;
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+    }
+}
+
+/* ===== Accessibility: keyboard navigation ===== */
+.node-link {
+    color: inherit;
+    text-decoration: none;
+}
+
+.node-link:hover,
+.node-link:focus-visible {
+    color: var(--color-primary);
+    text-decoration: underline;
+}
+
+:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+    border-radius: 2px;
+}
+
+.hint:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 1px;
+}
+
+/* ===== Node software version (fleet table) ===== */
+.node-version {
+    display: inline-block;
+    margin-left: var(--space-xs);
+    padding: 1px 6px;
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-alt, rgba(127, 127, 127, 0.12));
+    color: var(--color-text-muted);
+    font-size: 0.72rem;
+    font-variant-numeric: tabular-nums;
+    vertical-align: middle;
+}

@@ -40,7 +40,13 @@ public class BlockVotingService {
      * Hashes are normalized to lowercase to prevent case-sensitivity splits across nodes.
      */
     public void recordBlock(String nodeKey, long blockNumber, String blockHash, Confidence confidence) {
-        String normalizedHash = blockHash != null ? blockHash.toLowerCase() : null;
+        if (blockHash == null) {
+            // A vote without a hash is meaningless — and ConcurrentHashMap rejects null
+            // keys with an NPE, which would turn an otherwise-valid poll (with a merely
+            // partial block parse) into a recorded node failure.
+            return;
+        }
+        String normalizedHash = blockHash.toLowerCase();
         blockVotes.computeIfAbsent(blockNumber, k -> new ConcurrentHashMap<>())
                 .computeIfAbsent(confidence, k -> new ConcurrentHashMap<>())
                 .computeIfAbsent(normalizedHash, k -> ConcurrentHashMap.newKeySet())

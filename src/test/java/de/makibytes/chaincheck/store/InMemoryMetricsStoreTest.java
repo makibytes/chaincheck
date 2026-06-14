@@ -230,4 +230,23 @@ class InMemoryMetricsStoreTest {
         assertEquals(42L, retrieved.getId());
         assertEquals("Test error", retrieved.getMessage());
     }
+
+    @Test
+    void testBetweenQueriesClampUpperBound() {
+        Instant t0 = Instant.now().minusSeconds(600);
+        for (int i = 0; i < 5; i++) {
+            store.addSample("node1", MetricSample.builder(t0.plusSeconds(i * 60L), MetricSource.HTTP)
+                    .success(true)
+                    .latencyMs(10)
+                    .build());
+        }
+        // Window covering samples 0..2 only — sample 3 and 4 lie after `until`
+        Instant since = t0;
+        Instant until = t0.plusSeconds(125);
+        assertEquals(3, store.getRawSamplesBetween("node1", since, until).size());
+        // Lower-bounded legacy query still returns everything
+        assertEquals(5, store.getRawSamplesSince("node1", since).size());
+        // Inverted window degrades to empty, not an exception
+        assertTrue(store.getRawSamplesBetween("node1", until, since).isEmpty());
+    }
 }

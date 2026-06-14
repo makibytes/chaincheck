@@ -61,6 +61,7 @@ import de.makibytes.chaincheck.monitor.NodeRegistry.NodeDefinition;
 import de.makibytes.chaincheck.store.InMemoryMetricsStore;
 import io.micrometer.observation.ObservationRegistry;
 import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 
 @Service
 public class RpcMonitorService {
@@ -159,6 +160,12 @@ public class RpcMonitorService {
         }
         logWarmupStart();
         updateWarmupState();
+    }
+
+    @PreDestroy
+    void shutdown() {
+        // Stop the consensus SSE event loop and attestation loop on graceful shutdown.
+        configuredSource.shutdown();
     }
 
     boolean isWarmupComplete() {
@@ -701,6 +708,7 @@ public class RpcMonitorService {
         Instant lastWsPongReceivedAt;
         public Instant lastFinalizedFetchAt;
         Instant lastLatestFetchAt;
+        Instant lastMetadataFetchAt;
         Deque<BlockInfo> finalizedHistory = new ArrayDeque<>();
         long wsFailureBackoffSeconds = 0;
         Instant wsNextFailureSampleAt;

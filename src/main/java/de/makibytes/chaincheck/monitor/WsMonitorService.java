@@ -314,7 +314,7 @@ public class WsMonitorService {
 
                 ChainTracker.ChainUpdate update = tracker.registerBlock(blockNode);
 
-                if (update.reorg() != null) {
+                if (update.reorg() != null && update.reorg().reorgDepth() > 0) {
                     logger.info("Reorg detected via ChainTracker for node {}: depth={}, oldHead={}@{}, newHead={}@{}",
                             node.name(), update.reorg().reorgDepth(),
                             update.reorg().oldHeadHash(), update.reorg().oldHeadNumber(),
@@ -431,7 +431,7 @@ public class WsMonitorService {
                         blockHash, parentHash, blockNumber, blockTimestamp, now, Confidence.NEW);
                 ChainTracker.ChainUpdate update = chainTracker.registerBlock(blockNode);
 
-                if (update.reorg() != null) {
+                if (update.reorg() != null && update.reorg().reorgDepth() > 0) {
                     logger.info("Reorg detected via ChainTracker for Cosmos node {}: depth={}, oldHead={}@{}, newHead={}@{}",
                             node.name(), update.reorg().reorgDepth(),
                             update.reorg().oldHeadHash(), update.reorg().oldHeadNumber(),

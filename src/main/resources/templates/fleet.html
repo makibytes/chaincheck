@@ -11,9 +11,13 @@
 
 <body>
     <div th:replace="~{fragments/fleet-header :: fleetHeader}"></div>
-    <div th:replace="~{fragments/fleet-nodes :: fleetNodes}"></div>
+    <div id="live-root">
+        <div th:replace="~{fragments/fleet-summary :: fleetSummary}"></div>
+        <div th:replace="~{fragments/fleet-nodes :: fleetNodes}"></div>
+    </div>
     <div class="app-version" th:text="|ChainCheck v${appVersion}|"></div>
     <div th:replace="~{fragments/scripts-hints :: scripts-hints}"></div>
+    <div th:replace="~{fragments/scripts-live :: scripts-live}"></div>
 </body>
 
 </html>

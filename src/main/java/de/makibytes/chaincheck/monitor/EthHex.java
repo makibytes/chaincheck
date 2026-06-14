@@ -26,6 +26,12 @@ public final class EthHex {
 
     private EthHex() {}
 
+    /**
+     * Parses a 0x-prefixed hex quantity. Returns {@code null} for absent or malformed
+     * input — a node returning a corrupt field (proxy error fragment, truncated body)
+     * should degrade to "value missing" for that field, not unwind the whole poll with
+     * an unchecked NumberFormatException.
+     */
     public static Long parseLong(String hex) {
         if (hex == null) {
             return null;
@@ -34,7 +40,11 @@ public final class EthHex {
         if (normalized.isBlank()) {
             return null;
         }
-        return new BigInteger(normalized, 16).longValue();
+        try {
+            return new BigInteger(normalized, 16).longValue();
+        } catch (NumberFormatException ex) {
+            return null;
+        }
     }
 
     public static Instant parseTimestamp(String hex) {
@@ -47,10 +57,14 @@ public final class EthHex {
             return null;
         }
         String normalized = value.trim();
-        if (normalized.startsWith("0x") || normalized.startsWith("0X")) {
-            return new BigInteger(normalized.substring(2), 16).longValue();
+        try {
+            if (normalized.startsWith("0x") || normalized.startsWith("0X")) {
+                return new BigInteger(normalized.substring(2), 16).longValue();
+            }
+            return new BigInteger(normalized, 10).longValue();
+        } catch (NumberFormatException ex) {
+            return null;
         }
-        return new BigInteger(normalized, 10).longValue();
     }
 
     public static Instant parseDecimalOrHexTimestamp(String value) {

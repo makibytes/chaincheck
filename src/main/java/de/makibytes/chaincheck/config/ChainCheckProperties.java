@@ -606,6 +606,14 @@ public class ChainCheckProperties {
         private long highLatencyMs = 2000;
         private long staleBlockThresholdMs = 30000;
         private long blockGapThreshold = 5;
+        /**
+         * Slots/blocks behind the cluster tip at which a node self-reported as lagging
+         * (Solana getHealth) is flagged as a SYNC_LAG anomaly. Solana nodes only return
+         * a getHealth error once past their own HEALTH_CHECK_SLOT_DISTANCE (≈128 slots),
+         * so any reported lag already signals an unhealthy node; the default of 1 flags
+         * every reported lag, and operators can raise it to suppress minor catch-up blips.
+         */
+        private long healthSlotsBehindThreshold = 1;
 
         public Integer getLongDelayBlockCount() {
             return longDelayBlockCount;
@@ -625,6 +633,14 @@ public class ChainCheckProperties {
 
         public void setHighLatency(long highLatency) {
             this.highLatencyMs = highLatency;
+        }
+
+        public long getHealthSlotsBehindThreshold() {
+            return healthSlotsBehindThreshold;
+        }
+
+        public void setHealthSlotsBehindThreshold(long healthSlotsBehindThreshold) {
+            this.healthSlotsBehindThreshold = healthSlotsBehindThreshold;
         }
 
         public long getStaleBlockThresholdMs() {

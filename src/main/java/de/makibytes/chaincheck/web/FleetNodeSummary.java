@@ -36,6 +36,7 @@ public record FleetNodeSummary(
     long anomalyCount,
     long wsDisconnectCount,
     boolean referenceNode,
+    String version,
     String sparklinePoints,
     String sparklineColoredPaths
 ) {

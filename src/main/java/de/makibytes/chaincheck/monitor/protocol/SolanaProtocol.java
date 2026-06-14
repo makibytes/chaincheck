@@ -111,10 +111,7 @@ public class SolanaProtocol implements ChainProtocol {
 
     @Override
     public RpcRequest buildBlockByNumberRequest(long slot) {
-        ObjectNode config = mapper.createObjectNode()
-                .put("encoding", "json")
-                .put("commitment", "confirmed")
-                .put("maxSupportedTransactionVersion", 0);
+        ObjectNode config = blockFetchConfig();
         return new RpcRequest("getBlock", mapper.createArrayNode().add(slot).add(config));
     }
 
@@ -156,10 +153,7 @@ public class SolanaProtocol implements ChainProtocol {
     @Override
     public RpcRequest buildFetchAfterWsEventRequest(BlockEvent event) {
         long slot = Long.parseLong(event.identifier());
-        ObjectNode config = mapper.createObjectNode()
-                .put("encoding", "json")
-                .put("commitment", "confirmed")
-                .put("maxSupportedTransactionVersion", 0);
+        ObjectNode config = blockFetchConfig();
         return new RpcRequest("getBlock", mapper.createArrayNode().add(slot).add(config));
     }
 
@@ -175,13 +169,141 @@ public class SolanaProtocol implements ChainProtocol {
         return true; // previousBlockhash serves as parentHash
     }
 
+    // ── Node health probe ─────────────────────────────────────────────────
+
+    @Override
+    public java.util.Optional<RpcRequest> buildHealthRequest() {
+        // getHealth takes no params; a healthy node returns "ok", an unhealthy one returns
+        // error -32005 with data.numSlotsBehind. This is the canonical Solana liveness check.
+        return java.util.Optional.of(new RpcRequest("getHealth", mapper.createArrayNode()));
+    }
+
+    @Override
+    public Integer parseHealthSlotsBehind(JsonNode envelope) {
+        if (envelope == null) {
+            return null;
+        }
+        JsonNode error = envelope.path("error");
+        if (!error.isMissingNode() && !error.isNull()) {
+            // Unhealthy. Preferred: { code:-32005, data:{ numSlotsBehind:N } }.
+            JsonNode numBehind = error.path("data").path("numSlotsBehind");
+            if (numBehind.isIntegralNumber()) {
+                return numBehind.asInt();
+            }
+            // Fallback: parse "...behind by N slots" from the message text.
+            Integer fromMessage = extractSlotsBehind(error.path("message").asText(null));
+            if (fromMessage != null) {
+                return fromMessage;
+            }
+            // Errored but no count available — unhealthy by an unknown margin.
+            return -1;
+        }
+        JsonNode result = envelope.path("result");
+        if (result.isTextual() && "ok".equalsIgnoreCase(result.asText())) {
+            return 0;
+        }
+        // Some nodes answer "behind"/"unknown" as a plain string instead of an error.
+        if (result.isTextual()) {
+            String text = result.asText();
+            Integer fromText = extractSlotsBehind(text);
+            if (fromText != null) {
+                return fromText;
+            }
+            if ("behind".equalsIgnoreCase(text) || "unknown".equalsIgnoreCase(text)) {
+                return -1;
+            }
+        }
+        return null;
+    }
+
+    private static Integer extractSlotsBehind(String message) {
+        if (message == null) {
+            return null;
+        }
+        java.util.regex.Matcher m = SLOTS_BEHIND_PATTERN.matcher(message);
+        return m.find() ? Integer.valueOf(m.group(1)) : null;
+    }
+
+    private static final java.util.regex.Pattern SLOTS_BEHIND_PATTERN =
+            java.util.regex.Pattern.compile("behind by (\\d+) slots?");
+
+    // ── Node metadata probes ──────────────────────────────────────────────
+
+    @Override
+    public java.util.Optional<RpcRequest> buildVersionRequest() {
+        return java.util.Optional.of(new RpcRequest("getVersion", mapper.createArrayNode()));
+    }
+
+    @Override
+    public String parseVersion(JsonNode result) {
+        if (result == null || result.isNull()) {
+            return null;
+        }
+        // { "solana-core": "2.1.21", "feature-set": 1416569292 }
+        String core = result.path("solana-core").asText(null);
+        if (core == null || core.isBlank()) {
+            return null;
+        }
+        return core;
+    }
+
+    @Override
+    public java.util.Optional<RpcRequest> buildPerformanceRequest() {
+        // Request a single most-recent 60s sample (the result is in reverse-slot order).
+        return java.util.Optional.of(
+                new RpcRequest("getRecentPerformanceSamples", mapper.createArrayNode().add(1)));
+    }
+
+    @Override
+    public double[] parsePerformance(JsonNode result) {
+        if (result == null || !result.isArray() || result.isEmpty()) {
+            return null;
+        }
+        JsonNode sample = result.get(0); // most recent
+        double periodSecs = sample.path("samplePeriodSecs").asDouble(0);
+        if (periodSecs <= 0) {
+            return null;
+        }
+        long numTransactions = sample.path("numTransactions").asLong(0);
+        long numSlots = sample.path("numSlots").asLong(0);
+        // Headline network throughput (includes vote transactions, the conventional TPS figure).
+        Double tps = numTransactions > 0 ? numTransactions / periodSecs : null;
+        // Mean slot time over the window: period / slots produced.
+        Double slotTimeMs = numSlots > 0 ? (periodSecs * 1000.0) / numSlots : null;
+        if (tps == null && slotTimeMs == null) {
+            return null;
+        }
+        return new double[] {
+                tps == null ? Double.NaN : tps,
+                slotTimeMs == null ? Double.NaN : slotTimeMs
+        };
+    }
+
     // ── Internal ──────────────────────────────────────────────────────────
+
+    /**
+     * Shared {@code getBlock} config.  ChainCheck only needs the block header, so
+     * {@code transactionDetails: "signatures"} and {@code rewards: false} are used to keep the
+     * response to a few KB instead of the multi-MB payload that full transaction JSON produces
+     * on mainnet — important at Solana's ~400 ms slot cadence and for provider quotas.
+     * The block-level {@code signatures} array still yields the transaction count.
+     */
+    private ObjectNode blockFetchConfig() {
+        return mapper.createObjectNode()
+                .put("encoding", "json")
+                .put("commitment", "confirmed")
+                .put("transactionDetails", "signatures")
+                .put("rewards", false)
+                .put("maxSupportedTransactionVersion", 0);
+    }
 
     private RpcMonitorService.BlockInfo parseGetBlockResult(JsonNode result) throws IOException {
         if (result == null || result.isNull()) {
             return null;
         }
-        // getBlock result: { blockhash, parentSlot, previousBlockhash, blockTime, transactions:[] }
+        // getBlock result with transactionDetails="signatures":
+        // { blockhash, parentSlot, previousBlockhash, blockTime, signatures:[] }
+        // (a "transactions" array appears instead when full details are requested)
         String blockhash = result.path("blockhash").asText(null);
         if (blockhash == null || blockhash.isBlank()) {
             return null;
@@ -198,8 +320,11 @@ public class SolanaProtocol implements ChainProtocol {
         }
 
         Integer txCount = null;
+        JsonNode sigs = result.path("signatures");
         JsonNode txs = result.path("transactions");
-        if (txs.isArray()) {
+        if (sigs.isArray()) {
+            txCount = sigs.size();
+        } else if (txs.isArray()) {
             txCount = txs.size();
         }
 

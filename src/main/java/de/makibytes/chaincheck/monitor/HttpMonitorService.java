@@ -136,6 +136,12 @@ public class HttpMonitorService {
     private static final int BATCH_ID_LATEST       = 3;
     private static final int BATCH_ID_FINALIZED    = 4;
     private static final int BATCH_ID_CHECKPOINT   = 5;
+    private static final int BATCH_ID_HEALTH       = 6;
+    private static final int BATCH_ID_VERSION      = 7;
+    private static final int BATCH_ID_PERFORMANCE  = 8;
+
+    /** Node version and network-performance change slowly; refresh them about once a minute. */
+    private static final long METADATA_POLL_INTERVAL_MS = 60_000;
 
     private void pollHttp(NodeDefinition node, RpcMonitorService.NodeState state) {
         Instant timestamp = Instant.now();
@@ -150,6 +156,33 @@ public class HttpMonitorService {
 
             String wsBlockTag = null;
             boolean fetchLatest = false;
+
+            // Optional per-node health probe (Solana getHealth). Cheap, parameterless, and
+            // piggybacks on the existing batch round-trip, so it adds a node-self-reported
+            // "behind the cluster by N slots" signal at no extra request.
+            boolean healthProbe = protocol.buildHealthRequest().isPresent();
+            if (healthProbe) {
+                RpcRequest healthReq = protocol.buildHealthRequest().get();
+                batch.add(new BatchItem(BATCH_ID_HEALTH, healthReq.method(), healthReq.params()));
+            }
+
+            // Slow-changing node metadata (software version, observed network TPS / slot time).
+            // Refreshed about once a minute so it doesn't bloat the high-frequency poll batch.
+            boolean fetchMetadata = state.lastMetadataFetchAt == null
+                    || Duration.between(state.lastMetadataFetchAt, timestamp).toMillis() >= METADATA_POLL_INTERVAL_MS;
+            boolean versionProbe = fetchMetadata && protocol.buildVersionRequest().isPresent();
+            boolean performanceProbe = fetchMetadata && protocol.buildPerformanceRequest().isPresent();
+            if (versionProbe) {
+                RpcRequest vReq = protocol.buildVersionRequest().get();
+                batch.add(new BatchItem(BATCH_ID_VERSION, vReq.method(), vReq.params()));
+            }
+            if (performanceProbe) {
+                RpcRequest pReq = protocol.buildPerformanceRequest().get();
+                batch.add(new BatchItem(BATCH_ID_PERFORMANCE, pReq.method(), pReq.params()));
+            }
+            if (versionProbe || performanceProbe) {
+                state.lastMetadataFetchAt = timestamp;
+            }
 
             if (hasWs) {
                 if (safeEnabled && finalizedEnabled) {
@@ -188,7 +221,8 @@ public class HttpMonitorService {
             // Parse block number
             JsonNode bnEntry = results.get(BATCH_ID_BLOCK_NUMBER);
             if (bnEntry == null || bnEntry.has("error") || bnEntry.get("result") == null || bnEntry.get("result").isNull()) {
-                monitor.recordFailure(node, MetricSource.HTTP, "Could not fetch block number");
+                monitor.recordFailure(node, MetricSource.HTTP,
+                        describeRpcError(bnEntry, "Could not fetch block number"));
                 return;
             }
             Long blockNumber = protocol.parseBlockNumberResponse(bnEntry.get("result"));
@@ -206,7 +240,8 @@ public class HttpMonitorService {
             if (hasWs) {
                 JsonNode cpEntry = results.get(BATCH_ID_CHECKPOINT);
                 if (cpEntry == null || cpEntry.has("error")) {
-                    monitor.recordFailure(node, MetricSource.HTTP, wsBlockTag + " block not found");
+                    monitor.recordFailure(node, MetricSource.HTTP,
+                            describeRpcError(cpEntry, wsBlockTag + " block not found"));
                     return;
                 }
                 RpcMonitorService.BlockInfo checkpointBlock = protocol.parseBlockByTagResponse(cpEntry.get("result"), wsBlockTag);
@@ -243,7 +278,8 @@ public class HttpMonitorService {
                 if (safeEnabled) {
                     JsonNode safeEntry = results.get(BATCH_ID_SAFE);
                     if (safeEntry == null || safeEntry.has("error")) {
-                        monitor.recordFailure(node, MetricSource.HTTP, "safe block not found");
+                        monitor.recordFailure(node, MetricSource.HTTP,
+                                describeRpcError(safeEntry, "safe block not found"));
                         return;
                     }
                     safeBlock = protocol.parseBlockByTagResponse(safeEntry.get("result"), "safe");
@@ -271,7 +307,8 @@ public class HttpMonitorService {
                 if (finalizedEnabled) {
                     JsonNode finalizedEntry = results.get(BATCH_ID_FINALIZED);
                     if (finalizedEntry == null || finalizedEntry.has("error")) {
-                        monitor.recordFailure(node, MetricSource.HTTP, "finalized block not found");
+                        monitor.recordFailure(node, MetricSource.HTTP,
+                                describeRpcError(finalizedEntry, "finalized block not found"));
                         return;
                     }
                     finalizedBlock = protocol.parseBlockByTagResponse(finalizedEntry.get("result"), "finalized");
@@ -364,6 +401,30 @@ public class HttpMonitorService {
                             .gasPriceWei(metadataBlock.gasPriceWei());
                 }
                 store.addSample(node.key(), sampleBuilder.build());
+
+                if (healthProbe) {
+                    detectSyncLag(node, results.get(BATCH_ID_HEALTH), blockNumber, timestamp);
+                }
+                if (versionProbe) {
+                    JsonNode vEntry = results.get(BATCH_ID_VERSION);
+                    if (vEntry != null && !vEntry.has("error")) {
+                        String version = protocol.parseVersion(vEntry.get("result"));
+                        if (version != null) {
+                            store.setNodeVersion(node.key(), version);
+                        }
+                    }
+                }
+                if (performanceProbe) {
+                    JsonNode pEntry = results.get(BATCH_ID_PERFORMANCE);
+                    if (pEntry != null && !pEntry.has("error")) {
+                        double[] perf = protocol.parsePerformance(pEntry.get("result"));
+                        if (perf != null) {
+                            Double tps = Double.isNaN(perf[0]) ? null : perf[0];
+                            Double slotTimeMs = Double.isNaN(perf[1]) ? null : perf[1];
+                            store.setNodePerformance(node.key(), tps, slotTimeMs);
+                        }
+                    }
+                }
             }
         } catch (HttpStatusException ex) {
             logger.error("HTTP RPC failure ({} / http): status {} ({})", node.name(), ex.getStatusCode(), ex.getMessage());
@@ -376,11 +437,49 @@ public class HttpMonitorService {
         }
     }
 
+    /**
+     * Evaluates the node's {@code getHealth} response and records a SYNC_LAG anomaly when the
+     * node reports itself behind the cluster tip by at least the configured threshold (or
+     * unhealthy by an unknown margin). A healthy or absent response records nothing.
+     */
+    private void detectSyncLag(NodeDefinition node, JsonNode healthEntry, Long blockNumber, Instant timestamp) {
+        Integer slotsBehind = protocol.parseHealthSlotsBehind(healthEntry);
+        if (slotsBehind == null || slotsBehind == 0) {
+            return;
+        }
+        long threshold = properties.getAnomalyDetection().getHealthSlotsBehindThreshold();
+        // slotsBehind < 0 means "unhealthy, unknown margin" — always worth surfacing.
+        if (slotsBehind > 0 && slotsBehind < threshold) {
+            return;
+        }
+        store.addAnomaly(node.key(),
+                detector.syncLag(node.key(), timestamp, MetricSource.HTTP, blockNumber, slotsBehind));
+        logger.debug("Sync lag ({}): {} slots behind cluster", node.name(), slotsBehind);
+    }
+
     HttpClient getHttpClient(long connectTimeoutMs) {
         long effectiveTimeout = connectTimeoutMs > 0 ? connectTimeoutMs : properties.getDefaults().getConnectTimeoutMs();
         return httpClients.computeIfAbsent(effectiveTimeout, timeout -> HttpClient.newBuilder()
                 .connectTimeout(Duration.ofMillis(Math.max(1, timeout)))
                 .build());
+    }
+
+    /**
+     * Surfaces the JSON-RPC error object from a batch entry instead of a generic message.
+     * Providers often signal rate limits inside an HTTP 200 body (e.g. code -32005,
+     * "too many requests"); preserving message and code lets the anomaly classifier
+     * recognise RATE_LIMIT and gives operators the provider's actual reason.
+     */
+    private static String describeRpcError(JsonNode entry, String fallback) {
+        if (entry != null && entry.has("error")) {
+            JsonNode err = entry.get("error");
+            String msg = err.path("message").asText("");
+            if (!msg.isBlank()) {
+                int code = err.path("code").asInt(0);
+                return code != 0 ? "RPC error " + code + ": " + msg : "RPC error: " + msg;
+            }
+        }
+        return fallback;
     }
 
     RpcMonitorService.BlockInfo fetchBlockByNumber(NodeDefinition node, long blockNumber) throws IOException, InterruptedException {

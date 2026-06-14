@@ -167,4 +167,14 @@ class EthHexTest {
         byte[] result = EthHex.decodeHex("0x0000");
         assertArrayEquals(new byte[]{0x00, 0x00}, result);
     }
+
+    @Test
+    @DisplayName("malformed hex degrades to null instead of throwing")
+    void malformedHexReturnsNull() {
+        assertNull(EthHex.parseLong("0xzz"));
+        assertNull(EthHex.parseLong("0x12g4"));
+        assertNull(EthHex.parseDecimalOrHexLong("not-a-number"));
+        assertNull(EthHex.parseDecimalOrHexLong("0xNOPE"));
+        assertNull(EthHex.parseTimestamp("0x??"));
+    }
 }
