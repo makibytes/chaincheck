@@ -403,7 +403,7 @@ public class HttpMonitorService {
                 store.addSample(node.key(), sampleBuilder.build());
 
                 if (healthProbe) {
-                    detectSyncLag(node, results.get(BATCH_ID_HEALTH), blockNumber, timestamp);
+                    detectSyncLag(node, state, results.get(BATCH_ID_HEALTH), blockNumber, timestamp);
                 }
                 if (versionProbe) {
                     JsonNode vEntry = results.get(BATCH_ID_VERSION);
@@ -442,19 +442,34 @@ public class HttpMonitorService {
      * node reports itself behind the cluster tip by at least the configured threshold (or
      * unhealthy by an unknown margin). A healthy or absent response records nothing.
      */
-    private void detectSyncLag(NodeDefinition node, JsonNode healthEntry, Long blockNumber, Instant timestamp) {
+    /**
+     * Evaluates the node's health probe (Solana getHealth / EVM eth_syncing) and maintains a
+     * single open SYNC_LAG anomaly per node using the store's open/close model. A new anomaly is
+     * opened only on the not-behind → behind transition and closed on recovery, so a node that
+     * stays behind for a long stretch (e.g. an EVM node doing initial sync) yields one anomaly,
+     * not one per poll. A {@code null} probe result (no health info) leaves the state unchanged.
+     */
+    private void detectSyncLag(NodeDefinition node, RpcMonitorService.NodeState state,
+                               JsonNode healthEntry, Long blockNumber, Instant timestamp) {
         Integer slotsBehind = protocol.parseHealthSlotsBehind(healthEntry);
-        if (slotsBehind == null || slotsBehind == 0) {
-            return;
+        if (slotsBehind == null) {
+            return; // no health information this poll — don't open or close
         }
         long threshold = properties.getAnomalyDetection().getHealthSlotsBehindThreshold();
-        // slotsBehind < 0 means "unhealthy, unknown margin" — always worth surfacing.
-        if (slotsBehind > 0 && slotsBehind < threshold) {
-            return;
+        // slotsBehind < 0 means "unhealthy, unknown margin" — always counts as behind.
+        boolean behind = slotsBehind < 0 || slotsBehind >= threshold;
+        if (behind) {
+            if (!state.syncLagOpen) {
+                store.addAnomaly(node.key(),
+                        detector.syncLag(node.key(), timestamp, MetricSource.HTTP, blockNumber, slotsBehind));
+                state.syncLagOpen = true;
+                logger.debug("Sync lag opened ({}): {} behind", node.name(), slotsBehind);
+            }
+        } else if (state.syncLagOpen) {
+            store.closeLastAnomaly(node.key(), MetricSource.HTTP, AnomalyType.SYNC_LAG);
+            state.syncLagOpen = false;
+            logger.debug("Sync lag cleared ({})", node.name());
         }
-        store.addAnomaly(node.key(),
-                detector.syncLag(node.key(), timestamp, MetricSource.HTTP, blockNumber, slotsBehind));
-        logger.debug("Sync lag ({}): {} slots behind cluster", node.name(), slotsBehind);
     }
 
     HttpClient getHttpClient(long connectTimeoutMs) {

@@ -95,6 +95,10 @@ nodes:
 
 ## Notes
 
+### EVM Node Health (all EVM chains)
+
+On every HTTP poll ChainCheck issues `eth_syncing` — the EVM analogue of Solana's `getHealth`. `false` means the node is fully synced; an object reports `currentBlock`/`highestBlock`, and the difference (blocks behind) drives a `SYNC_LAG` anomaly when it meets `anomaly-detection.health-slots-behind-threshold`. The anomaly is opened once and closed on recovery (not re-raised every poll), so a node doing a long initial sync produces a single event. On the slow metadata cadence (~60 s) `web3_clientVersion` is recorded and condensed to `client/version` (e.g. `Geth/v1.13.5`) for fleet version-skew detection. This covers every EVM mode type: `ETHEREUM`, `COSMOS` (Polygon/BNB), `OPTIMISM`, `ZK`, `AVALANCHE`, and `TRON`.
+
 ### Starknet
 
 Starknet uses the **`starknet_*` JSON-RPC protocol** (`starknet_blockNumber`, `starknet_getBlockWithTxHashes`, etc.). ChainCheck's `StarknetProtocol` adapter handles this natively. Block numbers are plain integers (not hex). Since v0.14 ("Grinta", September 2025) Starknet produces blocks every ~4–6 s under decentralized Tendermint sequencing (previously ~30 s) — the bundled profile polls at 5 s with a 60 s stale threshold to absorb the network's documented block-time jitter and sequencer stalls. Finality stages: `PRE_CONFIRMED` (v0.14+) → `ACCEPTED_ON_L2` (default, ~seconds) → `ACCEPTED_ON_L1` (hours; not tracked by default). WebSocket subscriptions (`starknet_subscribeNewHeads`) are supported on Pathfinder and Juno nodes; HTTP polling is used as fallback.

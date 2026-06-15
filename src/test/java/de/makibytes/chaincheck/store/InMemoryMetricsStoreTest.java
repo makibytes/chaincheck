@@ -117,6 +117,34 @@ class InMemoryMetricsStoreTest {
     }
 
     @Test
+    @DisplayName("closeLastAnomaly: type filter closes only the matching type (SYNC_LAG dedup)")
+    void testCloseLastAnomaly_TypeSpecific() {
+        // The sync-lag dedup relies on closing only the open SYNC_LAG anomaly while leaving
+        // an unrelated HTTP anomaly (e.g. an ERROR) untouched.
+        Instant now = Instant.now();
+        AnomalyEvent errorAnomaly = new AnomalyEvent(
+            1L, "node1", now, MetricSource.HTTP, AnomalyType.ERROR, "HTTP error",
+            null, null, null, "error"
+        );
+        AnomalyEvent syncLagAnomaly = new AnomalyEvent(
+            2L, "node1", now, MetricSource.HTTP, AnomalyType.SYNC_LAG, "Node behind cluster",
+            null, null, null, "Node behind cluster by 244 slots"
+        );
+
+        store.addAnomaly("node1", errorAnomaly);
+        store.addAnomaly("node1", syncLagAnomaly);
+        store.closeLastAnomaly("node1", MetricSource.HTTP, AnomalyType.SYNC_LAG);
+
+        var anomalies = store.getRawAnomaliesSince("node1", now.minusSeconds(60));
+        assertTrue(anomalies.stream()
+                .anyMatch(a -> a.isClosed() && a.getType() == AnomalyType.SYNC_LAG),
+                "SYNC_LAG anomaly should be closed");
+        assertTrue(anomalies.stream()
+                .anyMatch(a -> !a.isClosed() && a.getType() == AnomalyType.ERROR),
+                "Unrelated ERROR anomaly should stay open");
+    }
+
+    @Test
     @DisplayName("getAggregatedSamplesSince: should retrieve aggregated data")
     void testGetAggregates() {
         Instant now = Instant.now();

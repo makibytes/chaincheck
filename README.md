@@ -17,6 +17,8 @@
 - **First-Seen Delta**: In multi-node setups, shows which node saw each block first and how many milliseconds behind each node was
 - **Canonical Rate & Block Quality**: Tracks what fraction of observed blocks ended up in the canonical chain (orphan detection via parent-hash linkage)
 - **Solana sync-lag detection**: On Solana, ChainCheck calls `getHealth` each poll and flags nodes that self-report lagging the cluster tip (`SYNC_LAG` anomaly with the exact slots-behind count), at no extra request
+- **EVM sync-lag & version**: EVM chains (Ethereum, Base, Optimism, Arbitrum, Avalanche, BNB, Polygon, zkSync, Tron) now get the same treatment via `eth_syncing` (SYNC_LAG anomaly when a node reports itself behind) and `web3_clientVersion` (client/version badge), bringing them to parity with the Solana stack
+- **Prometheus metrics**: ChainCheck exposes per-node health score, up/down, block lag, P95 latency/head-delay, anomaly and disconnect counts, and reference status at `/actuator/prometheus`, so operators can scrape into their own Prometheus/Grafana and alert via Alertmanager (e.g. on `chaincheck_node_up == 0`)
 - **Solana node metadata**: On a slow cadence ChainCheck records each Solana node's software version (`getVersion`) and observed network TPS / slot time (`getRecentPerformanceSamples`) — shown as a version badge in the fleet table and a Network card on the node page
 - **Health Score**: Composite 0–100 score per node, combining uptime, latency, head delay, error rate, and WebSocket status; unmeasurable factors (no WebSocket configured, no head-delay data) are excluded and the score rescaled to /100, so nodes are judged only on what is actually measured
 - **Fleet Summary Strip**: At-a-glance totals above the fleet table — nodes online, excellent nodes, nodes needing attention, anomaly count, and chain head
@@ -73,6 +75,52 @@ See [BLOCKCHAINS.md](BLOCKCHAINS.md) for the full list of supported profiles and
 Open `http://localhost:8080` to see the Fleet Overview.
 
 ---
+
+## Metrics & Alerting (Prometheus)
+
+ChainCheck exposes its per-node monitoring data in Prometheus format so you can scrape it into
+your own observability stack and alert with Alertmanager — no need to watch the dashboard.
+
+Scrape endpoint: `GET /actuator/prometheus`
+
+Exported gauges (each tagged with `node` and `node_name`):
+
+| Metric | Meaning |
+| --- | --- |
+| `chaincheck_node_health_score` | Composite health score 0–100 |
+| `chaincheck_node_up` | 1 if reachable over HTTP, else 0 |
+| `chaincheck_node_ws_up` | 1 if the WebSocket is connected, else 0 |
+| `chaincheck_node_block_lag_blocks` | Blocks behind the fleet's highest block |
+| `chaincheck_node_latency_p95_ms` | P95 request latency (ms) |
+| `chaincheck_node_head_delay_p95_ms` | P95 head-delay (ms) |
+| `chaincheck_node_anomalies_total` | Anomalies in the window |
+| `chaincheck_node_ws_disconnects_total` | WebSocket disconnects in the window |
+| `chaincheck_node_latest_block` | Latest block number observed |
+| `chaincheck_node_reference` | 1 if this node is the current reference, else 0 |
+
+Example Prometheus scrape config:
+
+```yaml
+scrape_configs:
+  - job_name: chaincheck
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["chaincheck-host:8080"]
+```
+
+Example alert (node unreachable for 2 minutes):
+
+```yaml
+- alert: ChainCheckNodeDown
+  expr: chaincheck_node_up == 0
+  for: 2m
+  labels: { severity: critical }
+  annotations:
+    summary: "RPC node {{ $labels.node_name }} is unreachable"
+```
+
+The gauge values are refreshed every 15 seconds (configurable via
+`chaincheck.metrics.refresh-interval-ms`) and mirror exactly what the dashboard shows.
 
 ## Dashboard
 

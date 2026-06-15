@@ -709,6 +709,8 @@ public class RpcMonitorService {
         public Instant lastFinalizedFetchAt;
         Instant lastLatestFetchAt;
         Instant lastMetadataFetchAt;
+        /** Whether a SYNC_LAG anomaly is currently open for this node (open/close dedup). */
+        boolean syncLagOpen;
         Deque<BlockInfo> finalizedHistory = new ArrayDeque<>();
         long wsFailureBackoffSeconds = 0;
         Instant wsNextFailureSampleAt;

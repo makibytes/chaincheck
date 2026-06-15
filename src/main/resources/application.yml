@@ -5,3 +5,17 @@ spring:
 server:
   port: 8080
 
+# Actuator: operators can scrape /actuator/prometheus into their own Prometheus/Grafana
+# stack and use /actuator/health for container liveness/readiness probes.
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, prometheus
+  endpoint:
+    health:
+      show-details: when-authorized
+  metrics:
+    tags:
+      application: chaincheck
+
