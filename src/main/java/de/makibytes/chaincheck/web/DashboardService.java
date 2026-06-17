@@ -481,7 +481,7 @@ public class DashboardService {
                         wsTracker.getDisconnectCount(),
                         wsTracker.getConnectFailureCount(),
                         wsTracker.getLastError());
-        boolean wsUp = wsConfigured && wsStatus.isConnected();
+        boolean wsUp = wsConfigured && wsStatus.connected();
         Long latestBlockNumber = store.getLatestKnownBlockNumber(nodeKey);
 
         HttpConnectionTracker httpTracker = nodeRegistry.getHttpTracker(nodeKey);
@@ -797,8 +797,8 @@ public class DashboardService {
         if (blockHash != null && !blockHash.isBlank()) {
             AttestationConfidence ac = attestationConfidences.get(blockHash);
             if (ac != null) {
-                attConf = ac.getConfidencePercent();
-                attRound = ac.getAttestationRound();
+                attConf = ac.confidencePercent();
+                attRound = ac.attestationRound();
             }
         }
 

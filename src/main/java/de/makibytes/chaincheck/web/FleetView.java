@@ -21,53 +21,28 @@ import java.util.List;
 
 import de.makibytes.chaincheck.model.TimeRange;
 
-public class FleetView {
+public record FleetView(List<FleetNodeSummary> nodes,
+                        String referenceNodeKey,
+                        TimeRange range,
+                        long maxBlockNumber) {
 
-    private final List<FleetNodeSummary> nodes;
-    private final String referenceNodeKey;
-    private final TimeRange range;
-    private final long maxBlockNumber;
-
-    public FleetView(List<FleetNodeSummary> nodes, String referenceNodeKey, TimeRange range, long maxBlockNumber) {
-        this.nodes = nodes != null ? List.copyOf(nodes) : List.of();
-        this.referenceNodeKey = referenceNodeKey;
-        this.range = range;
-        this.maxBlockNumber = maxBlockNumber;
+    public FleetView {
+        nodes = nodes != null ? List.copyOf(nodes) : List.of();
     }
 
-    public List<FleetNodeSummary> getNodes() {
-        return nodes;
-    }
-
-    public String getReferenceNodeKey() {
-        return referenceNodeKey;
-    }
-
-    public TimeRange getRange() {
-        return range;
-    }
-
-    public long getMaxBlockNumber() {
-        return maxBlockNumber;
-    }
-
-    /** Nodes currently reachable (health score above zero). */
-    public long getOnlineCount() {
+    public long onlineCount() {
         return nodes.stream().filter(n -> n.healthScore() > 0).count();
     }
 
-    /** Nodes with an "Excellent" health score (≥ 80). */
-    public long getHealthyCount() {
+    public long healthyCount() {
         return nodes.stream().filter(n -> n.healthScore() >= 80).count();
     }
 
-    /** Nodes needing attention (health score below 50, including down nodes). */
-    public long getAttentionCount() {
+    public long attentionCount() {
         return nodes.stream().filter(n -> n.healthScore() < 50).count();
     }
 
-    /** Sum of anomaly events across all nodes for the selected range. */
-    public long getTotalAnomalies() {
+    public long totalAnomalies() {
         return nodes.stream().mapToLong(FleetNodeSummary::anomalyCount).sum();
     }
 }

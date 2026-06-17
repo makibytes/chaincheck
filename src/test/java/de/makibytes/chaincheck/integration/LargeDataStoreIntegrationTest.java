@@ -72,16 +72,16 @@ class LargeDataStoreIntegrationTest {
         }
 
         Map<String, Long> rowCounts = view.getAnomalyRows().stream()
-                .collect(Collectors.groupingBy(row -> row.getType(), Collectors.summingLong(row -> row.getCount())));
+                .collect(Collectors.groupingBy(row -> row.type(), Collectors.summingLong(row -> row.count())));
         for (AnomalyType type : AnomalyType.values()) {
             assertEquals(3L, rowCounts.getOrDefault(type.name(), 0L),
                 "Expected anomaly rows to total 3 for type " + type);
         }
 
-        assertEquals(3L, view.getSummary().getDelayCount(), "Delay count should be 3");
-        assertEquals(3L, view.getSummary().getReorgCount(), "Reorg count should be 3");
-        assertEquals(3L, view.getSummary().getBlockGapCount(), "Block gap count should be 3");
-        assertTrue(view.getSummary().getStaleBlockCount() > 0, "Stale block count should be present");
+        assertEquals(3L, view.getSummary().delayCount(), "Delay count should be 3");
+        assertEquals(3L, view.getSummary().reorgCount(), "Reorg count should be 3");
+        assertEquals(3L, view.getSummary().blockGapCount(), "Block gap count should be 3");
+        assertTrue(view.getSummary().staleBlockCount() > 0, "Stale block count should be present");
     }
 
     @Test

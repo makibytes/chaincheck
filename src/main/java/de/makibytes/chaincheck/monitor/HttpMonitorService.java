@@ -665,15 +665,16 @@ public class HttpMonitorService {
     }
 
     private boolean isTimeoutError(Throwable error) {
-        if (error instanceof HttpTimeoutException) {
-            return true;
-        }
-        if (error == null || error.getMessage() == null) {
-            return false;
-        }
-        String message = error.getMessage();
-        String lower = message.toLowerCase();
-        return lower.contains("timeout") || lower.contains("timed out");
+        return switch (error) {
+            case HttpTimeoutException _ -> true;
+            case null -> false;
+            default -> {
+                String message = error.getMessage();
+                if (message == null) yield false;
+                String lower = message.toLowerCase();
+                yield lower.contains("timeout") || lower.contains("timed out");
+            }
+        };
     }
 
     private boolean isHostDownMessage(String message) {

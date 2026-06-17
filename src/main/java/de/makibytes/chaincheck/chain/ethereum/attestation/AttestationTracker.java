@@ -96,8 +96,8 @@ public class AttestationTracker {
 
     private void prune() {
         Instant cutoff = Instant.now().minus(RETENTION);
-        confidenceByHash.entrySet().removeIf(entry -> entry.getValue().getComputedAt().isBefore(cutoff));
-        confidenceByBlock.entrySet().removeIf(entry -> entry.getValue().getComputedAt().isBefore(cutoff));
+        confidenceByHash.entrySet().removeIf(entry -> entry.getValue().computedAt().isBefore(cutoff));
+        confidenceByBlock.entrySet().removeIf(entry -> entry.getValue().computedAt().isBefore(cutoff));
     }
 
     /**

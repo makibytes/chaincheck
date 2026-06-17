@@ -44,13 +44,13 @@ class DashboardServiceTest {
 
         AnomalyRow row = ReflectionTestUtils.invokeMethod(service, "createAnomalyRow", newest, oldest, 2, true);
 
-        assertEquals(2L, row.getId());
-        assertEquals("Current error", row.getMessage());
-        assertEquals(101L, row.getBlockNumber());
-        assertEquals("0xnew", row.getBlockHash());
-        assertTrue(row.getTime().contains("(ongoing)"));
-        assertEquals(2, row.getCount());
-        assertTrue(row.isGrouped());
+        assertEquals(2L, row.id());
+        assertEquals("Current error", row.message());
+        assertEquals(101L, row.blockNumber());
+        assertEquals("0xnew", row.blockHash());
+        assertTrue(row.time().contains("(ongoing)"));
+        assertEquals(2, row.count());
+        assertTrue(row.grouped());
     }
 
     private AnomalyEvent anomaly(long id, Instant timestamp, String message, Long blockNumber, String blockHash) {

@@ -113,7 +113,7 @@ public class PrometheusMetricsExporter {
         try {
             FleetView fleet = dashboardService.getFleetView(EXPORT_RANGE, null);
             Map<String, NodeMetrics> next = new ConcurrentHashMap<>();
-            for (FleetNodeSummary n : fleet.getNodes()) {
+            for (FleetNodeSummary n : fleet.nodes()) {
                 next.put(n.nodeKey(), new NodeMetrics(
                         n.healthScore(),
                         n.httpUp(),

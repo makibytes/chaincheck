@@ -38,36 +38,4 @@ public record AttestationConfidence(long executionBlockNumber,
         this(executionBlockNumber, executionBlockHash, slot, attestingValidators,
                 expectedValidators, confidencePercent, computedAt, 1);
     }
-
-    public long getExecutionBlockNumber() {
-        return executionBlockNumber;
-    }
-
-    public String getExecutionBlockHash() {
-        return executionBlockHash;
-    }
-
-    public long getSlot() {
-        return slot;
-    }
-
-    public int getAttestingValidators() {
-        return attestingValidators;
-    }
-
-    public int getExpectedValidators() {
-        return expectedValidators;
-    }
-
-    public double getConfidencePercent() {
-        return confidencePercent;
-    }
-
-    public Instant getComputedAt() {
-        return computedAt;
-    }
-
-    public int getAttestationRound() {
-        return attestationRound;
-    }
 }
