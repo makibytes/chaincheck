@@ -139,6 +139,9 @@ class NearProtocolTest {
         JsonNode syncing = mapper.readTree("{\"result\":{\"sync_info\":{\"syncing\":true,\"latest_block_height\":30,\"earliest_block_height\":10}}}");
         assertEquals(20, protocol.parseHealthSlotsBehind(syncing));
 
+        JsonNode overflow = mapper.readTree("{\"result\":{\"sync_info\":{\"syncing\":true,\"latest_block_height\":9223372036854775807,\"earliest_block_height\":0}}}");
+        assertEquals(Integer.MAX_VALUE, protocol.parseHealthSlotsBehind(overflow));
+
         assertNull(protocol.parseHealthSlotsBehind(mapper.readTree("{\"result\":{\"sync_info\":{}}}")));
     }
 

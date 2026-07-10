@@ -220,12 +220,18 @@ public class NearProtocol implements ChainProtocol {
         if (raw == null) {
             return null;
         }
+        // NEAR block timestamps are expected to be in nanoseconds since the Unix epoch, but the
+        // thresholds below defensively accept millisecond- or second-based values from non-compliant
+        // or partially parsed payloads.
+        // Values above 1e15 are treated as nanoseconds (e.g. 1717521123546789000).
         if (raw > 1_000_000_000_000_000L) {
             return Instant.ofEpochMilli(raw / 1_000_000L);
         }
+        // Values above 1e12 are treated as milliseconds (e.g. 1717521123546).
         if (raw > 1_000_000_000_000L) {
             return Instant.ofEpochMilli(raw);
         }
+        // Values below that are treated as whole seconds since the Unix epoch.
         return Instant.ofEpochSecond(raw);
     }
 }
