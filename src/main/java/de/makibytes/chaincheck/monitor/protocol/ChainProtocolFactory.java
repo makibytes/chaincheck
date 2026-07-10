@@ -32,6 +32,7 @@ public final class ChainProtocolFactory {
         return switch (mode) {
             case ETHEREUM, COSMOS, OPTIMISM, ZK, AVALANCHE, TRON -> new EvmProtocol(mapper, mode);
             case SOLANA    -> new SolanaProtocol(mapper);
+            case NEAR      -> new NearProtocol(mapper);
             case COSMOS_SDK -> new CosmosProtocol(mapper);
             case STARKNET  -> new StarknetProtocol(mapper);
         };

@@ -26,6 +26,7 @@ The `ModeType` values and their behaviours:
 | `AVALANCHE` | Avalanche C-Chain | Trusts event payload directly; Snowman consensus; near-instant finality | EVM JSON-RPC |
 | `TRON` | Tron | Trusts event payload directly; Ethereum-compatible JSON-RPC via TronGrid | EVM JSON-RPC |
 | `SOLANA` | Solana | `slotSubscribe` WS → follow-up `getBlock` HTTP per slot; base58 hashes; `confirmed`/`finalized` commitment levels | Solana JSON-RPC |
+| `NEAR` | NEAR | `status`/`block` HTTP polling; optional `EXPERIMENTAL_subscription` WS; optimistic/final finality; nanosecond timestamps | NEAR JSON-RPC |
 | `COSMOS_SDK` | Cosmos Hub, Osmosis, CometBFT chains | Full block in WS NewBlock event; no extra HTTP fetch; BFT instant finality | CometBFT RPC (HTTP GET) |
 | `STARKNET` | Starknet | `starknet_subscribeNewHeads` WS; full header in event; `starknet_*` JSON-RPC; integer block numbers | Starknet JSON-RPC |
 
@@ -69,6 +70,7 @@ nodes:
 | `zksync` | zkSync Era | `ZK` | ~1–2 s | 2 s | 30 s | `--spring.profiles.active=zksync` |
 | `starknet` | Starknet Mainnet | `STARKNET` | ~4–6 s | 5 s | 30 s | `--spring.profiles.active=starknet` |
 | `solana` | Solana Mainnet-Beta | `SOLANA` | ~0.4 s | 0.4 s | 5 s | `--spring.profiles.active=solana` |
+| `near` | NEAR Mainnet | `NEAR` | ~1.2 s | 1 s | 30 s | `--spring.profiles.active=near` |
 | `cosmos` | Cosmos Hub | `COSMOS_SDK` | ~6 s | 6 s | 30 s | `--spring.profiles.active=cosmos` |
 | `avalanche` | Avalanche C-Chain | `AVALANCHE` | ~2 s | 2 s | 30 s | `--spring.profiles.active=avalanche` |
 | `tron` | Tron Mainnet | `TRON` | ~3 s | 3 s | 30 s | `--spring.profiles.active=tron` |
@@ -88,6 +90,7 @@ nodes:
 | `zksync-sepolia` | zkSync Sepolia | `zksync` | `--spring.profiles.active=zksync-sepolia` |
 | `starknet-sepolia` | Starknet Sepolia | `starknet` | `--spring.profiles.active=starknet-sepolia` |
 | `solana-devnet` | Solana Devnet | `solana` | `--spring.profiles.active=solana-devnet` |
+| `near-testnet` | NEAR Testnet | `near` | `--spring.profiles.active=near-testnet` |
 | `avalanche-fuji` | Avalanche Fuji | `avalanche` | `--spring.profiles.active=avalanche-fuji` |
 | `tron-shasta` | Tron Shasta | `tron` | `--spring.profiles.active=tron-shasta` |
 
@@ -106,6 +109,18 @@ Starknet uses the **`starknet_*` JSON-RPC protocol** (`starknet_blockNumber`, `s
 ### Solana
 
 Solana uses `slotSubscribe` WebSocket subscriptions (not `eth_subscribe`). ChainCheck also issues `getHealth` on every HTTP poll (piggybacked on the existing batch, so no extra round-trip): a healthy node returns `ok`, while a lagging node returns error `-32005` with `data.numSlotsBehind`. When a node reports itself behind the cluster tip by at least `health-slots-behind-threshold` slots, a `SYNC_LAG` anomaly is recorded — a direct node-self-reported liveness signal that other chains can only approximate through cross-node comparison. Each slot notification triggers a follow-up `getBlock` HTTP call. Because `slotSubscribe` fires at *processed* commitment while `getBlock` serves *confirmed* blocks, the fetch races confirmation by ~0.5–1.5 s: ChainCheck retries transient `-32004` ("block not available") errors a few times and silently drops skipped slots (`-32007`/`-32009`) instead of recording per-slot failures. ChainCheck requests `transactionDetails: "signatures"` with `rewards: false`, keeping each response to a few KB (full transaction JSON on mainnet blocks runs into megabytes) while still deriving the transaction count from the signatures array. Block hashes are base58-encoded (not hex). On a slow (~60 s) cadence ChainCheck also issues `getVersion` and `getRecentPerformanceSamples`: the former surfaces each node's `solana-core` software version (for spotting fleet version skew), the latter the node's observed network TPS and mean slot time (validating the ~400 ms slot assumption and flagging a node whose view diverges from its peers). TPS prefers `numNonVoteTransactions` (solana-core ≥ 1.15) so consensus vote traffic doesn't drown out the user-facing throughput signal. Both are stored as slow-changing node metadata rather than in the high-frequency sample stream. Commitment levels map to ChainCheck tags: `processed` = latest, `confirmed` = safe (~1.6 s), `finalized` = finalized (~13 s).
+
+### NEAR
+
+NEAR exposes `status` and `block` JSON-RPC calls over HTTP. Unlike Ethereum or Solana, the standard NEAR RPC endpoints do **not** support WebSocket subscriptions — ChainCheck relies on HTTP polling exclusively (at 1 s in optimal mode and 30 s in sparse mode, matching NEAR's ~1.2 s block cadence). The `EXPERIMENTAL_subscription` adapter code exists for custom nodes that enable experimental WebSocket features, but the bundled profiles use HTTP-only monitoring.
+
+ChainCheck maps the NEAR block header into the standard block model: block height is the number, block `hash` and `prev_hash` provide the parent-chain link for reorg detection, and block timestamps are converted from NEAR's nanosecond-precision Unix timestamps. The adapter uses `optimistic` finality for `latest`/`safe` and `final` for `finalized`.
+
+On every HTTP poll, `status` is called to obtain the current head height and node health. A syncing node (where `sync_info.syncing` is `true`) opens a `SYNC_LAG` anomaly. On a slow (~60 s) cadence ChainCheck also extracts the `version.version` field from the same `status` response (condensed to e.g. `nearcore/1.35.0`) for fleet version-skew detection.
+
+Block responses include a `chunks` array (one entry per shard). ChainCheck counts active chunks (those with `gas_used > 0`) as a transaction-activity proxy — a more precise count would require fetching each chunk individually, which is too expensive for monitoring purposes.
+
+NEAR uses named JSON-RPC params (`{"finality": "final"}` or `{"block_id": N}`) rather than positional arrays — the adapter handles this correctly.
 
 ### Cosmos Hub / CometBFT Chains
 

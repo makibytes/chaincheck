@@ -1,0 +1,21 @@
+rpc:
+  mode: near
+  mode-type: near
+  title: "NEAR Mainnet"
+  title-color: "#00C08B"
+  get-safe-blocks: true
+  get-finalized-blocks: true
+  anomaly-detection:
+    high-latency-ms: 1500
+    long-delay-block-count: 20
+    stale-block-threshold-ms: 5000
+    block-gap-threshold: 10
+  requests:
+    optimal-poll-interval-ms: 1000
+    sparse-poll-interval-ms: 30000
+  nodes:
+    - name: rpc.mainnet.near.org
+      http: https://rpc.mainnet.near.org
+    - name: publicnode.com
+      http: https://near-rpc.publicnode.com
+      requests: sparse
