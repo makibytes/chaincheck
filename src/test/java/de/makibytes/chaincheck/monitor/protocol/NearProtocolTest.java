@@ -92,7 +92,7 @@ class NearProtocolTest {
         assertEquals(42L, block.blockNumber());
         assertEquals("abc", block.blockHash());
         assertEquals("def", block.parentHash());
-        assertEquals(Instant.ofEpochMilli(1717521123546789L / 1_000_000L), block.blockTimestamp());
+        assertEquals(Instant.ofEpochMilli(1717521123546789000L / 1_000_000L), block.blockTimestamp());
     }
 
     @Test
