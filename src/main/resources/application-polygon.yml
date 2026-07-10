@@ -4,6 +4,8 @@ rpc:
   title: "Polygon Mainnet"
   title-color: "#8247e5"
   get-safe-blocks: false
+  # Bor's "finalized" tag reflects milestone finality (Bor v1.x+/Heimdall milestones,
+  # typically ~1-2 min), which supersedes the older ~8-min checkpoint-only finality.
   get-finalized-blocks: true
   scale-change-ms: 500
   scale-max-ms: 30000
@@ -12,8 +14,7 @@ rpc:
     long-delay-block-count: 15
     # 2s block time: 30s = 15 blocks of tolerated staleness
     stale-block-threshold-ms: 30000
-    # Heimdall checkpoint finality takes ~256+ Bor blocks (~8 min); gap threshold is for
-    # newHead events only (WS vs HTTP head lag), not finality.
+    # Gap threshold is for newHead events only (WS vs HTTP head lag), not finality.
     block-gap-threshold: 5
   # Polling intervals: optimal = 2s (matches Polygon's 2s block time), sparse = 30s
   requests:

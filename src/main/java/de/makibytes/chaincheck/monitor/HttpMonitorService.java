@@ -19,10 +19,12 @@ package de.makibytes.chaincheck.monitor;
 
 import java.io.IOException;
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.net.http.HttpTimeoutException;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -136,6 +138,12 @@ public class HttpMonitorService {
     private static final int BATCH_ID_LATEST       = 3;
     private static final int BATCH_ID_FINALIZED    = 4;
     private static final int BATCH_ID_CHECKPOINT   = 5;
+    private static final int BATCH_ID_HEALTH       = 6;
+    private static final int BATCH_ID_VERSION      = 7;
+    private static final int BATCH_ID_PERFORMANCE  = 8;
+
+    /** Node version and network-performance change slowly; refresh them about once a minute. */
+    private static final long METADATA_POLL_INTERVAL_MS = 60_000;
 
     private void pollHttp(NodeDefinition node, RpcMonitorService.NodeState state) {
         Instant timestamp = Instant.now();
@@ -150,6 +158,33 @@ public class HttpMonitorService {
 
             String wsBlockTag = null;
             boolean fetchLatest = false;
+
+            // Optional per-node health probe (Solana getHealth). Cheap, parameterless, and
+            // piggybacks on the existing batch round-trip, so it adds a node-self-reported
+            // "behind the cluster by N slots" signal at no extra request.
+            boolean healthProbe = protocol.buildHealthRequest().isPresent();
+            if (healthProbe) {
+                RpcRequest healthReq = protocol.buildHealthRequest().get();
+                batch.add(new BatchItem(BATCH_ID_HEALTH, healthReq.method(), healthReq.params()));
+            }
+
+            // Slow-changing node metadata (software version, observed network TPS / slot time).
+            // Refreshed about once a minute so it doesn't bloat the high-frequency poll batch.
+            boolean fetchMetadata = state.lastMetadataFetchAt == null
+                    || Duration.between(state.lastMetadataFetchAt, timestamp).toMillis() >= METADATA_POLL_INTERVAL_MS;
+            boolean versionProbe = fetchMetadata && protocol.buildVersionRequest().isPresent();
+            boolean performanceProbe = fetchMetadata && protocol.buildPerformanceRequest().isPresent();
+            if (versionProbe) {
+                RpcRequest vReq = protocol.buildVersionRequest().get();
+                batch.add(new BatchItem(BATCH_ID_VERSION, vReq.method(), vReq.params()));
+            }
+            if (performanceProbe) {
+                RpcRequest pReq = protocol.buildPerformanceRequest().get();
+                batch.add(new BatchItem(BATCH_ID_PERFORMANCE, pReq.method(), pReq.params()));
+            }
+            if (versionProbe || performanceProbe) {
+                state.lastMetadataFetchAt = timestamp;
+            }
 
             if (hasWs) {
                 if (safeEnabled && finalizedEnabled) {
@@ -181,14 +216,15 @@ public class HttpMonitorService {
                 }
             }
 
-            long startNanos = System.nanoTime();
-            Map<Integer, JsonNode> results = sendBatchRpcWithRetry(node, batch);
-            long latencyMs = (System.nanoTime() - startNanos) / 1_000_000;
+            BatchResult batchResult = sendBatchRpcWithRetry(node, batch);
+            Map<Integer, JsonNode> results = batchResult.results();
+            long latencyMs = batchResult.latencyMs();
 
             // Parse block number
             JsonNode bnEntry = results.get(BATCH_ID_BLOCK_NUMBER);
             if (bnEntry == null || bnEntry.has("error") || bnEntry.get("result") == null || bnEntry.get("result").isNull()) {
-                monitor.recordFailure(node, MetricSource.HTTP, "Could not fetch block number");
+                monitor.recordFailure(node, MetricSource.HTTP,
+                        describeRpcError(bnEntry, "Could not fetch block number"));
                 return;
             }
             Long blockNumber = protocol.parseBlockNumberResponse(bnEntry.get("result"));
@@ -206,7 +242,8 @@ public class HttpMonitorService {
             if (hasWs) {
                 JsonNode cpEntry = results.get(BATCH_ID_CHECKPOINT);
                 if (cpEntry == null || cpEntry.has("error")) {
-                    monitor.recordFailure(node, MetricSource.HTTP, wsBlockTag + " block not found");
+                    monitor.recordFailure(node, MetricSource.HTTP,
+                            describeRpcError(cpEntry, wsBlockTag + " block not found"));
                     return;
                 }
                 RpcMonitorService.BlockInfo checkpointBlock = protocol.parseBlockByTagResponse(cpEntry.get("result"), wsBlockTag);
@@ -243,7 +280,8 @@ public class HttpMonitorService {
                 if (safeEnabled) {
                     JsonNode safeEntry = results.get(BATCH_ID_SAFE);
                     if (safeEntry == null || safeEntry.has("error")) {
-                        monitor.recordFailure(node, MetricSource.HTTP, "safe block not found");
+                        monitor.recordFailure(node, MetricSource.HTTP,
+                                describeRpcError(safeEntry, "safe block not found"));
                         return;
                     }
                     safeBlock = protocol.parseBlockByTagResponse(safeEntry.get("result"), "safe");
@@ -271,7 +309,8 @@ public class HttpMonitorService {
                 if (finalizedEnabled) {
                     JsonNode finalizedEntry = results.get(BATCH_ID_FINALIZED);
                     if (finalizedEntry == null || finalizedEntry.has("error")) {
-                        monitor.recordFailure(node, MetricSource.HTTP, "finalized block not found");
+                        monitor.recordFailure(node, MetricSource.HTTP,
+                                describeRpcError(finalizedEntry, "finalized block not found"));
                         return;
                     }
                     finalizedBlock = protocol.parseBlockByTagResponse(finalizedEntry.get("result"), "finalized");
@@ -364,6 +403,30 @@ public class HttpMonitorService {
                             .gasPriceWei(metadataBlock.gasPriceWei());
                 }
                 store.addSample(node.key(), sampleBuilder.build());
+
+                if (healthProbe) {
+                    detectSyncLag(node, state, results.get(BATCH_ID_HEALTH), blockNumber, timestamp);
+                }
+                if (versionProbe) {
+                    JsonNode vEntry = results.get(BATCH_ID_VERSION);
+                    if (vEntry != null && !vEntry.has("error")) {
+                        String version = protocol.parseVersion(vEntry.get("result"));
+                        if (version != null) {
+                            store.setNodeVersion(node.key(), version);
+                        }
+                    }
+                }
+                if (performanceProbe) {
+                    JsonNode pEntry = results.get(BATCH_ID_PERFORMANCE);
+                    if (pEntry != null && !pEntry.has("error")) {
+                        double[] perf = protocol.parsePerformance(pEntry.get("result"));
+                        if (perf != null) {
+                            Double tps = Double.isNaN(perf[0]) ? null : perf[0];
+                            Double slotTimeMs = Double.isNaN(perf[1]) ? null : perf[1];
+                            store.setNodePerformance(node.key(), tps, slotTimeMs);
+                        }
+                    }
+                }
             }
         } catch (HttpStatusException ex) {
             logger.error("HTTP RPC failure ({} / http): status {} ({})", node.name(), ex.getStatusCode(), ex.getMessage());
@@ -376,6 +439,38 @@ public class HttpMonitorService {
         }
     }
 
+    /**
+     * Evaluates the node's health probe (Solana getHealth / EVM eth_syncing / CometBFT catching_up /
+     * starknet_syncing) and maintains a single open SYNC_LAG anomaly per node using the store's
+     * open/close model. A new anomaly is opened only on the not-behind → behind transition (behind =
+     * at least the configured threshold, or unhealthy by an unknown margin) and closed on recovery,
+     * so a node that stays behind for a long stretch (e.g. an EVM node doing initial sync) yields
+     * one anomaly, not one per poll. A {@code null} probe result (no health info) leaves the state
+     * unchanged.
+     */
+    private void detectSyncLag(NodeDefinition node, RpcMonitorService.NodeState state,
+                               JsonNode healthEntry, Long blockNumber, Instant timestamp) {
+        Integer slotsBehind = protocol.parseHealthSlotsBehind(healthEntry);
+        if (slotsBehind == null) {
+            return; // no health information this poll — don't open or close
+        }
+        long threshold = properties.getAnomalyDetection().getHealthSlotsBehindThreshold();
+        // slotsBehind < 0 means "unhealthy, unknown margin" — always counts as behind.
+        boolean behind = slotsBehind < 0 || slotsBehind >= threshold;
+        if (behind) {
+            if (!state.syncLagOpen) {
+                store.addAnomaly(node.key(),
+                        detector.syncLag(node.key(), timestamp, MetricSource.HTTP, blockNumber, slotsBehind));
+                state.syncLagOpen = true;
+                logger.debug("Sync lag opened ({}): {} behind", node.name(), slotsBehind);
+            }
+        } else if (state.syncLagOpen) {
+            store.closeLastAnomaly(node.key(), MetricSource.HTTP, AnomalyType.SYNC_LAG);
+            state.syncLagOpen = false;
+            logger.debug("Sync lag cleared ({})", node.name());
+        }
+    }
+
     HttpClient getHttpClient(long connectTimeoutMs) {
         long effectiveTimeout = connectTimeoutMs > 0 ? connectTimeoutMs : properties.getDefaults().getConnectTimeoutMs();
         return httpClients.computeIfAbsent(effectiveTimeout, timeout -> HttpClient.newBuilder()
@@ -383,11 +478,29 @@ public class HttpMonitorService {
                 .build());
     }
 
+    /**
+     * Surfaces the JSON-RPC error object from a batch entry instead of a generic message.
+     * Providers often signal rate limits inside an HTTP 200 body (e.g. code -32005,
+     * "too many requests"); preserving message and code lets the anomaly classifier
+     * recognise RATE_LIMIT and gives operators the provider's actual reason.
+     */
+    private static String describeRpcError(JsonNode entry, String fallback) {
+        if (entry != null && entry.has("error")) {
+            JsonNode err = entry.get("error");
+            String msg = err.path("message").asText("");
+            if (!msg.isBlank()) {
+                int code = err.path("code").asInt(0);
+                return code != 0 ? "RPC error " + code + ": " + msg : "RPC error: " + msg;
+            }
+        }
+        return fallback;
+    }
+
     RpcMonitorService.BlockInfo fetchBlockByNumber(NodeDefinition node, long blockNumber) throws IOException, InterruptedException {
         RpcRequest req = protocol.buildBlockByNumberRequest(blockNumber);
         JsonNode response = sendRpcRequest(node, req);
         if (response.has("error")) {
-            throw new IOException(response.get("error").toString());
+            throw toJsonRpcError(response.get("error"));
         }
         return protocol.parseBlockByNumberResponse(response.get("result"));
     }
@@ -401,14 +514,19 @@ public class HttpMonitorService {
         RpcRequest req = protocol.buildFetchAfterWsEventRequest(syntheticEvent);
         JsonNode response = sendRpcRequest(node, req);
         if (response.has("error")) {
-            throw new IOException(response.get("error").toString());
+            throw toJsonRpcError(response.get("error"));
         }
         return protocol.parseFetchAfterWsEventResponse(response.get("result"));
     }
 
+    private static JsonRpcErrorException toJsonRpcError(JsonNode error) {
+        return new JsonRpcErrorException(error.path("code").asInt(0),
+                error.path("message").asText(null), error.toString());
+    }
+
     private JsonNode sendRpcRequest(NodeDefinition node, RpcRequest req) throws IOException, InterruptedException {
         if ("GET".equals(protocol.httpMethod())) {
-            JsonNode raw = sendGetWithRetry(node, req.method(), req.params());
+            JsonNode raw = sendGetWithRetry(node, req.method(), req.params()).body();
             // Unwrap CometBFT's "result" envelope so callers get the inner object
             JsonNode inner = raw.path("result");
             return inner.isMissingNode() ? raw : inner;
@@ -551,15 +669,16 @@ public class HttpMonitorService {
     }
 
     private boolean isTimeoutError(Throwable error) {
-        if (error instanceof HttpTimeoutException) {
-            return true;
-        }
-        if (error == null || error.getMessage() == null) {
-            return false;
-        }
-        String message = error.getMessage();
-        String lower = message.toLowerCase();
-        return lower.contains("timeout") || lower.contains("timed out");
+        return switch (error) {
+            case HttpTimeoutException _ -> true;
+            case null -> false;
+            default -> {
+                String message = error.getMessage();
+                if (message == null) yield false;
+                String lower = message.toLowerCase();
+                yield lower.contains("timeout") || lower.contains("timed out");
+            }
+        };
     }
 
     private boolean isHostDownMessage(String message) {
@@ -713,7 +832,13 @@ public class HttpMonitorService {
 
     private record BatchItem(int id, String method, JsonNode params) {}
 
-    private Map<Integer, JsonNode> sendBatchRpcWithRetry(NodeDefinition node, List<BatchItem> items)
+    /** Batch results keyed by request id, plus the round-trip latency of the successful attempt. */
+    private record BatchResult(Map<Integer, JsonNode> results, long latencyMs) {}
+
+    /** A single HTTP response body plus the round-trip latency of the successful attempt. */
+    private record TimedResponse(JsonNode body, long latencyMs) {}
+
+    private BatchResult sendBatchRpcWithRetry(NodeDefinition node, List<BatchItem> items)
             throws IOException, InterruptedException {
         // CometBFT (GET protocol) has no JSON-RPC batch support; execute each call sequentially
         if ("GET".equals(protocol.httpMethod())) {
@@ -728,7 +853,12 @@ public class HttpMonitorService {
         try (Observation.Scope scope = observation.openScope()) {
             for (int attempt = 0; attempt <= attempts; attempt++) {
                 try {
-                    return sendBatchRpcOnce(node.http(), node.headers(), node.readTimeoutMs(), node.connectTimeoutMs(), items);
+                    // Time only this attempt: retry backoff sleeps and failed attempts must not
+                    // inflate the node's reported latency (they would false-trigger DELAY anomalies).
+                    long startNanos = System.nanoTime();
+                    Map<Integer, JsonNode> results =
+                            sendBatchRpcOnce(node.http(), node.headers(), node.readTimeoutMs(), node.connectTimeoutMs(), items);
+                    return new BatchResult(results, (System.nanoTime() - startNanos) / 1_000_000);
                 } catch (HttpStatusException statusEx) {
                     outcome = RPC_OUTCOME_HTTP_STATUS;
                     observation.error(statusEx);
@@ -813,12 +943,29 @@ public class HttpMonitorService {
      * Executes a "batch" of GET requests sequentially for protocols that use HTTP GET
      * (e.g. CometBFT).  Each item is sent as a separate GET call; the result map uses
      * the same id-keyed structure as the POST batch path so callers are unaffected.
+     * Identical (path, params) requests are fetched once and shared between batch ids —
+     * CometBFT protocols answer head, health, and version probes from the same /status
+     * call. The reported latency is the round trip of the first unique request (the head
+     * request), not the sum of all sequential calls.
      */
-    private Map<Integer, JsonNode> sendGetBatch(NodeDefinition node, List<BatchItem> items)
+    private record GetKey(String method, JsonNode params) {}
+
+    private BatchResult sendGetBatch(NodeDefinition node, List<BatchItem> items)
             throws IOException, InterruptedException {
         Map<Integer, JsonNode> results = new HashMap<>();
+        Map<GetKey, JsonNode> responseCache = new HashMap<>();
+        long latencyMs = -1;
         for (BatchItem item : items) {
-            JsonNode response = sendGetWithRetry(node, item.method(), item.params());
+            GetKey key = new GetKey(item.method(), item.params());
+            JsonNode response = responseCache.get(key);
+            if (response == null) {
+                TimedResponse timed = sendGetWithRetry(node, item.method(), item.params());
+                response = timed.body();
+                responseCache.put(key, response);
+                if (latencyMs < 0) {
+                    latencyMs = timed.latencyMs();
+                }
+            }
             // Wrap in a batch-compatible envelope: { id, result }
             ObjectNode envelope = mapper.createObjectNode();
             envelope.put("id", item.id());
@@ -831,17 +978,19 @@ public class HttpMonitorService {
             }
             results.put(item.id(), envelope);
         }
-        return results;
+        return new BatchResult(results, Math.max(0, latencyMs));
     }
 
-    private JsonNode sendGetWithRetry(NodeDefinition node, String path, JsonNode queryParams)
+    private TimedResponse sendGetWithRetry(NodeDefinition node, String path, JsonNode queryParams)
             throws IOException, InterruptedException {
         int attempts = Math.max(0, node.maxRetries());
         IOException lastIo = null;
         for (int attempt = 0; attempt <= attempts; attempt++) {
             try {
-                return sendGetOnce(node.http(), node.headers(), node.readTimeoutMs(),
+                long startNanos = System.nanoTime();
+                JsonNode body = sendGetOnce(node.http(), node.headers(), node.readTimeoutMs(),
                         node.connectTimeoutMs(), path, queryParams);
+                return new TimedResponse(body, (System.nanoTime() - startNanos) / 1_000_000);
             } catch (HttpStatusException statusEx) {
                 if (!shouldRetryStatus(statusEx.getStatusCode()) || attempt == attempts) {
                     throw statusEx;
@@ -877,7 +1026,9 @@ public class HttpMonitorService {
                 if (!first) {
                     url.append('&');
                 }
-                url.append(entry.getKey()).append('=').append(entry.getValue().asText());
+                url.append(URLEncoder.encode(entry.getKey(), StandardCharsets.UTF_8))
+                        .append('=')
+                        .append(URLEncoder.encode(entry.getValue().asText(), StandardCharsets.UTF_8));
                 first = false;
             }
         }

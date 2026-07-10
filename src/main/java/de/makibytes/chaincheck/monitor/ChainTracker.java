@@ -96,8 +96,10 @@ public class ChainTracker {
     /**
      * Registers a block fetched via eth_getBlockByHash.
      * Returns a ChainUpdate describing what changed.
+     * Synchronized: WS block fetches run concurrently on virtual threads, and the canonical-head
+     * update below is a compound read-modify-write across several maps.
      */
-    public ChainUpdate registerBlock(BlockNode block) {
+    public synchronized ChainUpdate registerBlock(BlockNode block) {
         if (block == null || block.hash() == null || block.parentHash() == null) {
             return new ChainUpdate(null, List.of(), null, false);
         }
@@ -143,13 +145,17 @@ public class ChainTracker {
                     List<BlockNode> added = buildAddedBlocks(block);
                     return new ChainUpdate(block, added, reorg, true);
                 }
+                // Parent is known but no common ancestor was found within the tracked
+                // window (linkage broken, e.g. by pruning after a long WS outage).
+                // Adopt the higher block as head anyway — otherwise the canonical head
+                // would stay stuck in the past until enough blocks were pruned.
+                logger.warn("No common ancestor within tracked window for node {} ({}@{} -> {}@{}); adopting new head",
+                        nodeKey, canonicalHeadHash, currentHead.number(), hash, block.number());
             }
 
-            if (!knownBlocks.containsKey(parentHash)) {
-                canonicalHeadHash = hash;
-                canonicalChain.put(block.number(), block);
-                return new ChainUpdate(block, List.of(block), null, true);
-            }
+            canonicalHeadHash = hash;
+            canonicalChain.put(block.number(), block);
+            return new ChainUpdate(block, List.of(block), null, true);
         }
 
         if (block.number() == currentHead.number() && !hash.equals(canonicalHeadHash.toLowerCase())) {
@@ -219,11 +225,18 @@ public class ChainTracker {
 
         canonicalHeadHash = newHead.hash().toLowerCase();
 
-        logger.info("Reorg detected for node {}: depth={}, oldHead={}@{}, newHead={}@{}, commonAncestor={}@{}",
-                nodeKey, reorg.reorgDepth(),
-                reorg.oldHeadHash(), reorg.oldHeadNumber(),
-                reorg.newHeadHash(), reorg.newHeadNumber(),
-                reorg.commonAncestorHash(), reorg.commonAncestorNumber());
+        if (reorg.reorgDepth() > 0) {
+            logger.info("Reorg detected for node {}: depth={}, oldHead={}@{}, newHead={}@{}, commonAncestor={}@{}",
+                    nodeKey, reorg.reorgDepth(),
+                    reorg.oldHeadHash(), reorg.oldHeadNumber(),
+                    reorg.newHeadHash(), reorg.newHeadNumber(),
+                    reorg.commonAncestorHash(), reorg.commonAncestorNumber());
+        } else {
+            // Depth 0 = the chain simply advanced across a gap (no blocks were replaced)
+            logger.debug("Gap fill for node {}: {}@{} -> {}@{}",
+                    nodeKey, reorg.oldHeadHash(), reorg.oldHeadNumber(),
+                    reorg.newHeadHash(), reorg.newHeadNumber());
+        }
     }
 
     /**

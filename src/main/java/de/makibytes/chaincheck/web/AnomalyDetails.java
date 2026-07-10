@@ -30,48 +30,4 @@ public record AnomalyDetails(long id,
                              String blockHash,
                              String parentHash,
                              String details) {
-
-    public long getId() {
-        return id;
-    }
-
-    public String getNodeKey() {
-        return nodeKey;
-    }
-
-    public String getNodeName() {
-        return nodeName;
-    }
-
-    public Instant getTimestamp() {
-        return timestamp;
-    }
-
-    public String getSource() {
-        return source;
-    }
-
-    public String getType() {
-        return type;
-    }
-
-    public String getMessage() {
-        return message;
-    }
-
-    public Long getBlockNumber() {
-        return blockNumber;
-    }
-
-    public String getBlockHash() {
-        return blockHash;
-    }
-
-    public String getParentHash() {
-        return parentHash;
-    }
-
-    public String getDetails() {
-        return details;
-    }
 }

@@ -23,6 +23,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.Deque;
@@ -67,6 +68,12 @@ public class InMemoryMetricsStore {
     private final Map<String, Long> latestHttpBlockNumber = new ConcurrentHashMap<>();
     private final Map<String, Long> latestBlockNumber = new ConcurrentHashMap<>();
     private final Map<String, Instant> latestBlockTimestampByNode = new ConcurrentHashMap<>();
+    /**
+     * Slowly-changing per-node metadata that does not belong in the high-frequency sample
+     * stream (node software version, last-observed network TPS / slot time from Solana's
+     * getRecentPerformanceSamples). Overwritten in place; only the latest value is kept.
+     */
+    private final Map<String, NodeMetadata> nodeMetadataByNode = new ConcurrentHashMap<>();
     private final Duration rawRetention = Duration.ofHours(2);
     private final Duration anomalyRawRetention = TimeRange.MONTH_1.getDuration();
     private final Duration minutelyRetention = Duration.ofDays(3);
@@ -92,6 +99,16 @@ public class InMemoryMetricsStore {
         if (persistenceEnabled) {
             loadSnapshot();
         }
+    }
+
+    private static <V> Collection<V> boundedValues(NavigableMap<Instant, V> map, Instant since, Instant until) {
+        if (until == null || Instant.MAX.equals(until)) {
+            return map.tailMap(since, true).values();
+        }
+        if (until.isBefore(since)) {
+            return List.of();
+        }
+        return map.subMap(since, true, until, true).values();
     }
 
     private static ChainCheckProperties defaultProperties() {
@@ -145,16 +162,35 @@ public class InMemoryMetricsStore {
     }
 
     public List<MetricSample> getRawSamplesSince(String nodeKey, Instant since) {
+        return getRawSamplesBetween(nodeKey, since, Instant.MAX);
+    }
+
+    /**
+     * Raw samples with {@code since <= timestamp <= until}. The upper bound matters for
+     * historical views (explicit {@code end} parameter): a lower-bounded query would
+     * silently mix post-end data into every derived statistic.
+     */
+    public List<MetricSample> getRawSamplesBetween(String nodeKey, Instant since, Instant until) {
         Deque<MetricSample> samples = rawSamplesByNode.get(nodeKey);
         if (samples == null || samples.isEmpty()) {
             return Collections.emptyList();
         }
         return samples.stream()
-                .filter(sample -> !sample.getTimestamp().isBefore(since))
+                .filter(sample -> !sample.getTimestamp().isBefore(since)
+                        && !sample.getTimestamp().isAfter(until))
                 .toList();
     }
 
     public List<SampleAggregate> getAggregatedSamplesSince(String nodeKey, Instant since) {
+        return getAggregatedSamplesBetween(nodeKey, since, Instant.MAX);
+    }
+
+    /**
+     * Aggregates whose bucket start lies in {@code [since, until]}. Bucket granularity
+     * means a bucket starting just before {@code until} can contain a sliver of post-end
+     * data — that is the best precision the aggregate tier can offer.
+     */
+    public List<SampleAggregate> getAggregatedSamplesBetween(String nodeKey, Instant since, Instant until) {
         NavigableMap<Instant, SampleAggregate> hourlyAggregates = sampleAggregatesByNode.get(nodeKey);
         NavigableMap<Instant, SampleAggregate> dailyAggregates = sampleDailyAggregatesByNode.get(nodeKey);
         if ((hourlyAggregates == null || hourlyAggregates.isEmpty())
@@ -163,26 +199,37 @@ public class InMemoryMetricsStore {
         }
         List<SampleAggregate> result = new ArrayList<>();
         if (hourlyAggregates != null && !hourlyAggregates.isEmpty()) {
-            result.addAll(hourlyAggregates.tailMap(since, true).values());
+            result.addAll(boundedValues(hourlyAggregates, since, until));
         }
         if (dailyAggregates != null && !dailyAggregates.isEmpty()) {
-            result.addAll(dailyAggregates.tailMap(since, true).values());
+            result.addAll(boundedValues(dailyAggregates, since, until));
         }
         result.sort(Comparator.comparing(SampleAggregate::getBucketStart));
         return result;
     }
 
     public List<AnomalyEvent> getRawAnomaliesSince(String nodeKey, Instant since) {
+        return getRawAnomaliesBetween(nodeKey, since, Instant.MAX);
+    }
+
+    /** Raw anomalies with {@code since <= timestamp <= until}; see getRawSamplesBetween. */
+    public List<AnomalyEvent> getRawAnomaliesBetween(String nodeKey, Instant since, Instant until) {
         Deque<AnomalyEvent> anomalies = rawAnomaliesByNode.get(nodeKey);
         if (anomalies == null || anomalies.isEmpty()) {
             return Collections.emptyList();
         }
         return anomalies.stream()
-                .filter(event -> !event.getTimestamp().isBefore(since))
+                .filter(event -> !event.getTimestamp().isBefore(since)
+                        && !event.getTimestamp().isAfter(until))
                 .toList();
     }
 
     public List<AnomalyAggregate> getAggregatedAnomaliesSince(String nodeKey, Instant since) {
+        return getAggregatedAnomaliesBetween(nodeKey, since, Instant.MAX);
+    }
+
+    /** Anomaly aggregates whose bucket start lies in {@code [since, until]}. */
+    public List<AnomalyAggregate> getAggregatedAnomaliesBetween(String nodeKey, Instant since, Instant until) {
         NavigableMap<Instant, AnomalyAggregate> hourlyAggregates = anomalyAggregatesByNode.get(nodeKey);
         NavigableMap<Instant, AnomalyAggregate> dailyAggregates = anomalyDailyAggregatesByNode.get(nodeKey);
         if ((hourlyAggregates == null || hourlyAggregates.isEmpty())
@@ -191,10 +238,10 @@ public class InMemoryMetricsStore {
         }
         List<AnomalyAggregate> result = new ArrayList<>();
         if (hourlyAggregates != null && !hourlyAggregates.isEmpty()) {
-            result.addAll(hourlyAggregates.tailMap(since, true).values());
+            result.addAll(boundedValues(hourlyAggregates, since, until));
         }
         if (dailyAggregates != null && !dailyAggregates.isEmpty()) {
-            result.addAll(dailyAggregates.tailMap(since, true).values());
+            result.addAll(boundedValues(dailyAggregates, since, until));
         }
         result.sort(Comparator.comparing(AnomalyAggregate::getBucketStart));
         return result;
@@ -224,6 +271,48 @@ public class InMemoryMetricsStore {
 
     public Instant getLatestBlockTimestamp(String nodeKey) {
         return latestBlockTimestampByNode.get(nodeKey);
+    }
+
+    /** Records the node software version (e.g. Solana getVersion "solana-core"). */
+    public void setNodeVersion(String nodeKey, String version) {
+        if (version == null || version.isBlank()) {
+            return;
+        }
+        nodeMetadataByNode.compute(nodeKey, (k, prev) ->
+                (prev == null ? NodeMetadata.empty() : prev).withVersion(version));
+    }
+
+    /**
+     * Records the node's last-observed network performance (Solana getRecentPerformanceSamples):
+     * transactions per second and mean slot time in milliseconds over the sample window.
+     */
+    public void setNodePerformance(String nodeKey, Double tps, Double slotTimeMs) {
+        nodeMetadataByNode.compute(nodeKey, (k, prev) ->
+                (prev == null ? NodeMetadata.empty() : prev).withPerformance(tps, slotTimeMs));
+    }
+
+    public NodeMetadata getNodeMetadata(String nodeKey) {
+        return nodeMetadataByNode.getOrDefault(nodeKey, NodeMetadata.empty());
+    }
+
+    /**
+     * Immutable per-node metadata snapshot. Fields are independently nullable so a version
+     * update doesn't clobber performance data or vice versa.
+     */
+    public record NodeMetadata(String version, Double tps, Double slotTimeMs) {
+        private static final NodeMetadata EMPTY = new NodeMetadata(null, null, null);
+
+        public static NodeMetadata empty() {
+            return EMPTY;
+        }
+
+        public NodeMetadata withVersion(String newVersion) {
+            return new NodeMetadata(newVersion, tps, slotTimeMs);
+        }
+
+        public NodeMetadata withPerformance(Double newTps, Double newSlotTimeMs) {
+            return new NodeMetadata(version, newTps, newSlotTimeMs);
+        }
     }
 
     @Scheduled(fixedDelay = 5000)

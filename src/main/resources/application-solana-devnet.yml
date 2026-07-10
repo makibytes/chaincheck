@@ -14,6 +14,8 @@ rpc:
     long-delay-block-count: 20
     stale-block-threshold-ms: 10000
     block-gap-threshold: 20
+    # See mainnet profile: flag a node that self-reports lagging the cluster (getHealth).
+    health-slots-behind-threshold: 1
   requests:
     optimal-poll-interval-ms: 400
     sparse-poll-interval-ms: 5000

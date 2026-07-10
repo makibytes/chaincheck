@@ -148,4 +148,71 @@ class EvmProtocolTest {
     void httpMethod() {
         assertEquals("POST", ethereumProtocol.httpMethod());
     }
+
+    // ── eth_syncing health probe ──────────────────────────────────────────
+
+    @Test
+    @DisplayName("buildHealthRequest produces eth_syncing")
+    void healthRequest() {
+        assertTrue(ethereumProtocol.buildHealthRequest().isPresent());
+        assertEquals("eth_syncing", ethereumProtocol.buildHealthRequest().get().method());
+    }
+
+    @Test
+    @DisplayName("parseHealthSlotsBehind: synced node (false) returns 0")
+    void healthSynced() throws Exception {
+        JsonNode envelope = mapper.readTree("{\"id\":6,\"result\":false}");
+        assertEquals(0, ethereumProtocol.parseHealthSlotsBehind(envelope));
+    }
+
+    @Test
+    @DisplayName("parseHealthSlotsBehind: syncing object yields highest - current")
+    void healthSyncing() throws Exception {
+        // currentBlock 0x100 (256), highestBlock 0x1F4 (500) => 244 behind
+        String json = "{\"id\":6,\"result\":{\"startingBlock\":\"0x0\","
+                + "\"currentBlock\":\"0x100\",\"highestBlock\":\"0x1f4\"}}";
+        assertEquals(244, ethereumProtocol.parseHealthSlotsBehind(mapper.readTree(json)));
+    }
+
+    @Test
+    @DisplayName("parseHealthSlotsBehind: current >= highest clamps to 0")
+    void healthCaughtUp() throws Exception {
+        String json = "{\"id\":6,\"result\":{\"currentBlock\":\"0x1f4\",\"highestBlock\":\"0x1f4\"}}";
+        assertEquals(0, ethereumProtocol.parseHealthSlotsBehind(mapper.readTree(json)));
+    }
+
+    @Test
+    @DisplayName("parseHealthSlotsBehind: error or unparseable returns -1, absent returns null")
+    void healthEdgeCases() throws Exception {
+        assertEquals(-1, ethereumProtocol.parseHealthSlotsBehind(
+                mapper.readTree("{\"id\":6,\"error\":{\"code\":-32000,\"message\":\"unavailable\"}}")));
+        assertEquals(-1, ethereumProtocol.parseHealthSlotsBehind(
+                mapper.readTree("{\"id\":6,\"result\":true}")));
+        assertEquals(-1, ethereumProtocol.parseHealthSlotsBehind(
+                mapper.readTree("{\"id\":6,\"result\":{\"currentBlock\":\"bad\"}}")));
+        assertNull(ethereumProtocol.parseHealthSlotsBehind(null));
+    }
+
+    // ── web3_clientVersion probe ───────────────────────────────────────────
+
+    @Test
+    @DisplayName("buildVersionRequest produces web3_clientVersion")
+    void versionRequest() {
+        assertTrue(ethereumProtocol.buildVersionRequest().isPresent());
+        assertEquals("web3_clientVersion", ethereumProtocol.buildVersionRequest().get().method());
+    }
+
+    @Test
+    @DisplayName("parseVersion condenses the full client string to client/version")
+    void versionParsing() throws Exception {
+        assertEquals("Geth/v1.13.5", ethereumProtocol.parseVersion(
+                mapper.readTree("\"Geth/v1.13.5-stable-916d6a44/linux-amd64/go1.21.3\"")));
+        assertEquals("erigon/v2.60.0", ethereumProtocol.parseVersion(
+                mapper.readTree("\"erigon/v2.60.0/linux-amd64/go1.22.1\"")));
+        // Nethermind uses a '+' build suffix
+        assertEquals("Nethermind/v1.25.4", ethereumProtocol.parseVersion(
+                mapper.readTree("\"Nethermind/v1.25.4+8d234f1/linux-x64/dotnet8.0\"")));
+        assertNull(ethereumProtocol.parseVersion(mapper.readTree("\"\"")));
+        assertNull(ethereumProtocol.parseVersion(null));
+    }
 }

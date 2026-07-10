@@ -149,13 +149,13 @@ class AttestationTrackerTest {
 
         assertNotNull(byNumber);
         assertNotNull(byHash);
-        assertEquals(1000L, byNumber.getExecutionBlockNumber());
-        assertEquals("0xhash1000", byNumber.getExecutionBlockHash());
-        assertEquals(99L, byNumber.getSlot());
-        assertEquals(2, byNumber.getAttestingValidators());
-        assertEquals(3, byNumber.getExpectedValidators());
-        assertEquals(66.666, byNumber.getConfidencePercent(), 0.01);
-        assertEquals(2, byNumber.getAttestationRound());
+        assertEquals(1000L, byNumber.executionBlockNumber());
+        assertEquals("0xhash1000", byNumber.executionBlockHash());
+        assertEquals(99L, byNumber.slot());
+        assertEquals(2, byNumber.attestingValidators());
+        assertEquals(3, byNumber.expectedValidators());
+        assertEquals(66.666, byNumber.confidencePercent(), 0.01);
+        assertEquals(2, byNumber.attestationRound());
     }
 
     @Test
@@ -164,8 +164,8 @@ class AttestationTrackerTest {
         tracker.updateTrackingResult(1000L, "0xhash1000", 99L, 7, Instant.now());
         AttestationConfidence confidence = tracker.getConfidence(1000L);
         assertNotNull(confidence);
-        assertEquals(3, confidence.getAttestationRound());
-        assertEquals(100.0, confidence.getConfidencePercent(), 0.001);
+        assertEquals(3, confidence.attestationRound());
+        assertEquals(100.0, confidence.confidencePercent(), 0.001);
     }
 
     @Test

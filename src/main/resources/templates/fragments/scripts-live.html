@@ -1,0 +1,71 @@
+<th:block th:fragment="scripts-live">
+<script>
+    (function () {
+        'use strict';
+        const REFRESH_MS = 10000;
+        const STORAGE_KEY = 'chaincheck.live';
+        const root = document.getElementById('live-root');
+        const toggle = document.getElementById('live-toggle');
+        if (!root || !toggle) return;
+
+        // Historical views (explicit end timestamp) are frozen in time — never refresh them.
+        if (new URLSearchParams(window.location.search).has('end')) {
+            toggle.hidden = true;
+            return;
+        }
+
+        let enabled;
+        try { enabled = localStorage.getItem(STORAGE_KEY) !== 'off'; } catch (e) { enabled = true; }
+        let inflight = false;
+
+        function render() {
+            toggle.classList.toggle('live-on', enabled);
+            toggle.querySelector('.live-label').textContent = enabled ? 'Live · 10s' : 'Paused';
+            toggle.setAttribute('aria-pressed', String(enabled));
+            toggle.title = enabled
+                ? 'Auto-refreshing every 10 seconds. Click to pause.'
+                : 'Auto-refresh paused. Click to resume.';
+        }
+
+        toggle.addEventListener('click', function () {
+            enabled = !enabled;
+            try { localStorage.setItem(STORAGE_KEY, enabled ? 'on' : 'off'); } catch (e) { /* private mode */ }
+            render();
+            if (enabled) refresh();
+        });
+
+        async function refresh() {
+            if (!enabled || inflight || document.hidden) return;
+            // Don't yank an open tooltip out from under the cursor.
+            const tip = document.querySelector('.hint-tooltip');
+            if (tip && !tip.hidden) return;
+            inflight = true;
+            try {
+                const res = await fetch(window.location.href, {
+                    headers: { 'X-Requested-With': 'chaincheck-live' },
+                    cache: 'no-store'
+                });
+                if (!res.ok) return;
+                const doc = new DOMParser().parseFromString(await res.text(), 'text/html');
+                const next = doc.getElementById('live-root');
+                if (next) {
+                    root.innerHTML = next.innerHTML;
+                    document.dispatchEvent(new CustomEvent('chaincheck:refreshed'));
+                }
+            } catch (e) {
+                // Network blip: keep the stale view, retry on the next tick.
+            } finally {
+                inflight = false;
+            }
+        }
+
+        // Catch up immediately when the tab becomes visible again.
+        document.addEventListener('visibilitychange', function () {
+            if (!document.hidden) refresh();
+        });
+
+        setInterval(refresh, REFRESH_MS);
+        render();
+    })();
+</script>
+</th:block>

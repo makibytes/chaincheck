@@ -42,8 +42,9 @@ rpc:
       requests: sparse
 
     - name: Ankr
-      http: https://rpc.ankr.com/eth/276087160888bd72c2dc6d4366109344d7c8f5ed3bce41be8d205b093abadb11
-      ws: wss://rpc.ankr.com/eth/276087160888bd72c2dc6d4366109344d7c8f5ed3bce41be8d205b093abadb11
+      # Keyless public endpoint. Ankr WS requires a personal API key — never commit
+      # keys to this file; supply them via an environment-specific override instead.
+      http: https://rpc.ankr.com/eth
       requests: sparse
 
     - name: DRPC

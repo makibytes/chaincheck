@@ -36,8 +36,8 @@ import de.makibytes.chaincheck.monitor.RpcMonitorService;
  *
  * <ul>
  *   <li>{@code buildBlockNumberRequest()} → {@code starknet_blockNumber}</li>
- *   <li>{@code buildBlockByTagRequest("latest")} → {@code starknet_getBlockWithTxHashes({block_id:"latest"})}</li>
- *   <li>{@code buildBlockByNumberRequest(N)} → {@code starknet_getBlockWithTxHashes({block_id:{block_number:N}})}</li>
+ *   <li>{@code buildBlockByTagRequest("latest")} → {@code starknet_getBlockWithTxHashes(["latest"])}</li>
+ *   <li>{@code buildBlockByNumberRequest(N)} → {@code starknet_getBlockWithTxHashes([{block_number:N}])}</li>
  * </ul>
  *
  * <h3>WebSocket</h3>
@@ -48,9 +48,12 @@ import de.makibytes.chaincheck.monitor.RpcMonitorService;
  * <ul>
  *   <li>{@code PENDING} — block being assembled by sequencer</li>
  *   <li>{@code ACCEPTED_ON_L2} — included in Starknet block (≈ "latest")</li>
- *   <li>{@code ACCEPTED_ON_L1} — settled on Ethereum (takes hours; not tracked by default)</li>
+ *   <li>{@code ACCEPTED_ON_L1} — settled on Ethereum (the {@code l1_accepted} block_id,
+ *       JSON-RPC spec ≥ 0.8; lags hours behind L2)</li>
  * </ul>
- * Set {@code get-safe-blocks: false} and {@code get-finalized-blocks: false} in YAML.
+ * {@code get-safe-blocks} stays {@code false} (no Starknet equivalent). {@code get-finalized-blocks}
+ * may be enabled against spec ≥ 0.8 nodes and maps to {@code l1_accepted}; it is off by default
+ * because public gateways still run older specs.
  */
 public class StarknetProtocol implements ChainProtocol {
 
@@ -78,9 +81,12 @@ public class StarknetProtocol implements ChainProtocol {
 
     @Override
     public RpcRequest buildBlockByTagRequest(String tag) {
-        // Starknet has no safe tag; all queries use "latest"
-        ObjectNode params = mapper.createObjectNode().put("block_id", "latest");
-        return new RpcRequest("starknet_getBlockWithTxHashes", mapper.createArrayNode().add(params));
+        // "finalized" maps to l1_accepted (JSON-RPC spec >= 0.8): the newest block settled on
+        // Ethereum. Starknet has no "safe" equivalent, so safe falls back to "latest".
+        // Positional params: element 0 IS the BLOCK_ID (a bare tag string here) — wrapping it
+        // in {"block_id": ...} is rejected by spec-strict gateways ("cannot unmarshal block id").
+        String blockId = "finalized".equals(tag) ? "l1_accepted" : "latest";
+        return new RpcRequest("starknet_getBlockWithTxHashes", mapper.createArrayNode().add(blockId));
     }
 
     @Override
@@ -90,9 +96,9 @@ public class StarknetProtocol implements ChainProtocol {
 
     @Override
     public RpcRequest buildBlockByNumberRequest(long number) {
+        // Positional BLOCK_ID by number: {"block_number": N} directly, not {"block_id": {...}}.
         ObjectNode blockId = mapper.createObjectNode().put("block_number", number);
-        ObjectNode params = mapper.createObjectNode().set("block_id", blockId);
-        return new RpcRequest("starknet_getBlockWithTxHashes", mapper.createArrayNode().add(params));
+        return new RpcRequest("starknet_getBlockWithTxHashes", mapper.createArrayNode().add(blockId));
     }
 
     @Override
@@ -150,6 +156,65 @@ public class StarknetProtocol implements ChainProtocol {
     @Override
     public boolean supportsParentHash() {
         return true; // parent_hash field is present in every Starknet block
+    }
+
+    // ── Node health probe ─────────────────────────────────────────────────
+
+    @Override
+    public java.util.Optional<RpcRequest> buildHealthRequest() {
+        // starknet_syncing returns false when synced, or a status object with
+        // current_block_num / highest_block_num while catching up.
+        return java.util.Optional.of(new RpcRequest("starknet_syncing", mapper.createArrayNode()));
+    }
+
+    @Override
+    public Integer parseHealthSlotsBehind(JsonNode envelope) {
+        if (envelope == null) {
+            return null;
+        }
+        JsonNode error = envelope.path("error");
+        if (!error.isMissingNode() && !error.isNull()) {
+            // Many public Starknet gateways don't implement starknet_syncing; treating
+            // "method not found" as unhealthy would open a permanent false SYNC_LAG.
+            if (error.path("code").asInt(0) == -32601) {
+                return null;
+            }
+            return -1;
+        }
+        JsonNode result = envelope.path("result");
+        if (result.isMissingNode() || result.isNull()) {
+            return null;
+        }
+        if (result.isBoolean()) {
+            return result.asBoolean() ? -1 : 0; // false = fully synced
+        }
+        if (result.isObject()) {
+            Long current = parseBlockNum(result.path("current_block_num"));
+            Long highest = parseBlockNum(result.path("highest_block_num"));
+            if (current == null || highest == null) {
+                return -1; // syncing, but the margin is unreadable
+            }
+            long behind = highest - current;
+            if (behind <= 0) {
+                return 0;
+            }
+            return behind > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) behind;
+        }
+        return null;
+    }
+
+    /** Sync-status block numbers are integers per spec, but some nodes serve hex strings. */
+    private static Long parseBlockNum(JsonNode node) {
+        if (node == null || node.isMissingNode() || node.isNull()) {
+            return null;
+        }
+        if (node.isIntegralNumber()) {
+            return node.asLong();
+        }
+        if (node.isTextual()) {
+            return EthHex.parseDecimalOrHexLong(node.asText());
+        }
+        return null;
     }
 
     // ── Internal ──────────────────────────────────────────────────────────

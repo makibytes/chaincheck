@@ -4,7 +4,7 @@ Compact repo guidance for AI coding agents.
 
 ## Project snapshot
 
-ChainCheck is a Spring Boot 4 / Java 25 dashboard for monitoring multiple EVM RPC nodes across several chain types. It combines HTTP polling and WebSocket `newHeads` streams to track latency, head/safe/finalized delay, anomalies, block agreement, and finality.
+ChainCheck is a Spring Boot 4.1 / Java 25 dashboard for monitoring multiple EVM RPC nodes across several chain types. It combines HTTP polling and WebSocket `newHeads` streams to track latency, head/safe/finalized delay, anomalies, block agreement, and finality.
 
 See `BLOCKCHAINS.md` for supported profiles and `README.md` for end-user setup.
 
@@ -39,7 +39,7 @@ mvn test -Dtest=ClassName#methodName
 ### Core config
 
 - `rpc.mode` is informational only.
-- `rpc.mode-type` drives behavior: `ETHEREUM`, `COSMOS`, `OPTIMISM`, `ZK`, `AVALANCHE`, `TRON`.
+- `rpc.mode-type` drives behavior: `ETHEREUM`, `COSMOS`, `OPTIMISM`, `ZK`, `AVALANCHE`, `TRON`, `SOLANA`, `COSMOS_SDK`, `STARKNET`.
 - Request defaults: Ethereum `12s/60s` (`optimal/sparse`); all other mode types `2s/30s`.
 - Per-node `requests: optimal|sparse` selects the mode-level polling interval.
 
@@ -77,7 +77,7 @@ mvn test -Dtest=ClassName#methodName
 
 - Keep the Apache 2.0 file header where the codebase already uses it.
 - No Lombok.
-- Use plain Java POJOs plus records for value types.
+- Use records for immutable value types. Records should not have redundant explicit getters — use the built-in record accessors (`field()` not `getField()`). Thymeleaf templates resolve record accessors via SpEL in Spring 7.1+.
 - Use `java.net.http.HttpClient` / `WebSocket`, not an external HTTP client library.
 - JSON handling uses Jackson.
 

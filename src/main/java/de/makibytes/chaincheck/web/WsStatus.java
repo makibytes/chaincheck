@@ -26,32 +26,4 @@ public record WsStatus(boolean connected,
                        long disconnectCount,
                        long connectFailureCount,
                        String lastError) {
-
-    public boolean isConnected() {
-        return connected;
-    }
-
-    public Instant getConnectedSince() {
-        return connectedSince;
-    }
-
-    public Instant getLastDisconnectedAt() {
-        return lastDisconnectedAt;
-    }
-
-    public long getConnectCount() {
-        return connectCount;
-    }
-
-    public long getDisconnectCount() {
-        return disconnectCount;
-    }
-
-    public long getConnectFailureCount() {
-        return connectFailureCount;
-    }
-
-    public String getLastError() {
-        return lastError;
-    }
 }

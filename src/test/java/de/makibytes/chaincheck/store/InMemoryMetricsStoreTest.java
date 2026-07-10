@@ -117,6 +117,34 @@ class InMemoryMetricsStoreTest {
     }
 
     @Test
+    @DisplayName("closeLastAnomaly: type filter closes only the matching type (SYNC_LAG dedup)")
+    void testCloseLastAnomaly_TypeSpecific() {
+        // The sync-lag dedup relies on closing only the open SYNC_LAG anomaly while leaving
+        // an unrelated HTTP anomaly (e.g. an ERROR) untouched.
+        Instant now = Instant.now();
+        AnomalyEvent errorAnomaly = new AnomalyEvent(
+            1L, "node1", now, MetricSource.HTTP, AnomalyType.ERROR, "HTTP error",
+            null, null, null, "error"
+        );
+        AnomalyEvent syncLagAnomaly = new AnomalyEvent(
+            2L, "node1", now, MetricSource.HTTP, AnomalyType.SYNC_LAG, "Node behind cluster",
+            null, null, null, "Node behind cluster by 244 slots"
+        );
+
+        store.addAnomaly("node1", errorAnomaly);
+        store.addAnomaly("node1", syncLagAnomaly);
+        store.closeLastAnomaly("node1", MetricSource.HTTP, AnomalyType.SYNC_LAG);
+
+        var anomalies = store.getRawAnomaliesSince("node1", now.minusSeconds(60));
+        assertTrue(anomalies.stream()
+                .anyMatch(a -> a.isClosed() && a.getType() == AnomalyType.SYNC_LAG),
+                "SYNC_LAG anomaly should be closed");
+        assertTrue(anomalies.stream()
+                .anyMatch(a -> !a.isClosed() && a.getType() == AnomalyType.ERROR),
+                "Unrelated ERROR anomaly should stay open");
+    }
+
+    @Test
     @DisplayName("getAggregatedSamplesSince: should retrieve aggregated data")
     void testGetAggregates() {
         Instant now = Instant.now();
@@ -229,5 +257,24 @@ class InMemoryMetricsStoreTest {
         assertNotNull(retrieved, "Should retrieve anomaly by ID");
         assertEquals(42L, retrieved.getId());
         assertEquals("Test error", retrieved.getMessage());
+    }
+
+    @Test
+    void testBetweenQueriesClampUpperBound() {
+        Instant t0 = Instant.now().minusSeconds(600);
+        for (int i = 0; i < 5; i++) {
+            store.addSample("node1", MetricSample.builder(t0.plusSeconds(i * 60L), MetricSource.HTTP)
+                    .success(true)
+                    .latencyMs(10)
+                    .build());
+        }
+        // Window covering samples 0..2 only — sample 3 and 4 lie after `until`
+        Instant since = t0;
+        Instant until = t0.plusSeconds(125);
+        assertEquals(3, store.getRawSamplesBetween("node1", since, until).size());
+        // Lower-bounded legacy query still returns everything
+        assertEquals(5, store.getRawSamplesSince("node1", since).size());
+        // Inverted window degrades to empty, not an exception
+        assertTrue(store.getRawSamplesBetween("node1", until, since).isEmpty());
     }
 }

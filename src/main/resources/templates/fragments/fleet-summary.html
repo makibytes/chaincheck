@@ -1,0 +1,28 @@
+<section class="fleet-summary" th:fragment="fleetSummary" th:if="${!#lists.isEmpty(fleetView.nodes)}">
+    <div class="fleet-stat">
+        <span class="fleet-stat-value"
+              th:classappend="${fleetView.onlineCount < #lists.size(fleetView.nodes)} ? ' text-danger' : ''"
+              th:text="|${fleetView.onlineCount}/${#lists.size(fleetView.nodes)}|">0/0</span>
+        <span class="fleet-stat-label">Nodes online</span>
+    </div>
+    <div class="fleet-stat">
+        <span class="fleet-stat-value"
+              th:classappend="${fleetView.healthyCount == #lists.size(fleetView.nodes)} ? ' text-success' : ''"
+              th:text="${fleetView.healthyCount}">0</span>
+        <span class="fleet-stat-label">Excellent (&ge;80)</span>
+    </div>
+    <div class="fleet-stat" th:if="${fleetView.attentionCount > 0}">
+        <span class="fleet-stat-value text-danger" th:text="${fleetView.attentionCount}">0</span>
+        <span class="fleet-stat-label">Need attention</span>
+    </div>
+    <div class="fleet-stat">
+        <span class="fleet-stat-value"
+              th:classappend="${fleetView.totalAnomalies > 0} ? ' text-warn' : ''"
+              th:text="${fleetView.totalAnomalies}">0</span>
+        <span class="fleet-stat-label" th:text="|Anomalies (${fleetView.range.key})|">Anomalies</span>
+    </div>
+    <div class="fleet-stat" th:if="${fleetView.maxBlockNumber > 0}">
+        <span class="fleet-stat-value" th:text="${fleetView.maxBlockNumber}">0</span>
+        <span class="fleet-stat-label">Chain head</span>
+    </div>
+</section>

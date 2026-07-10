@@ -1,0 +1,47 @@
+rpc:
+  mode: bnb
+  mode-type: cosmos
+  title: "BNB Smart Chain"
+  title-color: "#f0b90b"
+  # BSC supports the safe/finalized tags via Fast Finality (Luban/Plato upgrades).
+  # Safe-block polling is disabled by default to spare rate-limited public endpoints.
+  get-safe-blocks: false
+  get-finalized-blocks: true
+  scale-change-ms: 250
+  scale-max-ms: 15000
+  anomaly-detection:
+    high-latency-ms: 1000
+    long-delay-block-count: 30
+    # Post-Fermi (Jan 2026) BSC produces blocks every ~0.45s — tight ageMs tolerance,
+    # generous block-gap (same pattern as Arbitrum's sub-second profile).
+    stale-block-threshold-ms: 10000
+    block-gap-threshold: 20
+  # Polling intervals: optimal = 1s (BSC block time is ~0.45s after the Fermi hardfork;
+  # 1s is a public-RPC rate-limit compromise — lower it only on your own node), sparse = 30s
+  requests:
+    optimal-poll-interval-ms: 1000
+    sparse-poll-interval-ms: 30000
+  nodes:
+    - name: bnbchain.org
+      http: https://bsc-dataseed.bnbchain.org
+    - name: publicnode.com
+      http: https://bsc-rpc.publicnode.com
+      ws: wss://bsc-rpc.publicnode.com
+      requests: sparse
+    - name: drpc.org
+      http: https://bsc.drpc.org
+      ws: wss://bsc.drpc.org
+      requests: sparse
+    - name: binance.org seed1
+      http: https://bsc-dataseed1.binance.org
+      requests: sparse
+    - name: 1RPC
+      http: https://1rpc.io/bnb
+      requests: sparse
+    - name: BlastAPI
+      http: https://bsc-mainnet.public.blastapi.io
+      ws: wss://bsc-mainnet.public.blastapi.io
+      requests: sparse
+    - name: LlamaNodes
+      http: https://binance.llamarpc.com
+      requests: sparse

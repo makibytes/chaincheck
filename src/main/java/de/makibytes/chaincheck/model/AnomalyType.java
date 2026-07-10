@@ -26,5 +26,7 @@ public enum AnomalyType {
     BLOCK_GAP,
     CONFLICT,
     REORG,
-    WRONG_HEAD
+    WRONG_HEAD,
+    /** Node self-reports lag behind the cluster tip (e.g. Solana getHealth -32005). */
+    SYNC_LAG
 }

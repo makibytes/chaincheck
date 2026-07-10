@@ -6,9 +6,7 @@
         tooltip.hidden = true;
         document.body.appendChild(tooltip);
 
-        document.addEventListener('mouseover', function (e) {
-            const el = e.target.closest('[data-hint]');
-            if (!el) { tooltip.hidden = true; return; }
+        function show(el) {
             tooltip.textContent = el.dataset.hint;
             tooltip.hidden = false;
             const r = el.getBoundingClientRect();
@@ -21,6 +19,12 @@
             left = Math.max(8 + window.scrollX, Math.min(left, window.scrollX + window.innerWidth - ttW - 8));
             tooltip.style.top = top + 'px';
             tooltip.style.left = left + 'px';
+        }
+
+        document.addEventListener('mouseover', function (e) {
+            const el = e.target.closest('[data-hint]');
+            if (!el) { tooltip.hidden = true; return; }
+            show(el);
         });
 
         document.addEventListener('mouseout', function (e) {
@@ -28,6 +32,32 @@
                 tooltip.hidden = true;
             }
         });
+
+        // Keyboard access: hints are focusable; focus shows the tooltip, blur/Escape hides it.
+        document.addEventListener('focusin', function (e) {
+            const el = e.target.closest('[data-hint]');
+            if (el) show(el);
+        });
+
+        document.addEventListener('focusout', function () {
+            tooltip.hidden = true;
+        });
+
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') tooltip.hidden = true;
+        });
+
+        // Non-interactive hint elements need a tabindex to be focusable. Re-applied
+        // after live refreshes since swapped-in DOM arrives without it.
+        function makeHintsFocusable() {
+            document.querySelectorAll('[data-hint]').forEach(function (el) {
+                if (el.tabIndex < 0 && !el.closest('a, button, select, input, textarea')) {
+                    el.tabIndex = 0;
+                }
+            });
+        }
+        makeHintsFocusable();
+        document.addEventListener('chaincheck:refreshed', makeHintsFocusable);
     })();
 </script>
 </th:block>

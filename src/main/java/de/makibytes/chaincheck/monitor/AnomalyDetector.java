@@ -86,6 +86,31 @@ public class AnomalyDetector {
                 details);
     }
 
+    /**
+     * Anomaly for a node that self-reports lag behind the cluster tip (Solana getHealth).
+     * {@code slotsBehind < 0} signals an unhealthy node whose exact lag is unknown.
+     */
+    public AnomalyEvent syncLag(String nodeKey,
+                                Instant timestamp,
+                                MetricSource source,
+                                Long blockNumber,
+                                int slotsBehind) {
+        String detail = slotsBehind < 0
+                ? "Node reports unhealthy (slots behind unknown)"
+                : "Node behind cluster by " + slotsBehind + " slots";
+        return new AnomalyEvent(
+                idSequence.getAndIncrement(),
+                nodeKey,
+                timestamp,
+                source,
+                AnomalyType.SYNC_LAG,
+                "Node behind cluster",
+                blockNumber,
+                null,
+                null,
+                detail);
+    }
+
     public AnomalyEvent reorgFinalized(String nodeKey,
                                        Instant timestamp,
                                        MetricSource source,
@@ -267,7 +292,12 @@ public class AnomalyDetector {
             return AnomalyType.ERROR;
         }
         String lower = error.toLowerCase();
-        if (lower.contains("rate limit") || lower.contains("rate-limit") || lower.contains("http 429")) {
+        if (lower.contains("rate limit") || lower.contains("rate-limit") || lower.contains("http 429")
+                || lower.contains("too many requests") || lower.contains("rate exceeded")
+                || lower.contains("quota") || lower.contains("compute units")
+                || lower.contains("-32005")) {
+            // Covers HTTP 429 plus the common JSON-RPC body variants: -32005 (limit
+            // exceeded), "too many requests", provider quota / compute-unit phrasing.
             return AnomalyType.RATE_LIMIT;
         }
         if (lower.contains("timeout") || lower.contains("timed out") || lower.contains("http 408")) {

@@ -213,4 +213,22 @@ class ChainTrackerTest {
     private BlockNode block(long number, String hash, String parentHash) {
         return new BlockNode(hash, parentHash, number, Instant.now(), Instant.now(), Confidence.NEW);
     }
+
+    @Test
+    @DisplayName("higher block with known non-head parent but broken linkage still becomes head")
+    void brokenLinkageStillAdvancesHead() {
+        // 1. Head at 100.
+        tracker.registerBlock(block(100L, "0xaaa", "0x999"));
+        // 2. Far-ahead block with unknown parent becomes head (gap, e.g. after WS outage).
+        tracker.registerBlock(block(200L, "0xfff", "0xeee"));
+        assertEquals("0xfff", tracker.getCanonicalHeadHash());
+        // 3. Higher block whose parent (0xaaa) is known but NOT the head, and whose
+        //    branch shares no common ancestor with the head's branch (0xeee was never
+        //    registered). detectReorg finds nothing — the head must still advance
+        //    instead of getting stuck at 0xfff forever.
+        ChainTracker.ChainUpdate update = tracker.registerBlock(block(201L, "0x222", "0xaaa"));
+        assertEquals("0x222", tracker.getCanonicalHeadHash());
+        assertEquals(201L, tracker.getCanonicalHeadNumber());
+        assertNotNull(update.newHead());
+    }
 }

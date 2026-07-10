@@ -110,6 +110,11 @@ public class ConfiguredReferenceSource {
         return consensusNode.getRecentAttestationConfidences();
     }
 
+    /** Called from RpcMonitorService's {@code @PreDestroy}; this class is not a Spring bean. */
+    public void shutdown() {
+        consensusNode.shutdown();
+    }
+
     public void ensureEventStream() {
         consensusNode.ensureEventStream();
     }

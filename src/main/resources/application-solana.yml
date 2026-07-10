@@ -16,6 +16,10 @@ rpc:
     # 400ms slots: 5s = ~12 slots of tolerated staleness
     stale-block-threshold-ms: 5000
     block-gap-threshold: 10
+    # Solana getHealth: flag a node that self-reports lagging the cluster. A node only
+    # returns a getHealth error past its own HEALTH_CHECK_SLOT_DISTANCE (~128 slots), so
+    # any reported lag already means unhealthy; 1 flags every reported lag.
+    health-slots-behind-threshold: 1
   # Optimal = 400ms (1 poll/slot), sparse = 5s for rate-limited public endpoints
   requests:
     optimal-poll-interval-ms: 400

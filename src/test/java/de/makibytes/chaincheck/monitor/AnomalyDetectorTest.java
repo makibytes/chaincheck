@@ -32,6 +32,7 @@ import de.makibytes.chaincheck.model.AnomalyEvent;
 import de.makibytes.chaincheck.model.AnomalyType;
 import de.makibytes.chaincheck.model.MetricSample;
 import de.makibytes.chaincheck.model.MetricSource;
+import de.makibytes.chaincheck.store.AnomalyAggregate;
 
 @DisplayName("AnomalyDetector Tests")
 class AnomalyDetectorTest {
@@ -431,5 +432,33 @@ class AnomalyDetectorTest {
         assertEquals(1, anomalies.size());
         assertEquals(AnomalyType.TIMEOUT, anomalies.get(0).getType(),
                 "HTTP 408 error should be classified as TIMEOUT, not ERROR");
+    }
+
+    @Test
+    @DisplayName("syncLag: builds a SYNC_LAG anomaly with the slot count in details")
+    void testSyncLag_WithCount() {
+        AnomalyEvent event = detector.syncLag("node1", Instant.now(), MetricSource.HTTP, 1000L, 213);
+        assertEquals(AnomalyType.SYNC_LAG, event.getType());
+        assertEquals(MetricSource.HTTP, event.getSource());
+        assertEquals(1000L, event.getBlockNumber());
+        assertTrue(event.getDetails().contains("213"));
+    }
+
+    @Test
+    @DisplayName("syncLag: negative count renders an unknown-margin message")
+    void testSyncLag_UnknownMargin() {
+        AnomalyEvent event = detector.syncLag("node1", Instant.now(), MetricSource.HTTP, null, -1);
+        assertEquals(AnomalyType.SYNC_LAG, event.getType());
+        assertTrue(event.getDetails().toLowerCase().contains("unknown"));
+    }
+
+    @Test
+    @DisplayName("AnomalyAggregate counts SYNC_LAG events")
+    void testAggregate_CountsSyncLag() {
+        AnomalyAggregate aggregate = new AnomalyAggregate(Instant.now());
+        aggregate.addEvent(detector.syncLag("node1", Instant.now(), MetricSource.HTTP, 1L, 50));
+        aggregate.addEvent(detector.syncLag("node1", Instant.now(), MetricSource.HTTP, 2L, 60));
+        assertEquals(2, aggregate.getSyncLagCount());
+        assertEquals(2, aggregate.getTotalCount());
     }
 }

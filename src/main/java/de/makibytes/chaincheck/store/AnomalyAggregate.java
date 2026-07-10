@@ -34,6 +34,7 @@ public class AnomalyAggregate {
     private long timeoutCount;
     private long wrongHeadCount;
     private long conflictCount;
+    private long syncLagCount;
 
     public AnomalyAggregate(Instant bucketStart) {
         this.bucketStart = bucketStart;
@@ -51,6 +52,7 @@ public class AnomalyAggregate {
             case TIMEOUT -> timeoutCount++;
             case WRONG_HEAD -> wrongHeadCount++;
             case CONFLICT -> conflictCount++;
+            case SYNC_LAG -> syncLagCount++;
         }
     }
 
@@ -65,6 +67,7 @@ public class AnomalyAggregate {
         timeoutCount += aggregate.timeoutCount;
         wrongHeadCount += aggregate.wrongHeadCount;
         conflictCount += aggregate.conflictCount;
+        syncLagCount += aggregate.syncLagCount;
     }
 
     public Instant getBucketStart() {
@@ -105,6 +108,10 @@ public class AnomalyAggregate {
 
     public long getWrongHeadCount() {
         return wrongHeadCount;
+    }
+
+    public long getSyncLagCount() {
+        return syncLagCount;
     }
 
     public long getConflictCount() {

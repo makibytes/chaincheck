@@ -29,6 +29,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Deque;
 import java.util.List;
 import java.util.Map;
@@ -74,6 +75,7 @@ public class ConsensusNodeClient {
      * Maximum number of slots to retain in the slot cache.
      */
     private static final int MAX_SLOT_CACHE_SIZE = 256;
+    private static final int MAX_ROOT_CACHE_SIZE = 1024;
 
     private final String baseUrl;
     private final String eventsPath;
@@ -169,32 +171,12 @@ public class ConsensusNodeClient {
 
         Instant now = Instant.now();
 
-        // Track first request time for each checkpoint type
-        if (refreshSafe && safe.get() == null) {
-            safeFirstRequestAt.compareAndSet(null, now);
-            Instant firstRequest = safeFirstRequestAt.get();
-            if (Duration.between(firstRequest, now).toMillis() > checkpointTimeoutMs) {
-                String errorMsg = String.format(
-                        "Timeout fetching safe checkpoint from consensus node %s after %d ms. " +
-                        "Endpoint: %s%s. Check that the consensus node is running and accessible.",
-                        baseUrl, checkpointTimeoutMs, baseUrl, finalityCheckpointsPath);
-                logger.error(errorMsg);
-                throw new RuntimeException(errorMsg);
-            }
-        }
-
-        if (refreshFinalized && finalized.get() == null) {
-            finalizedFirstRequestAt.compareAndSet(null, now);
-            Instant firstRequest = finalizedFirstRequestAt.get();
-            if (Duration.between(firstRequest, now).toMillis() > checkpointTimeoutMs) {
-                String errorMsg = String.format(
-                        "Timeout fetching finalized checkpoint from consensus node %s after %d ms. " +
-                        "Endpoint: %s%s. Check that the consensus node is running and accessible.",
-                        baseUrl, checkpointTimeoutMs, baseUrl, finalityCheckpointsPath);
-                logger.error(errorMsg);
-                throw new RuntimeException(errorMsg);
-            }
-        }
+        // Alert loudly when a checkpoint type has been unavailable past the timeout —
+        // but never give up: throwing here (before the fetch below) would make recovery
+        // impossible once the window elapsed, even after the consensus node comes back.
+        // Resetting the window start gives one error log per timeout period.
+        warnIfCheckpointOverdue(refreshSafe, safe.get(), safeFirstRequestAt, "safe", now);
+        warnIfCheckpointOverdue(refreshFinalized, finalized.get(), finalizedFirstRequestAt, "finalized", now);
 
         boolean changed = false;
         try {
@@ -220,6 +202,25 @@ public class ConsensusNodeClient {
             logger.error(errorMsg);
         }
         return changed;
+    }
+
+    private void warnIfCheckpointOverdue(boolean requested,
+                                          ReferenceObservation current,
+                                          AtomicReference<Instant> firstRequestAt,
+                                          String checkpointName,
+                                          Instant now) {
+        if (!requested || current != null) {
+            return;
+        }
+        firstRequestAt.compareAndSet(null, now);
+        Instant firstRequest = firstRequestAt.get();
+        if (firstRequest != null && Duration.between(firstRequest, now).toMillis() > checkpointTimeoutMs) {
+            logger.error("Still no {} checkpoint from consensus node {} after {} ms "
+                            + "(endpoint {}{}); continuing to retry. "
+                            + "Check that the consensus node is running and accessible.",
+                    checkpointName, baseUrl, checkpointTimeoutMs, baseUrl, finalityCheckpointsPath);
+            firstRequestAt.set(now);
+        }
     }
 
     ReferenceObservation getObservation(Confidence confidence) {
@@ -357,10 +358,48 @@ public class ConsensusNodeClient {
         }
     }
 
+    /**
+     * Bounds the root-keyed execution block cache. Without this it gains one entry per
+     * beacon slot (~7,200/day on Ethereum) for the lifetime of the process — an
+     * unbounded leak in a tool designed to run indefinitely. Eviction drops the lowest
+     * block numbers first; the cache only needs to cover recent head/safe/finalized
+     * root re-resolutions.
+     */
+    private void pruneRootCache() {
+        int excess = executionBlockCache.size() - MAX_ROOT_CACHE_SIZE;
+        if (excess <= 0) {
+            return;
+        }
+        executionBlockCache.entrySet().stream()
+                .sorted(Comparator.comparingLong(entry -> entry.getValue().blockNumber()))
+                .limit(excess)
+                .map(Map.Entry::getKey)
+                .forEach(executionBlockCache::remove);
+    }
+
+    /**
+     * Interrupts the SSE event loop and attestation loop. Invoked from
+     * {@link ConfiguredReferenceSource}'s {@code @PreDestroy} — this class is
+     * constructed manually, so lifecycle annotations would not fire here.
+     */
+    void shutdown() {
+        executor.shutdownNow();
+    }
+
     private void runEventLoop() {
         try {
-            while (true) {
-                readEventStreamOnce();
+            while (!Thread.currentThread().isInterrupted()) {
+                try {
+                    readEventStreamOnce();
+                } catch (RuntimeException ex) {
+                    if (ex.getCause() instanceof InterruptedException) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                    // One malformed SSE payload must not kill the event loop — without
+                    // checkpoint polling there is nothing that would ever restart it.
+                    logger.warn("Consensus event loop error (stream will reconnect): {}", ex.getMessage());
+                }
                 Thread.sleep(1000);
             }
         } catch (InterruptedException ex) {
@@ -537,6 +576,7 @@ public class ConsensusNodeClient {
             }
             ExecutionBlock result = new ExecutionBlock(blockNumber, blockHash, blockTimestamp);
             executionBlockCache.put(blockRoot, result);
+            pruneRootCache();
             return result;
         } catch (IOException | InterruptedException ex) {
             logger.error("Failed to resolve execution block from consensus root {} at {}{}: {}: {}",

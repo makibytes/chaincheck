@@ -17,14 +17,5 @@
  */
 package de.makibytes.chaincheck.web;
 
-public class ReferenceComparison {
-    private final boolean isCurrentNodeReference;
-
-    public ReferenceComparison(boolean isCurrentNodeReference) {
-        this.isCurrentNodeReference = isCurrentNodeReference;
-    }
-
-    public boolean isCurrentNodeReference() {
-        return isCurrentNodeReference;
-    }
+public record ReferenceComparison(boolean currentNodeReference) {
 }

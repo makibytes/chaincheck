@@ -110,16 +110,16 @@ public class DashboardService {
         Instant now = end == null ? Instant.now() : end;
         Instant since = now.minus(range.getDuration());
 
-        List<MetricSample> rawSamples = store.getRawSamplesSince(nodeKey, since);
+        List<MetricSample> rawSamples = store.getRawSamplesBetween(nodeKey, since, now);
         // Get all aggregates since the requested time range (they may contain data within range even if started before)
-        List<SampleAggregate> aggregateSamples = store.getAggregatedSamplesSince(nodeKey, since);
+        List<SampleAggregate> aggregateSamples = store.getAggregatedSamplesBetween(nodeKey, since, now);
 
-        List<AnomalyEvent> anomalies = store.getRawAnomaliesSince(nodeKey, since)
+        List<AnomalyEvent> anomalies = store.getRawAnomaliesBetween(nodeKey, since, now)
                 .stream()
                 .sorted(Comparator.comparing(AnomalyEvent::getTimestamp).reversed())
                 .toList();
         // Get all aggregated anomalies - they may contain data within range even if started before
-        List<AnomalyAggregate> aggregatedAnomalies = store.getAggregatedAnomaliesSince(nodeKey, since);
+        List<AnomalyAggregate> aggregatedAnomalies = store.getAggregatedAnomaliesBetween(nodeKey, since, now);
 
         long rawTotal = rawSamples.size();
         long rawSuccess = rawSamples.stream().filter(MetricSample::isSuccess).count();
@@ -204,15 +204,35 @@ public class DashboardService {
             anomalyCounts.merge(AnomalyType.RATE_LIMIT, aggregate.getRateLimitCount(), Long::sum);
             anomalyCounts.merge(AnomalyType.TIMEOUT, aggregate.getTimeoutCount(), Long::sum);
             anomalyCounts.merge(AnomalyType.WRONG_HEAD, aggregate.getWrongHeadCount(), Long::sum);
+            anomalyCounts.merge(AnomalyType.SYNC_LAG, aggregate.getSyncLagCount(), Long::sum);
         });
 
-        long maxBlockNumber = nodeRegistry.getNodes().stream()
-                .map(node -> store.getLatestBlockNumber(node.key()))
-                .filter(Objects::nonNull)
-                .mapToLong(Long::longValue)
-                .max()
-                .orElse(0L);
-        Long currentLatest = store.getLatestBlockNumber(nodeKey);
+        long maxBlockNumber;
+        Long currentLatest;
+        if (end == null) {
+            maxBlockNumber = nodeRegistry.getNodes().stream()
+                    .map(node -> store.getLatestBlockNumber(node.key()))
+                    .filter(Objects::nonNull)
+                    .mapToLong(Long::longValue)
+                    .max()
+                    .orElse(0L);
+            currentLatest = store.getLatestBlockNumber(nodeKey);
+        } else {
+            // Historical view: derive the chain head from in-range samples so a view
+            // frozen at `end` doesn't display today's head and lag.
+            maxBlockNumber = nodeRegistry.getNodes().stream()
+                    .flatMap(node -> store.getRawSamplesBetween(node.key(), since, now).stream())
+                    .map(MetricSample::getBlockNumber)
+                    .filter(Objects::nonNull)
+                    .mapToLong(Long::longValue)
+                    .max()
+                    .orElse(0L);
+            currentLatest = rawSamples.stream()
+                    .map(MetricSample::getBlockNumber)
+                    .filter(Objects::nonNull)
+                    .max(Long::compareTo)
+                    .orElse(null);
+        }
         long blockLagBlocks = currentLatest == null ? 0 : Math.max(0, maxBlockNumber - currentLatest);
 
         ChartBuilder.ChartData chartData = ChartBuilder.buildLatencyChart(rawSamples, aggregateSamples, range, now);
@@ -228,7 +248,10 @@ public class DashboardService {
         final Set<String> consensusSafeHashes;
         final Set<String> consensusFinalizedHashes;
         if (nodeMonitorService.hasConfiguredReferenceMode()) {
-            List<MetricSample> consensusReferenceSamples = nodeMonitorService.getConfiguredReferenceDelaySamplesSince(since);
+            List<MetricSample> consensusReferenceSamples = nodeMonitorService.getConfiguredReferenceDelaySamplesSince(since)
+                .stream()
+                .filter(sample -> !sample.getTimestamp().isAfter(now))
+                .toList();
             consensusSafeHashes = consensusReferenceSamples.stream()
                 .filter(sample -> sample.getSafeDelayMs() != null)
                 .map(MetricSample::getBlockHash)
@@ -248,7 +271,7 @@ public class DashboardService {
 
         List<MetricSample> allExecutionNodeSamples = new ArrayList<>();
         for (NodeRegistry.NodeDefinition node : nodeRegistry.getNodes()) {
-            allExecutionNodeSamples.addAll(store.getRawSamplesSince(node.key(), since));
+            allExecutionNodeSamples.addAll(store.getRawSamplesBetween(node.key(), since, now));
         }
 
         boolean multiNodeConfigured = nodeRegistry.getNodes().size() > 1;
@@ -295,7 +318,7 @@ public class DashboardService {
                 if (otherNode.key().equals(nodeKey)) {
                     continue;
                 }
-                for (MetricSample sample : store.getRawSamplesSince(otherNode.key(), since)) {
+                for (MetricSample sample : store.getRawSamplesBetween(otherNode.key(), since, now)) {
                     String hash = sample.getBlockHash();
                     String parent = sample.getParentHash();
                     if (hash != null && !hash.isBlank() && parent != null && !parent.isBlank()) {
@@ -385,8 +408,8 @@ public class DashboardService {
         if (referenceNodeKey != null && !isReferenceNode && !delayChartData.timestamps().isEmpty()) {
             List<MetricSample> refRawSamples;
             List<SampleAggregate> refAggregateSamples;
-            refRawSamples = store.getRawSamplesSince(referenceNodeKey, since);
-            refAggregateSamples = store.getAggregatedSamplesSince(referenceNodeKey, since);
+            refRawSamples = store.getRawSamplesBetween(referenceNodeKey, since, now);
+            refAggregateSamples = store.getAggregatedSamplesBetween(referenceNodeKey, since, now);
             ChartBuilder.DelayChartData refDelayChart = ChartBuilder.buildDelayChartAligned(refRawSamples, refAggregateSamples, delayChartData.timestamps());
             chartReferenceHeadDelays = refDelayChart.headDelays();
             chartReferenceSafeDelays = refDelayChart.safeDelays();
@@ -458,7 +481,7 @@ public class DashboardService {
                         wsTracker.getDisconnectCount(),
                         wsTracker.getConnectFailureCount(),
                         wsTracker.getLastError());
-        boolean wsUp = wsConfigured && wsStatus.isConnected();
+        boolean wsUp = wsConfigured && wsStatus.connected();
         Long latestBlockNumber = store.getLatestKnownBlockNumber(nodeKey);
 
         HttpConnectionTracker httpTracker = nodeRegistry.getHttpTracker(nodeKey);
@@ -576,8 +599,12 @@ public class DashboardService {
                 scaleChangeMs, scaleMaxMs, hasOlderAggregates,
                 now, referenceComparison, isReferenceNode,
                 lastBlockAgeMs, multiNodeConfigured,
-                properties.getChartGradientMode());
-            cache.put(nodeKey, range, now, view);
+                properties.getChartGradientMode(),
+                store.getNodeMetadata(nodeKey));
+            // Key with the caller's `end` (null for live views) so it matches the key
+            // used in the cache lookup above — putting with `now` made every live-view
+            // lookup miss, silently disabling the cache for the hot path.
+            cache.put(nodeKey, range, end, view);
         return view;
     }
 
@@ -591,16 +618,27 @@ public class DashboardService {
         String referenceNodeKey = nodeMonitorService.getReferenceNodeKey();
         List<FleetNodeSummary> summaries = new ArrayList<>();
 
-        long maxBlock = nodeRegistry.getNodes().stream()
-                .map(n -> store.getLatestBlockNumber(n.key()))
-                .filter(Objects::nonNull)
-                .mapToLong(Long::longValue)
-                .max().orElse(0L);
+        long maxBlock;
+        if (end == null) {
+            maxBlock = nodeRegistry.getNodes().stream()
+                    .map(n -> store.getLatestBlockNumber(n.key()))
+                    .filter(Objects::nonNull)
+                    .mapToLong(Long::longValue)
+                    .max().orElse(0L);
+        } else {
+            // Historical view: chain head as of `end`, derived from in-range samples
+            maxBlock = nodeRegistry.getNodes().stream()
+                    .flatMap(n -> store.getRawSamplesBetween(n.key(), since, now).stream())
+                    .map(MetricSample::getBlockNumber)
+                    .filter(Objects::nonNull)
+                    .mapToLong(Long::longValue)
+                    .max().orElse(0L);
+        }
 
         for (NodeRegistry.NodeDefinition node : nodeRegistry.getNodes()) {
             String nk = node.key();
-            List<MetricSample> raw = store.getRawSamplesSince(nk, since);
-            List<SampleAggregate> agg = store.getAggregatedSamplesSince(nk, since);
+            List<MetricSample> raw = store.getRawSamplesBetween(nk, since, now);
+            List<SampleAggregate> agg = store.getAggregatedSamplesBetween(nk, since, now);
 
             long total = raw.size() + agg.stream().mapToLong(SampleAggregate::getTotalCount).sum();
             long success = raw.stream().filter(MetricSample::isSuccess).count()
@@ -632,13 +670,29 @@ public class DashboardService {
             headStats = overrideFromChartSeries(delayChartData.headDelays(), headStats);
             double p95Head = headStats.p95();
 
-            Long latestBlock = store.getLatestBlockNumber(nk);
+            Long latestBlock;
+            Instant lastTs;
+            if (end == null) {
+                latestBlock = store.getLatestBlockNumber(nk);
+                lastTs = store.getLatestBlockTimestamp(nk);
+            } else {
+                // Historical view: per-node head and last-block timestamp as of `end`
+                latestBlock = raw.stream()
+                        .map(MetricSample::getBlockNumber)
+                        .filter(Objects::nonNull)
+                        .max(Long::compareTo)
+                        .orElse(null);
+                lastTs = raw.stream()
+                        .map(MetricSample::getBlockTimestamp)
+                        .filter(Objects::nonNull)
+                        .max(Instant::compareTo)
+                        .orElse(null);
+            }
             long blockLag = latestBlock == null ? 0 : Math.max(0, maxBlock - latestBlock);
 
-            Instant lastTs = store.getLatestBlockTimestamp(nk);
             Long lastBlockAgeMs = lastTs == null ? null : Duration.between(lastTs, now).toMillis();
 
-            List<AnomalyEvent> nodeAnomalies = store.getRawAnomaliesSince(nk, since);
+            List<AnomalyEvent> nodeAnomalies = store.getRawAnomaliesBetween(nk, since, now);
             long anomalyCount = nodeAnomalies.size();
 
             WsConnectionTracker wsTracker = nodeRegistry.getWsTracker(nk);
@@ -674,7 +728,7 @@ public class DashboardService {
                     nk, node.name(), httpConfigured, wsConfigured, httpUp, wsUp,
                     healthScore, healthLabel, healthScoreHint, uptime, p95Lat, p95Head, blockLag,
                     latestBlock, lastBlockAgeMs, anomalyCount, wsDisconnects,
-                    nk.equals(referenceNodeKey), sparkline, coloredPaths));
+                    nk.equals(referenceNodeKey), store.getNodeMetadata(nk).version(), sparkline, coloredPaths));
         }
 
         return new FleetView(summaries, referenceNodeKey, range, maxBlock);
@@ -721,12 +775,12 @@ public class DashboardService {
                 .filter(h -> h != null && !h.isBlank())
                 .findFirst()
                 .orElse(null);
-            Instant blockTimestamp = samples.stream()
+        Instant blockTimestamp = samples.stream()
                 .map(MetricSample::getBlockTimestamp)
                 .filter(Objects::nonNull)
                 .findFirst()
                 .orElse(null);
-            String blockTime = blockTimestamp == null ? null : TIMESTAMP_FORMATTER.format(blockTimestamp);
+        String blockTime = blockTimestamp == null ? null : TIMESTAMP_FORMATTER.format(blockTimestamp);
         Integer transactionCount = samples.stream()
                 .map(MetricSample::getTransactionCount)
                 .filter(tc -> tc != null)
@@ -743,8 +797,8 @@ public class DashboardService {
         if (blockHash != null && !blockHash.isBlank()) {
             AttestationConfidence ac = attestationConfidences.get(blockHash);
             if (ac != null) {
-                attConf = ac.getConfidencePercent();
-                attRound = ac.getAttestationRound();
+                attConf = ac.confidencePercent();
+                attRound = ac.attestationRound();
             }
         }
 
@@ -769,8 +823,8 @@ public class DashboardService {
                 blockTime,
                 hasSafe,
                 hasFinalized,
-                            false,
-                            false,
+                false,
+                false,
                 transactionCount,
                 gasPriceWei,
                 attConf,

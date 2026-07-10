@@ -73,6 +73,9 @@ public class WsMonitorService {
     private static final Duration RECOVERY_ATTEMPT_DEDUP_WINDOW = Duration.ofSeconds(10);
     private static final long INVALID_TRACKING_LOOKBACK_BLOCKS = 64;
     private static final int RECOVERY_MAX_RETRIES = 3;
+    /** Attempts for the follow-up fetch after a WS event when the protocol classifies the error as transient. */
+    private static final int WS_FETCH_MAX_ATTEMPTS = 4;
+    private static final long WS_FETCH_RETRY_DELAY_MS = 500;
 
     public WsMonitorService(RpcMonitorService monitor,
                             NodeRegistry nodeRegistry,
@@ -279,7 +282,10 @@ public class WsMonitorService {
                 state.lastWsEventReceivedAt = now;
                 BlockEvent event = protocol.parseWsNotification(root);
                 if (protocol.requiresHttpFetchAfterWsEvent()) {
-                    handleBlockWithHttpFetch(node, event.identifier(), event.blockNumber(), now);
+                    // Off the listener thread: the fetch may retry with sleeps (Solana getBlock
+                    // races confirmation), and WS frames are delivered serially per connection —
+                    // blocking here would back up the event stream (Solana: ~2.5 slots/s).
+                    recoveryExecutor.submit(() -> handleBlockWithHttpFetch(node, event.identifier(), event.blockNumber(), now));
                 } else {
                     handleDirectBlockEvent(node, event.blockNumber(), event.blockHash(),
                             event.parentHash(), event.blockTimestamp(), now);
@@ -292,9 +298,12 @@ public class WsMonitorService {
 
         private void handleBlockWithHttpFetch(NodeDefinition node, String eventIdentifier, Long eventBlockNumber, Instant now) {
             try {
-                RpcMonitorService.BlockInfo fullBlock = httpMonitorService.fetchBlockByHash(node, eventIdentifier);
-                if (fullBlock == null || fullBlock.blockHash() == null) {
-                    logger.warn("Failed to fetch block for identifier {} for node {}", eventIdentifier, node.name());
+                RpcMonitorService.BlockInfo fullBlock = fetchBlockForWsEvent(node, eventIdentifier);
+                if (fullBlock == null) {
+                    return; // skipped or unavailable after retries — logged at debug by the fetch helper
+                }
+                if (fullBlock.blockHash() == null) {
+                    logger.warn("Fetched block without hash for identifier {} for node {}", eventIdentifier, node.name());
                     return;
                 }
 
@@ -314,7 +323,7 @@ public class WsMonitorService {
 
                 ChainTracker.ChainUpdate update = tracker.registerBlock(blockNode);
 
-                if (update.reorg() != null) {
+                if (update.reorg() != null && update.reorg().reorgDepth() > 0) {
                     logger.info("Reorg detected via ChainTracker for node {}: depth={}, oldHead={}@{}, newHead={}@{}",
                             node.name(), update.reorg().reorgDepth(),
                             update.reorg().oldHeadHash(), update.reorg().oldHeadNumber(),
@@ -346,8 +355,12 @@ public class WsMonitorService {
                     store.addSample(node.key(), sample);
                 }
                 if (node.http() != null && !node.http().isBlank()) {
-                    final String verifyHash = blockHash;
-                    recoveryExecutor.submit(() -> scheduleBlockVerification(node, verifyHash));
+                    // Verify by the WS identifier, not the hash: Solana blocks are fetched by
+                    // slot (a base58 hash is not a valid getBlock argument); for EVM the
+                    // identifier is the block hash, so behavior is unchanged.
+                    final String verifyIdentifier = eventIdentifier != null ? eventIdentifier : blockHash;
+                    final Long verifyNumber = blockNumber;
+                    recoveryExecutor.submit(() -> scheduleBlockVerification(node, verifyIdentifier, verifyNumber));
                 }
                 monitor.resetWsBackoff(state);
 
@@ -387,9 +400,9 @@ public class WsMonitorService {
 
             } catch (InterruptedException ex) {
                 Thread.currentThread().interrupt();
-                logger.warn("Ethereum newHead handling interrupted ({}): {}", node.name(), ex.getMessage());
+                logger.warn("WS block fetch handling interrupted ({}): {}", node.name(), ex.getMessage());
             } catch (IOException | RuntimeException ex) {
-                logger.error("Ethereum newHead handling failure ({}): {}", node.name(), ex.getMessage());
+                logger.error("WS block fetch handling failure ({}): {}", node.name(), ex.getMessage());
                 monitor.recordFailure(node, MetricSource.WS, ex.getMessage());
             }
         }
@@ -431,7 +444,7 @@ public class WsMonitorService {
                         blockHash, parentHash, blockNumber, blockTimestamp, now, Confidence.NEW);
                 ChainTracker.ChainUpdate update = chainTracker.registerBlock(blockNode);
 
-                if (update.reorg() != null) {
+                if (update.reorg() != null && update.reorg().reorgDepth() > 0) {
                     logger.info("Reorg detected via ChainTracker for Cosmos node {}: depth={}, oldHead={}@{}, newHead={}@{}",
                             node.name(), update.reorg().reorgDepth(),
                             update.reorg().oldHeadHash(), update.reorg().oldHeadNumber(),
@@ -602,7 +615,44 @@ public class WsMonitorService {
         return previous == null || previous.isBefore(cutoff);
     }
 
-    private void scheduleBlockVerification(NodeDefinition node, String blockHash) {
+    /**
+     * Fetches the block behind a WS event identifier (block hash for EVM, slot string for
+     * Solana), letting the protocol classify JSON-RPC errors. Transient errors (Solana
+     * {@code -32004}: block not yet confirmed) are retried a few times; benign ones (skipped
+     * slot) return {@code null} without recording a failure — ChainTracker gap recovery is the
+     * safety net for blocks that never materialise. Transport errors and errors the protocol
+     * does not recognise propagate unchanged so callers record them as failures, exactly as
+     * before this helper existed.
+     */
+    RpcMonitorService.BlockInfo fetchBlockForWsEvent(NodeDefinition node, String identifier)
+            throws IOException, InterruptedException {
+        for (int attempt = 1; attempt <= WS_FETCH_MAX_ATTEMPTS; attempt++) {
+            try {
+                return httpMonitorService.fetchBlockByHash(node, identifier);
+            } catch (JsonRpcErrorException ex) {
+                switch (protocol.classifyFetchAfterWsEventError(ex.getCode(), ex.getRpcMessage())) {
+                    case SKIP -> {
+                        logger.debug("WS block fetch skipped (node={}, id={}): {}",
+                                node.name(), identifier, ex.getMessage());
+                        return null;
+                    }
+                    case FAIL -> throw ex;
+                    case RETRY -> {
+                        if (attempt < WS_FETCH_MAX_ATTEMPTS) {
+                            Thread.sleep(WS_FETCH_RETRY_DELAY_MS);
+                        }
+                    }
+                }
+            }
+        }
+        // Exhausted retries: old Solana nodes answer -32004 indefinitely for skipped slots,
+        // so treat this like SKIP rather than flooding the store with per-slot failures.
+        logger.debug("WS block fetch exhausted retries (node={}, id={}) — treating as skipped",
+                node.name(), identifier);
+        return null;
+    }
+
+    private void scheduleBlockVerification(NodeDefinition node, String identifier, Long knownBlockNumber) {
         long delayMs = properties.getBlockVerificationDelayMs();
         if (delayMs > 0) {
             try {
@@ -614,11 +664,17 @@ public class WsMonitorService {
         }
         long startNanos = System.nanoTime();
         try {
-            RpcMonitorService.BlockInfo block = httpMonitorService.fetchBlockByHash(node, blockHash);
+            RpcMonitorService.BlockInfo block = fetchBlockForWsEvent(node, identifier);
             if (block == null || block.blockHash() == null) {
                 return;
             }
             long latencyMs = (System.nanoTime() - startNanos) / 1_000_000;
+            // Trust the number we saw on the WS event; Solana getBlock returns parentSlot, and
+            // parentSlot+1 is wrong whenever slots were skipped.
+            if (knownBlockNumber != null && !knownBlockNumber.equals(block.blockNumber())) {
+                block = new RpcMonitorService.BlockInfo(knownBlockNumber, block.blockHash(), block.parentHash(),
+                        block.transactionCount(), block.gasPriceWei(), block.blockTimestamp());
+            }
             Instant now = Instant.now();
             MetricSample sample = MetricSample.builder(now, MetricSource.HTTP)
                     .success(true)
@@ -633,12 +689,12 @@ public class WsMonitorService {
             if (monitor.isWarmupComplete()) {
                 store.addSample(node.key(), sample);
             }
-            logger.debug("Block verification sample (node={}, hash={}, number={})",
-                    node.name(), blockHash, block.blockNumber());
+            logger.debug("Block verification sample (node={}, identifier={}, number={})",
+                    node.name(), identifier, block.blockNumber());
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
         } catch (IOException | RuntimeException ex) {
-            logger.debug("Block verification failed (node={}, hash={}): {}", node.name(), blockHash, ex.getMessage());
+            logger.debug("Block verification failed (node={}, identifier={}): {}", node.name(), identifier, ex.getMessage());
         }
     }
 

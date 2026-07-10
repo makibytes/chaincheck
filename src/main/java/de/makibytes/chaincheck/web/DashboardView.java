@@ -81,6 +81,7 @@ public class DashboardView {
     private final Long lastBlockAgeMs;
     private final boolean multiNodeConfigured;
     private final ChartGradientMode chartGradientMode;
+    private final de.makibytes.chaincheck.store.InMemoryMetricsStore.NodeMetadata nodeMetadata;
 
     private DashboardView(TimeRange range,
                           DashboardSummary summary,
@@ -119,7 +120,8 @@ public class DashboardView {
                           boolean isReferenceNode,
                           Long lastBlockAgeMs,
                           boolean multiNodeConfigured,
-                          ChartGradientMode chartGradientMode) {
+                          ChartGradientMode chartGradientMode,
+                          de.makibytes.chaincheck.store.InMemoryMetricsStore.NodeMetadata nodeMetadata) {
         this.range = range;
         this.summary = summary;
         this.anomalies = anomalies;
@@ -174,6 +176,7 @@ public class DashboardView {
         this.lastBlockAgeMs = lastBlockAgeMs;
         this.multiNodeConfigured = multiNodeConfigured;
         this.chartGradientMode = chartGradientMode;
+        this.nodeMetadata = nodeMetadata;
     }
 
     static DashboardView create(TimeRange range,
@@ -213,7 +216,8 @@ public class DashboardView {
                                  boolean isReferenceNode,
                                  Long lastBlockAgeMs,
                                  boolean multiNodeConfigured,
-                                 ChartGradientMode chartGradientMode) {
+                                 ChartGradientMode chartGradientMode,
+                                 de.makibytes.chaincheck.store.InMemoryMetricsStore.NodeMetadata nodeMetadata) {
         return new DashboardView(range, summary, anomalies, anomalyRows, sampleRows,
                 chartData, delayChartData,
                 chartReferenceHeadDelays, chartReferenceSafeDelays, chartReferenceFinalizedDelays,
@@ -225,7 +229,7 @@ public class DashboardView {
                 anomalyTotalPages, anomalyPageSize, totalAnomalies,
                 scaleChangeMs, scaleMaxMs, hasOlderAggregates,
                 generatedAt, referenceComparison, isReferenceNode,
-                lastBlockAgeMs, multiNodeConfigured, chartGradientMode);
+                lastBlockAgeMs, multiNodeConfigured, chartGradientMode, nodeMetadata);
     }
 
     public TimeRange getRange() {
@@ -442,5 +446,20 @@ public class DashboardView {
 
     public ChartGradientMode getChartGradientMode() {
         return chartGradientMode;
+    }
+
+    /** Node software version (Solana getVersion), or null if unknown / not a Solana node. */
+    public String getNodeVersion() {
+        return nodeMetadata == null ? null : nodeMetadata.version();
+    }
+
+    /** Last-observed network throughput in TPS (Solana getRecentPerformanceSamples), or null. */
+    public Double getNetworkTps() {
+        return nodeMetadata == null ? null : nodeMetadata.tps();
+    }
+
+    /** Last-observed mean slot time in ms (Solana getRecentPerformanceSamples), or null. */
+    public Double getNetworkSlotTimeMs() {
+        return nodeMetadata == null ? null : nodeMetadata.slotTimeMs();
     }
 }

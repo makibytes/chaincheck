@@ -4,17 +4,23 @@ rpc:
   title: "Starknet Mainnet"
   title-color: "#ec796b"
   get-safe-blocks: false
+  # When enabled, "finalized" maps to the l1_accepted block_id (JSON-RPC spec >= 0.8):
+  # the newest block settled on Ethereum, hours behind L2. Off by default because many
+  # public gateways still run older specs and would reject the tag.
   get-finalized-blocks: false
-  scale-change-ms: 5000
-  scale-max-ms: 120000
+  scale-change-ms: 1000
+  scale-max-ms: 60000
   anomaly-detection:
-    # Starknet block time ~30s — 6 blocks of staleness, 2 blocks of gap
-    stale-block-threshold-ms: 180000
+    # Starknet v0.14 ("Grinta", Sep 2025) cut block time from ~30s to 4-6s.
+    # 60s of tolerated staleness (~10-12 blocks) absorbs the network's documented
+    # block-time jitter while still flagging the multi-minute sequencer stalls
+    # Starknet has experienced (Sep 2025, Jan 2026).
+    stale-block-threshold-ms: 60000
     block-gap-threshold: 2
-  # Polling intervals: optimal = 30s (matches Starknet's variable ~30s block time), sparse = 120s
+  # Polling intervals: optimal = 5s (matches Starknet's post-v0.14 4-6s block time), sparse = 30s
   requests:
-    optimal-poll-interval-ms: 30000
-    sparse-poll-interval-ms: 120000
+    optimal-poll-interval-ms: 5000
+    sparse-poll-interval-ms: 30000
   # WS is supported by Pathfinder and Juno nodes via starknet_subscribeNewHeads.
   # Nodes without a ws: entry fall back to HTTP polling automatically.
   nodes:

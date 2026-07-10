@@ -8,7 +8,7 @@
 
 - **Fleet Overview**: Default start page shows all configured nodes at a glance with health scores, latency, block lag, and connection status — no more guessing which node is healthy
 - **Per-Node Details**: Drill into any node for a full latency chart, block-finality timeline, anomaly log, and sample-by-sample breakdown
-- **Multi-Chain Architecture**: Six behavioral chain types (Ethereum, Cosmos, Optimism, ZK, Avalanche, Tron) each tuned to the chain's finality model — see [BLOCKCHAINS.md](BLOCKCHAINS.md) for all supported profiles
+- **Multi-Chain Architecture**: Nine behavioral chain types (Ethereum, Cosmos, Optimism, ZK, Avalanche, Tron, Solana, Cosmos SDK, Starknet) each tuned to the chain's finality model — see [BLOCKCHAINS.md](BLOCKCHAINS.md) for all supported profiles
 - **Real-Time Monitoring**: Tracks latency and error rates for both HTTP polling and WebSocket `newHeads` subscriptions
 - **Checkpoint Propagation Delays**: Measures head, safe, and finalized block delays to track how fast a node follows the canonical chain
 - **Anomaly Detection**: Automatically flags block skips, reorgs (with depth), rate limits, timeouts, wrong heads, and connection drops
@@ -16,7 +16,13 @@
 - **Unified Block View**: Merges WebSocket and HTTP samples by block hash for complete block lifecycle tracking
 - **First-Seen Delta**: In multi-node setups, shows which node saw each block first and how many milliseconds behind each node was
 - **Canonical Rate & Block Quality**: Tracks what fraction of observed blocks ended up in the canonical chain (orphan detection via parent-hash linkage)
-- **Health Score**: Composite 0–100 score per node, combining uptime, latency, head delay, and error rate
+- **Solana sync-lag detection**: On Solana, ChainCheck calls `getHealth` each poll and flags nodes that self-report lagging the cluster tip (`SYNC_LAG` anomaly with the exact slots-behind count), at no extra request
+- **EVM sync-lag & version**: EVM chains (Ethereum, Base, Optimism, Arbitrum, Avalanche, BNB, Polygon, zkSync, Tron) now get the same treatment via `eth_syncing` (SYNC_LAG anomaly when a node reports itself behind) and `web3_clientVersion` (client/version badge), bringing them to parity with the Solana stack
+- **Prometheus metrics**: ChainCheck exposes per-node health score, up/down, block lag, P95 latency/head-delay, anomaly and disconnect counts, and reference status at `/actuator/prometheus`, so operators can scrape into their own Prometheus/Grafana and alert via Alertmanager (e.g. on `chaincheck_node_up == 0`)
+- **Solana node metadata**: On a slow cadence ChainCheck records each Solana node's software version (`getVersion`) and observed network TPS / slot time (`getRecentPerformanceSamples`) — shown as a version badge in the fleet table and a Network card on the node page
+- **Health Score**: Composite 0–100 score per node, combining uptime, latency, head delay, error rate, and WebSocket status; unmeasurable factors (no WebSocket configured, no head-delay data) are excluded and the score rescaled to /100, so nodes are judged only on what is actually measured
+- **Fleet Summary Strip**: At-a-glance totals above the fleet table — nodes online, excellent nodes, nodes needing attention, anomaly count, and chain head
+- **Live Refresh**: The Fleet Overview auto-refreshes every 10 seconds; per-node pages refresh status panels every 10 seconds and chart/table data every 60 seconds while preserving scroll position, chart legend selections, and toggles. Pausable and persisted per browser; refreshes are skipped while a modal, tooltip, or text selection is open, and historical views are never auto-refreshed
 - **Hardened Reference Selection**: In voting mode, reference nodes are chosen from the last hour of data with heavy weighting for uptime, latency, and delay; nodes with poor uptime or many recent anomalies are excluded
 - **Attestation Tracking** (Ethereum only): Beacon committee attestation rounds per block (1–3 rounds = ~33%/67%/90% canonical confidence)
 - **Metric Aggregation**: Raw samples (2 hours) roll up into minutely aggregates (3 days) and hourly aggregates (30 days)
@@ -50,10 +56,11 @@ mvn spring-boot:run -Dspring-boot.run.profiles=ethereum
 # Polygon mainnet — uses application-polygon.yml
 mvn spring-boot:run -Dspring-boot.run.profiles=polygon
 
-# Base, Optimism, Arbitrum, zkSync, Avalanche, Tron — same pattern
+# Base, Optimism, Arbitrum, zkSync, Avalanche, BNB Chain, Tron — same pattern
 mvn spring-boot:run -Dspring-boot.run.profiles=base
 mvn spring-boot:run -Dspring-boot.run.profiles=arbitrum
 mvn spring-boot:run -Dspring-boot.run.profiles=avalanche
+mvn spring-boot:run -Dspring-boot.run.profiles=bnb
 
 # Testnets
 mvn spring-boot:run -Dspring-boot.run.profiles=ethereum-sepolia
@@ -68,6 +75,52 @@ See [BLOCKCHAINS.md](BLOCKCHAINS.md) for the full list of supported profiles and
 Open `http://localhost:8080` to see the Fleet Overview.
 
 ---
+
+## Metrics & Alerting (Prometheus)
+
+ChainCheck exposes its per-node monitoring data in Prometheus format so you can scrape it into
+your own observability stack and alert with Alertmanager — no need to watch the dashboard.
+
+Scrape endpoint: `GET /actuator/prometheus`
+
+Exported gauges (each tagged with `node` and `node_name`):
+
+| Metric | Meaning |
+| --- | --- |
+| `chaincheck_node_health_score` | Composite health score 0–100 |
+| `chaincheck_node_up` | 1 if reachable over HTTP, else 0 |
+| `chaincheck_node_ws_up` | 1 if the WebSocket is connected, else 0 |
+| `chaincheck_node_block_lag_blocks` | Blocks behind the fleet's highest block |
+| `chaincheck_node_latency_p95_ms` | P95 request latency (ms) |
+| `chaincheck_node_head_delay_p95_ms` | P95 head-delay (ms) |
+| `chaincheck_node_anomalies_total` | Anomalies in the window |
+| `chaincheck_node_ws_disconnects_total` | WebSocket disconnects in the window |
+| `chaincheck_node_latest_block` | Latest block number observed |
+| `chaincheck_node_reference` | 1 if this node is the current reference, else 0 |
+
+Example Prometheus scrape config:
+
+```yaml
+scrape_configs:
+  - job_name: chaincheck
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["chaincheck-host:8080"]
+```
+
+Example alert (node unreachable for 2 minutes):
+
+```yaml
+- alert: ChainCheckNodeDown
+  expr: chaincheck_node_up == 0
+  for: 2m
+  labels: { severity: critical }
+  annotations:
+    summary: "RPC node {{ $labels.node_name }} is unreachable"
+```
+
+The gauge values are refreshed every 15 seconds (configurable via
+`chaincheck.metrics.refresh-interval-ms`) and mirror exactly what the dashboard shows.
 
 ## Dashboard
 
@@ -115,7 +168,7 @@ ChainCheck uses two orthogonal fields to describe a chain:
 | `rpc.mode` | `String` | Concrete chain name — informational only (e.g., `"ethereum"`, `"polygon"`) |
 | `rpc.mode-type` | enum | Behavioral chain type — controls WS newHead processing and polling defaults |
 
-Six behavioral mode types are supported. See [BLOCKCHAINS.md](BLOCKCHAINS.md) for all supported chains and testnet profiles.
+Nine behavioral mode types are supported. See [BLOCKCHAINS.md](BLOCKCHAINS.md) for all supported chains and testnet profiles.
 
 ### Ethereum Mode (`rpc.mode-type: ethereum`)
 
@@ -311,7 +364,7 @@ See [BLOCKCHAINS.md](BLOCKCHAINS.md) for the complete list of supported profiles
 | Key | Default | Description |
 |-----|---------|-------------|
 | `mode` | — | Concrete chain name (informational — e.g., `"ethereum"`, `"polygon"`) |
-| `mode-type` | `cosmos` | Behavioral chain type: `ethereum`, `cosmos`, `optimism`, `zk`, `avalanche`, or `tron` |
+| `mode-type` | `cosmos` | Behavioral chain type: `ethereum`, `cosmos`, `optimism`, `zk`, `avalanche`, `tron`, `solana`, `cosmos_sdk`, or `starknet` |
 | `title` | `ChainCheck` | Dashboard title shown in the header |
 | `title-color` | — | CSS color for the title text |
 | `get-safe-blocks` | `false` | Poll `eth_getBlockByNumber("safe")` on execution nodes |
@@ -346,7 +399,7 @@ Controls HTTP polling intervals for all nodes in this profile. Each node selects
 |-----|---------|-------------|
 | `high-latency-ms` | `2000` | HTTP latency above this triggers a `DELAY` anomaly |
 | `long-delay-block-count` | `15` | Head delay above N blocks triggers a `DELAY` anomaly |
-| `stale-block-threshold-ms` | `30000` | HTTP latest block older than this triggers a `DELAY` anomaly |
+| `stale-block-threshold-ms` | `30000` | HTTP latest block older than this triggers a `STALE` anomaly |
 
 #### Consensus node (`rpc.consensus.*` — Ethereum mode only)
 
@@ -437,11 +490,16 @@ de.makibytes.chaincheck
 ├── config      — ChainCheckProperties (rpc.* YAML binding)
 ├── model       — MetricSample, AnomalyEvent, AnomalyType, TimeRange, ...
 ├── monitor     — RpcMonitorService, HttpMonitorService, WsMonitorService,
-│                 AnomalyDetector, NodeRegistry, ChainTracker
-├── reference   — ReferenceNodeSelector, ConfiguredReferenceStrategy,
-│   ├── node      VotingReferenceStrategy, ConsensusNodeClient
-│   ├── attestation  AttestationTracker
-│   └── block    BlockVotingService, ReferenceBlocks
+│   │             AnomalyDetector, NodeRegistry, ChainTracker
+│   └── protocol  ChainProtocol, EvmProtocol, SolanaProtocol,
+│                 CosmosProtocol, StarknetProtocol
+├── chain
+│   ├── shared    BlockConfidenceTracker, BlockAgreementTracker, ReferenceStrategy
+│   ├── ethereum  ConfiguredReferenceStrategy, ConfiguredReferenceSource,
+│   │             ConsensusNodeClient
+│   │   └── attestation  AttestationTracker
+│   └── cosmos    VotingReferenceStrategy, BlockVotingService,
+│                 BlockVotingCoordinator, ReferenceNodeSelector
 ├── store       — InMemoryMetricsStore, SampleAggregate, AnomalyAggregate,
 │                 HistogramAccumulator
 └── web         — DashboardController, DashboardService, ChartBuilder,

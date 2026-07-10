@@ -137,4 +137,85 @@ public class EvmProtocol implements ChainProtocol {
     public boolean supportsParentHash() {
         return true;
     }
+
+    // ── Node health probe (eth_syncing) ───────────────────────────────────
+
+    @Override
+    public java.util.Optional<RpcRequest> buildHealthRequest() {
+        // eth_syncing: false when fully synced, otherwise an object with currentBlock /
+        // highestBlock. The EVM analogue of Solana getHealth — catches deep sync gaps
+        // (initial sync, recovery after downtime); sub-block lag is still covered by
+        // ChainCheck's head-delay/staleness detection.
+        return java.util.Optional.of(new RpcRequest("eth_syncing", mapper.createArrayNode()));
+    }
+
+    @Override
+    public Integer parseHealthSlotsBehind(JsonNode envelope) {
+        if (envelope == null) {
+            return null;
+        }
+        JsonNode error = envelope.path("error");
+        if (!error.isMissingNode() && !error.isNull()) {
+            // eth_syncing rarely errors; if it does the node is unhealthy by an unknown margin.
+            return -1;
+        }
+        JsonNode result = envelope.path("result");
+        if (result.isMissingNode() || result.isNull()) {
+            return null;
+        }
+        // Fully synced: result == false.
+        if (result.isBoolean()) {
+            return result.asBoolean() ? -1 : 0;
+        }
+        // Syncing: { startingBlock, currentBlock, highestBlock } (hex). Behind = highest - current.
+        if (result.isObject()) {
+            Long current = EthHex.parseLong(result.path("currentBlock").asText(null));
+            Long highest = EthHex.parseLong(result.path("highestBlock").asText(null));
+            if (current == null || highest == null) {
+                return -1; // syncing but no usable numbers — unhealthy, unknown margin
+            }
+            long behind = highest - current;
+            if (behind <= 0) {
+                return 0;
+            }
+            return behind > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) behind;
+        }
+        return null;
+    }
+
+    // ── Node version probe (web3_clientVersion) ───────────────────────────
+
+    @Override
+    public java.util.Optional<RpcRequest> buildVersionRequest() {
+        return java.util.Optional.of(new RpcRequest("web3_clientVersion", mapper.createArrayNode()));
+    }
+
+    @Override
+    public String parseVersion(JsonNode result) {
+        if (result == null || result.isNull() || !result.isTextual()) {
+            return null;
+        }
+        String raw = result.asText();
+        if (raw.isBlank()) {
+            return null;
+        }
+        // Condense the full client string (e.g. "Geth/v1.13.5-stable-916d6a44/linux-amd64/go1.21.3")
+        // to "client/version" (e.g. "Geth/v1.13.5") for fleet skew detection. The git hash, OS,
+        // arch, and language-runtime segments are dropped.
+        String[] parts = raw.split("/");
+        String client = parts[0].trim();
+        if (parts.length < 2) {
+            return client.isEmpty() ? null : client;
+        }
+        String version = parts[1].trim();
+        int cut = version.length();
+        for (char sep : new char[] {'-', '+'}) {
+            int i = version.indexOf(sep);
+            if (i > 0 && i < cut) {
+                cut = i;
+            }
+        }
+        String shortVersion = version.substring(0, cut);
+        return shortVersion.isEmpty() ? client : client + "/" + shortVersion;
+    }
 }

@@ -146,4 +146,19 @@
             <span class="card-value"><span th:text="${#numbers.formatDecimal(view.summary.p95FirstSeenDeltaMs, 1, 0)}">0</span><span class="card-unit muted">ms</span></span>
         </div>
     </div>
+    <div class="card" th:if="${view.networkTps != null or view.networkSlotTimeMs != null or !#strings.isEmpty(view.nodeVersion)}">
+        <h3>Network <span class="hint" data-hint="This node's view of the network via Solana getRecentPerformanceSamples and getVersion. TPS and slot time are network-wide; a node reporting values that diverge from its peers is likely lagging or on a minority fork.">?</span></h3>
+        <div class="card-row" th:if="${view.networkTps != null}">
+            <span class="card-label muted">TPS: <span class="hint" data-hint="Transactions per second observed over the last ~60s sample window (includes vote transactions, the conventional Solana TPS figure).">?</span></span>
+            <span class="card-value" th:text="${#numbers.formatInteger(view.networkTps, 1, 'COMMA')}">0</span>
+        </div>
+        <div class="card-row" th:if="${view.networkSlotTimeMs != null}">
+            <span class="card-label muted">Slot time: <span class="hint" data-hint="Mean slot time over the sample window (sample period ÷ slots produced). Solana targets ~400 ms; sustained higher values indicate network congestion or a lagging node.">?</span></span>
+            <span class="card-value"><span th:text="${#numbers.formatDecimal(view.networkSlotTimeMs, 1, 0)}">0</span><span class="card-unit muted">ms</span></span>
+        </div>
+        <div class="card-row" th:if="${!#strings.isEmpty(view.nodeVersion)}">
+            <span class="card-label muted">Version: <span class="hint" data-hint="Node software version reported by getVersion (solana-core). Watch for version skew across the fleet.">?</span></span>
+            <span class="card-value" th:text="${view.nodeVersion}">-</span>
+        </div>
+    </div>
 </section>
