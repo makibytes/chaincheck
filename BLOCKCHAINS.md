@@ -26,7 +26,7 @@ The `ModeType` values and their behaviours:
 | `AVALANCHE` | Avalanche C-Chain | Trusts event payload directly; Snowman consensus; near-instant finality | EVM JSON-RPC |
 | `TRON` | Tron | Trusts event payload directly; Ethereum-compatible JSON-RPC via TronGrid | EVM JSON-RPC |
 | `SOLANA` | Solana | `slotSubscribe` WS → follow-up `getBlock` HTTP per slot; base58 hashes; `confirmed`/`finalized` commitment levels | Solana JSON-RPC |
-| `NEAR` | NEAR | `EXPERIMENTAL_subscription` WS for new blocks; `status`/`block` JSON-RPC; optimistic/final finality; base58 block hashes | NEAR JSON-RPC |
+| `NEAR` | NEAR | `status`/`block` HTTP polling; optional `EXPERIMENTAL_subscription` WS; optimistic/final finality; nanosecond timestamps | NEAR JSON-RPC |
 | `COSMOS_SDK` | Cosmos Hub, Osmosis, CometBFT chains | Full block in WS NewBlock event; no extra HTTP fetch; BFT instant finality | CometBFT RPC (HTTP GET) |
 | `STARKNET` | Starknet | `starknet_subscribeNewHeads` WS; full header in event; `starknet_*` JSON-RPC; integer block numbers | Starknet JSON-RPC |
 
@@ -112,7 +112,15 @@ Solana uses `slotSubscribe` WebSocket subscriptions (not `eth_subscribe`). Chain
 
 ### NEAR
 
-NEAR exposes `status` and `block` JSON-RPC calls plus an experimental WebSocket subscription API (`EXPERIMENTAL_subscription` with `subscriptionType: "blocks"`). ChainCheck maps the NEAR block header into the same block model used by the other chain adapters: block height is the number, block hash and `prev_hash` become the parent link, and block timestamps are converted from NEAR's nanosecond timestamps. The adapter uses `optimistic` finality for `latest`/`safe` and `final` for `finalized`. The bundled profiles poll at 1 s in optimal mode and 30 s in sparse mode, which is a good compromise for NEAR's ~1.2 s block cadence while still respecting public RPC rate limits.
+NEAR exposes `status` and `block` JSON-RPC calls over HTTP. Unlike Ethereum or Solana, the standard NEAR RPC endpoints do **not** support WebSocket subscriptions — ChainCheck relies on HTTP polling exclusively (at 1 s in optimal mode and 30 s in sparse mode, matching NEAR's ~1.2 s block cadence). The `EXPERIMENTAL_subscription` adapter code exists for custom nodes that enable experimental WebSocket features, but the bundled profiles use HTTP-only monitoring.
+
+ChainCheck maps the NEAR block header into the standard block model: block height is the number, block `hash` and `prev_hash` provide the parent-chain link for reorg detection, and block timestamps are converted from NEAR's nanosecond-precision Unix timestamps. The adapter uses `optimistic` finality for `latest`/`safe` and `final` for `finalized`.
+
+On every HTTP poll, `status` is called to obtain the current head height and node health. A syncing node (where `sync_info.syncing` is `true`) opens a `SYNC_LAG` anomaly. On a slow (~60 s) cadence ChainCheck also extracts the `version.version` field from the same `status` response (condensed to e.g. `nearcore/1.35.0`) for fleet version-skew detection.
+
+Block responses include a `chunks` array (one entry per shard). ChainCheck counts active chunks (those with `gas_used > 0`) as a transaction-activity proxy — a more precise count would require fetching each chunk individually, which is too expensive for monitoring purposes.
+
+NEAR uses named JSON-RPC params (`{"finality": "final"}` or `{"block_id": N}`) rather than positional arrays — the adapter handles this correctly.
 
 ### Cosmos Hub / CometBFT Chains
 

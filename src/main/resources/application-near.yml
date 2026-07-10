@@ -5,8 +5,6 @@ rpc:
   title-color: "#00C08B"
   get-safe-blocks: true
   get-finalized-blocks: true
-  ws-gap-recovery-enabled: true
-  ws-gap-recovery-max-blocks: 10
   anomaly-detection:
     high-latency-ms: 1500
     long-delay-block-count: 20
@@ -18,8 +16,6 @@ rpc:
   nodes:
     - name: rpc.mainnet.near.org
       http: https://rpc.mainnet.near.org
-      ws: wss://rpc.mainnet.near.org
     - name: publicnode.com
       http: https://near-rpc.publicnode.com
-      ws: wss://near-rpc.publicnode.com
       requests: sparse

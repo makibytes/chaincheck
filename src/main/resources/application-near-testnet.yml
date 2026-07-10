@@ -5,8 +5,6 @@ rpc:
   title-color: "#2E8B57"
   get-safe-blocks: true
   get-finalized-blocks: true
-  ws-gap-recovery-enabled: true
-  ws-gap-recovery-max-blocks: 10
   anomaly-detection:
     high-latency-ms: 1500
     long-delay-block-count: 20
@@ -18,8 +16,6 @@ rpc:
   nodes:
     - name: rpc.testnet.near.org
       http: https://rpc.testnet.near.org
-      ws: wss://rpc.testnet.near.org
     - name: publicnode.com
       http: https://near-testnet-rpc.publicnode.com
-      ws: wss://near-testnet-rpc.publicnode.com
       requests: sparse

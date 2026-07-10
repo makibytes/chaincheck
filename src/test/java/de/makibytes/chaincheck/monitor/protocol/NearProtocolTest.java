@@ -68,14 +68,20 @@ class NearProtocolTest {
     void blockByTagRequest() {
         RpcRequest latest = protocol.buildBlockByTagRequest("latest");
         assertEquals("block", latest.method());
-        assertEquals("optimistic", latest.params().get(0).path("finality").asText());
+        // NEAR uses named params (object), not positional (array).
+        assertTrue(latest.params().isObject(), "params must be an object, not array");
+        assertEquals("optimistic", latest.params().path("finality").asText());
 
         RpcRequest finalized = protocol.buildBlockByTagRequest("finalized");
-        assertEquals("final", finalized.params().get(0).path("finality").asText());
+        assertTrue(finalized.params().isObject());
+        assertEquals("final", finalized.params().path("finality").asText());
+
+        RpcRequest safe = protocol.buildBlockByTagRequest("safe");
+        assertEquals("optimistic", safe.params().path("finality").asText());
     }
 
     @Test
-    @DisplayName("parseBlockByTagResponse parses block headers")
+    @DisplayName("parseBlockByTagResponse parses block headers with chunks")
     void parseBlockResponse() throws IOException {
         String json = """
                 {
@@ -84,7 +90,12 @@ class NearProtocolTest {
                     "hash": "abc",
                     "prev_hash": "def",
                     "timestamp": 1717521123546789000
-                  }
+                  },
+                  "chunks": [
+                    {"shard_id": 0, "gas_used": 12345678},
+                    {"shard_id": 1, "gas_used": 0},
+                    {"shard_id": 2, "gas_used": 98765}
+                  ]
                 }
                 """;
         RpcMonitorService.BlockInfo block = protocol.parseBlockByTagResponse(mapper.readTree(json), "latest");
@@ -93,6 +104,27 @@ class NearProtocolTest {
         assertEquals("abc", block.blockHash());
         assertEquals("def", block.parentHash());
         assertEquals(Instant.ofEpochMilli(1717521123546789000L / 1_000_000L), block.blockTimestamp());
+        // 2 chunks with gas_used > 0 → txCount = 2
+        assertEquals(2, block.transactionCount());
+    }
+
+    @Test
+    @DisplayName("parseBlockByTagResponse returns null txCount when no chunks array")
+    void parseBlockResponseWithoutChunks() throws IOException {
+        String json = """
+                {
+                  "header": {
+                    "height": 10,
+                    "hash": "h1",
+                    "prev_hash": "h0",
+                    "timestamp": 1717521123546789000
+                  }
+                }
+                """;
+        RpcMonitorService.BlockInfo block = protocol.parseBlockByTagResponse(mapper.readTree(json), "latest");
+        assertNotNull(block);
+        assertEquals(10L, block.blockNumber());
+        assertNull(block.transactionCount());
     }
 
     @Test
@@ -150,5 +182,47 @@ class NearProtocolTest {
     void capabilities() {
         assertTrue(protocol.supportsParentHash());
         assertFalse(protocol.requiresHttpFetchAfterWsEvent());
+    }
+
+    @Test
+    @DisplayName("buildVersionRequest uses status endpoint")
+    void versionRequest() {
+        assertTrue(protocol.buildVersionRequest().isPresent());
+        RpcRequest req = protocol.buildVersionRequest().get();
+        assertEquals("status", req.method());
+    }
+
+    @Test
+    @DisplayName("parseVersion extracts nearcore version string")
+    void parseVersion() throws IOException {
+        JsonNode result = mapper.readTree("""
+                {
+                  "version": {
+                    "version": "1.35.0",
+                    "build": "1.35.0-rc.2-abcdef",
+                    "rustc_version": "1.73.0"
+                  },
+                  "chain_id": "mainnet",
+                  "sync_info": {}
+                }
+                """);
+        assertEquals("nearcore/1.35.0", protocol.parseVersion(result));
+    }
+
+    @Test
+    @DisplayName("parseVersion returns null for missing version field")
+    void parseVersionMissing() throws IOException {
+        assertNull(protocol.parseVersion(mapper.readTree("{}")));
+        assertNull(protocol.parseVersion(mapper.readTree("{\"version\":{}}")));
+        assertNull(protocol.parseVersion(null));
+    }
+
+    @Test
+    @DisplayName("buildBlockByNumberRequest uses named params with block_id")
+    void blockByNumberRequest() {
+        RpcRequest req = protocol.buildBlockByNumberRequest(12345);
+        assertEquals("block", req.method());
+        assertTrue(req.params().isObject(), "params must be an object, not array");
+        assertEquals(12345L, req.params().path("block_id").asLong());
     }
 }

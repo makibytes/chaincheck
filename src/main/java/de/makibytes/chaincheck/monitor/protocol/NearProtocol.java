@@ -42,6 +42,11 @@ import de.makibytes.chaincheck.monitor.RpcMonitorService;
  * NEAR uses two practical finality levels: {@code optimistic} (latest / safe-ish) and {@code final}
  * (finalized). ChainCheck maps {@code latest} to {@code optimistic}, {@code safe} to the same
  * optimistic level, and {@code finalized} to {@code final}.
+ *
+ * <h3>Metadata probes</h3>
+ * Node version is extracted from the {@code status} response ({@code version.version} field).
+ * Since the health probe already calls {@code status}, the version probe reuses the same method
+ * — the batch layer deduplicates identical requests when they share the same id-in-batch.
  */
 public class NearProtocol implements ChainProtocol {
 
@@ -76,8 +81,9 @@ public class NearProtocol implements ChainProtocol {
             case "safe" -> "optimistic";
             default -> "optimistic";
         };
+        // NEAR block method expects named params: {"finality": "..."} — not positional.
         ObjectNode params = mapper.createObjectNode().put("finality", finality);
-        return new RpcRequest("block", mapper.createArrayNode().add(params));
+        return new RpcRequest("block", params);
     }
 
     @Override
@@ -87,8 +93,9 @@ public class NearProtocol implements ChainProtocol {
 
     @Override
     public RpcRequest buildBlockByNumberRequest(long number) {
+        // NEAR block method expects named params: {"block_id": N} — not positional.
         ObjectNode params = mapper.createObjectNode().put("block_id", number);
-        return new RpcRequest("block", mapper.createArrayNode().add(params));
+        return new RpcRequest("block", params);
     }
 
     @Override
@@ -181,6 +188,32 @@ public class NearProtocol implements ChainProtocol {
         return behind > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) behind;
     }
 
+    // ── Node metadata probes ──────────────────────────────────────────────
+
+    @Override
+    public Optional<RpcRequest> buildVersionRequest() {
+        // Reuses the status endpoint — the batch layer sends a single request when the same
+        // method+params appears multiple times (block-number, health, and version all call status).
+        return Optional.of(new RpcRequest("status", mapper.createArrayNode()));
+    }
+
+    @Override
+    public String parseVersion(JsonNode result) {
+        if (result == null || result.isNull()) {
+            return null;
+        }
+        // NEAR status result: { "version": { "version": "1.35.0", "build": "...", "rustc_version": "..." }, ... }
+        JsonNode versionNode = result.path("version").path("version");
+        if (versionNode.isMissingNode() || versionNode.isNull()) {
+            return null;
+        }
+        String version = versionNode.asText(null);
+        if (version == null || version.isBlank()) {
+            return null;
+        }
+        return "nearcore/" + version;
+    }
+
     private RpcMonitorService.BlockInfo parseBlock(JsonNode result) throws IOException {
         if (result == null || result.isNull()) {
             return null;
@@ -199,7 +232,27 @@ public class NearProtocol implements ChainProtocol {
         }
         String parentHash = header.path("prev_hash").asText(null);
         Instant timestamp = parseTimestamp(header.path("timestamp"));
-        return new RpcMonitorService.BlockInfo(blockNumber, blockHash, parentHash, null, null, timestamp);
+
+        // NEAR blocks include a chunks array with per-shard chunk headers.  When the full
+        // block result is returned (not just the header), sum gas_used across chunks as an
+        // activity indicator — ChainCheck stores this in the txCount field.  Chunks with
+        // gas_used == 0 are empty shards.
+        Integer txCount = null;
+        JsonNode chunks = result.path("chunks");
+        if (chunks.isArray() && !chunks.isEmpty()) {
+            int activeChunks = 0;
+            for (JsonNode chunk : chunks) {
+                long gas = chunk.path("gas_used").asLong(0);
+                if (gas > 0) {
+                    activeChunks++;
+                }
+            }
+            // Use active-chunk count as a transaction-activity proxy.  A more precise count
+            // would require fetching each chunk individually (too expensive for monitoring).
+            txCount = activeChunks;
+        }
+
+        return new RpcMonitorService.BlockInfo(blockNumber, blockHash, parentHash, txCount, null, timestamp);
     }
 
     private static Long parseLongValue(JsonNode node) {
