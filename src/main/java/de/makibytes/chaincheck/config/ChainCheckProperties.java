@@ -44,6 +44,8 @@ public class ChainCheckProperties {
         TRON,
         /** Solana mainnet-beta / devnet — slot-based, slotSubscribe WS, base58 hashes. */
         SOLANA,
+        /** NEAR — status/block JSON-RPC plus EXPERIMENTAL block subscriptions. */
+        NEAR,
         /** Cosmos SDK / CometBFT chains — GET-based REST RPC, instant BFT finality. */
         COSMOS_SDK,
         /** Starknet — starknet_* JSON-RPC, ACCEPTED_ON_L2 / ACCEPTED_ON_L1 finality. */
@@ -222,6 +224,7 @@ public class ChainCheckProperties {
             requests.setOptimalPollIntervalMs(switch (modeType) {
                 case ETHEREUM   -> 12_000L;
                 case SOLANA     ->    400L;
+                case NEAR       ->  1_000L;
                 case COSMOS_SDK ->  6_000L;
                 case STARKNET   -> 30_000L;
                 default         ->  2_000L;
@@ -231,6 +234,7 @@ public class ChainCheckProperties {
             requests.setSparsePollIntervalMs(switch (modeType) {
                 case ETHEREUM   -> 60_000L;
                 case SOLANA     ->  5_000L;
+                case NEAR       -> 30_000L;
                 case STARKNET   -> 120_000L;
                 default         -> 30_000L;
             });

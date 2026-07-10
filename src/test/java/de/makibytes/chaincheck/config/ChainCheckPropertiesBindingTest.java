@@ -73,6 +73,22 @@ class ChainCheckPropertiesBindingTest {
     }
 
     @Test
+    @DisplayName("NEAR mode-type binds and sets correct poll defaults")
+    void bindsNearModeType() {
+        contextRunner
+                .withPropertyValues(
+                        "rpc.mode-type=near",
+                        "rpc.nodes[0].name=Near Node",
+                        "rpc.nodes[0].http=http://near.example")
+                .run(context -> {
+                    ChainCheckProperties props = context.getBean(ChainCheckProperties.class);
+                    assertEquals(ChainCheckProperties.ModeType.NEAR, props.getModeType());
+                    assertEquals(1_000L, props.getRequests().getOptimalPollIntervalMs());
+                    assertEquals(30_000L, props.getRequests().getSparsePollIntervalMs());
+                });
+    }
+
+    @Test
     @DisplayName("COSMOS_SDK mode-type binds (relaxed: cosmos_sdk → COSMOS_SDK)")
     void bindsCosmosSdkModeType() {
         contextRunner
