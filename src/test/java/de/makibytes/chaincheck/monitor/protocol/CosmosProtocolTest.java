@@ -242,4 +242,51 @@ class CosmosProtocolTest {
         assertEquals(1L, event.blockNumber());
         assertNull(event.parentHash()); // empty string → null
     }
+
+    @Test
+    @DisplayName("buildHealthRequest probes /status")
+    void buildHealthRequest() {
+        assertTrue(protocol.buildHealthRequest().isPresent());
+        assertEquals("/status", protocol.buildHealthRequest().get().method());
+    }
+
+    @Test
+    @DisplayName("parseHealthSlotsBehind maps catching_up to behind/synced")
+    void parseHealthCatchingUp() throws IOException {
+        assertEquals(-1, protocol.parseHealthSlotsBehind(mapper.readTree(
+                "{\"id\":6,\"result\":{\"sync_info\":{\"catching_up\":true}}}")));
+        assertEquals(0, protocol.parseHealthSlotsBehind(mapper.readTree(
+                "{\"id\":6,\"result\":{\"sync_info\":{\"catching_up\":false}}}")));
+    }
+
+    @Test
+    @DisplayName("parseHealthSlotsBehind returns null without usable sync info")
+    void parseHealthNoInfo() throws IOException {
+        assertNull(protocol.parseHealthSlotsBehind(null));
+        // The head request is the same /status call; a /status error already fails the poll
+        assertNull(protocol.parseHealthSlotsBehind(mapper.readTree(
+                "{\"id\":6,\"error\":{\"code\":-32603,\"message\":\"internal\"}}")));
+        assertNull(protocol.parseHealthSlotsBehind(mapper.readTree(
+                "{\"id\":6,\"result\":{\"sync_info\":{}}}")));
+    }
+
+    @Test
+    @DisplayName("parseVersion condenses node_info.version to CometBFT/vX.Y.Z")
+    void parseVersion() throws IOException {
+        assertTrue(protocol.buildVersionRequest().isPresent());
+        assertEquals("/status", protocol.buildVersionRequest().get().method());
+        assertEquals("CometBFT/v0.38.11", protocol.parseVersion(mapper.readTree(
+                "{\"node_info\":{\"version\":\"0.38.11\"}}")));
+        assertEquals("CometBFT/v0.37.2", protocol.parseVersion(mapper.readTree(
+                "{\"node_info\":{\"version\":\"v0.37.2\"}}")));
+        assertNull(protocol.parseVersion(mapper.readTree("{\"node_info\":{}}")));
+        assertNull(protocol.parseVersion(null));
+    }
+
+    @Test
+    @DisplayName("default classifyFetchAfterWsEventError fails (interface default)")
+    void classifyFetchErrorDefault() {
+        assertEquals(ChainProtocol.FetchRetryAction.FAIL,
+                protocol.classifyFetchAfterWsEventError(-32004, "whatever"));
+    }
 }

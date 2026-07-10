@@ -315,15 +315,27 @@ class SolanaProtocolTest {
     }
 
     @Test
-    @DisplayName("parsePerformance derives TPS and slot time from the latest sample")
+    @DisplayName("parsePerformance prefers non-vote TPS and derives slot time")
     void parsePerformance() throws IOException {
-        // 120000 tx over 60s = 2000 TPS; 150 slots over 60s = 400ms/slot
+        // 30000 non-vote tx over 60s = 500 TPS (raw 120000 incl. votes would be 2000);
+        // 150 slots over 60s = 400ms/slot
         String json = "[{\"slot\":348125,\"numTransactions\":120000,"
-                + "\"numNonVoteTransactions\":1,\"samplePeriodSecs\":60,\"numSlots\":150}]";
+                + "\"numNonVoteTransactions\":30000,\"samplePeriodSecs\":60,\"numSlots\":150}]";
+        double[] perf = protocol.parsePerformance(mapper.readTree(json));
+        assertNotNull(perf);
+        assertEquals(500.0, perf[0], 0.001);
+        assertEquals(400.0, perf[1], 0.001);
+    }
+
+    @Test
+    @DisplayName("parsePerformance falls back to numTransactions when numNonVoteTransactions is absent")
+    void parsePerformanceVoteFallback() throws IOException {
+        // Pre-1.15 nodes don't report numNonVoteTransactions
+        String json = "[{\"slot\":348125,\"numTransactions\":120000,"
+                + "\"samplePeriodSecs\":60,\"numSlots\":150}]";
         double[] perf = protocol.parsePerformance(mapper.readTree(json));
         assertNotNull(perf);
         assertEquals(2000.0, perf[0], 0.001);
-        assertEquals(400.0, perf[1], 0.001);
     }
 
     @Test
@@ -334,5 +346,40 @@ class SolanaProtocolTest {
         // samplePeriodSecs == 0 cannot yield a rate
         assertNull(protocol.parsePerformance(mapper.readTree(
                 "[{\"numTransactions\":10,\"numSlots\":5,\"samplePeriodSecs\":0}]")));
+    }
+
+    @Test
+    @DisplayName("classifyFetchAfterWsEventError retries block-not-yet-available errors")
+    void classifyFetchErrorRetry() {
+        // -32004 BLOCK_NOT_AVAILABLE: slotSubscribe fires at processed commitment,
+        // getBlock serves confirmed blocks — the first fetch routinely races confirmation
+        assertEquals(ChainProtocol.FetchRetryAction.RETRY,
+                protocol.classifyFetchAfterWsEventError(-32004, "Block not available for slot 12345"));
+        assertEquals(ChainProtocol.FetchRetryAction.RETRY,
+                protocol.classifyFetchAfterWsEventError(0, "Block not available for slot 12345"));
+    }
+
+    @Test
+    @DisplayName("classifyFetchAfterWsEventError skips skipped or purged slots")
+    void classifyFetchErrorSkip() {
+        assertEquals(ChainProtocol.FetchRetryAction.SKIP,
+                protocol.classifyFetchAfterWsEventError(-32007,
+                        "Slot 12345 was skipped, or missing due to ledger jump to recent snapshot"));
+        assertEquals(ChainProtocol.FetchRetryAction.SKIP,
+                protocol.classifyFetchAfterWsEventError(-32009,
+                        "Slot 12345 was skipped, or missing in long-term storage"));
+        assertEquals(ChainProtocol.FetchRetryAction.SKIP,
+                protocol.classifyFetchAfterWsEventError(0, "slot was skipped"));
+        assertEquals(ChainProtocol.FetchRetryAction.SKIP,
+                protocol.classifyFetchAfterWsEventError(0, "block purged from ledger"));
+    }
+
+    @Test
+    @DisplayName("classifyFetchAfterWsEventError fails on unrecognised errors")
+    void classifyFetchErrorFail() {
+        assertEquals(ChainProtocol.FetchRetryAction.FAIL,
+                protocol.classifyFetchAfterWsEventError(-32602, "Invalid params"));
+        assertEquals(ChainProtocol.FetchRetryAction.FAIL,
+                protocol.classifyFetchAfterWsEventError(0, null));
     }
 }

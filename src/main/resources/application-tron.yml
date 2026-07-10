@@ -5,6 +5,10 @@ rpc:
   title: "Tron Mainnet"
   title-color: "#ff0013"
   get-safe-blocks: false
+  # java-tron >= 4.7.2 supports eth_getBlockByNumber("finalized") — the solidified block
+  # (confirmed by 19/27 SRs, ~57s behind head). Enable this against self-hosted nodes;
+  # it stays off by default because gateway endpoints may reject the tag, which would
+  # fail every poll.
   get-finalized-blocks: false
   scale-change-ms: 500
   scale-max-ms: 30000

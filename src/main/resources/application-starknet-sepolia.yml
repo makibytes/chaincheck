@@ -4,6 +4,7 @@ rpc:
   title: "Starknet Sepolia Testnet"
   title-color: "#ec796b"
   get-safe-blocks: false
+  # When enabled, "finalized" maps to l1_accepted (JSON-RPC spec >= 0.8); see mainnet profile.
   get-finalized-blocks: false
   scale-change-ms: 1000
   scale-max-ms: 60000

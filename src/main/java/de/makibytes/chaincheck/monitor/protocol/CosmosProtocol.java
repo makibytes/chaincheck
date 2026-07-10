@@ -180,6 +180,52 @@ public class CosmosProtocol implements ChainProtocol {
         return true; // last_block_id.hash serves as parentHash
     }
 
+    // ── Node health probe ─────────────────────────────────────────────────
+
+    @Override
+    public java.util.Optional<RpcRequest> buildHealthRequest() {
+        // /status carries sync_info.catching_up — CometBFT's self-reported sync state.
+        // The head request is the same /status call; the GET batch deduplicates identical
+        // requests, so this adds no extra round-trip.
+        return java.util.Optional.of(new RpcRequest("/status", mapper.createObjectNode()));
+    }
+
+    @Override
+    public Integer parseHealthSlotsBehind(JsonNode envelope) {
+        if (envelope == null || envelope.has("error")) {
+            // A failed /status already fails the whole poll (it is the head request);
+            // don't double-report through the sync-lag channel.
+            return null;
+        }
+        JsonNode catchingUp = envelope.path("result").path("sync_info").path("catching_up");
+        if (!catchingUp.isBoolean()) {
+            return null;
+        }
+        // CometBFT reports no "blocks behind" count — only behind (unknown margin) or synced.
+        return catchingUp.asBoolean() ? -1 : 0;
+    }
+
+    // ── Node metadata probes ──────────────────────────────────────────────
+
+    @Override
+    public java.util.Optional<RpcRequest> buildVersionRequest() {
+        // node_info.version in /status is the CometBFT (Tendermint) version, e.g. "0.38.11".
+        return java.util.Optional.of(new RpcRequest("/status", mapper.createObjectNode()));
+    }
+
+    @Override
+    public String parseVersion(JsonNode result) {
+        if (result == null || result.isNull()) {
+            return null;
+        }
+        String version = result.path("node_info").path("version").asText(null);
+        if (version == null || version.isBlank()) {
+            return null;
+        }
+        String normalized = version.startsWith("v") ? version : "v" + version;
+        return "CometBFT/" + normalized;
+    }
+
     // ── Internal ──────────────────────────────────────────────────────────
 
     private RpcMonitorService.BlockInfo parseBlockResult(JsonNode result) throws IOException {

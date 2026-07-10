@@ -96,8 +96,10 @@ public class ChainTracker {
     /**
      * Registers a block fetched via eth_getBlockByHash.
      * Returns a ChainUpdate describing what changed.
+     * Synchronized: WS block fetches run concurrently on virtual threads, and the canonical-head
+     * update below is a compound read-modify-write across several maps.
      */
-    public ChainUpdate registerBlock(BlockNode block) {
+    public synchronized ChainUpdate registerBlock(BlockNode block) {
         if (block == null || block.hash() == null || block.parentHash() == null) {
             return new ChainUpdate(null, List.of(), null, false);
         }

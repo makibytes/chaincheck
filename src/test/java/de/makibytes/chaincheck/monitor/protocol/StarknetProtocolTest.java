@@ -58,23 +58,26 @@ class StarknetProtocolTest {
     }
 
     @Test
-    @DisplayName("buildBlockByTagRequest produces starknet_getBlockWithTxHashes with latest")
+    @DisplayName("buildBlockByTagRequest produces starknet_getBlockWithTxHashes with a positional tag")
     void blockByTagRequest() {
+        // Positional params: element 0 is the BLOCK_ID itself (a bare tag string).
+        // Wrapping it in {"block_id": ...} is rejected by spec-strict gateways.
         RpcRequest latest = protocol.buildBlockByTagRequest("latest");
         assertEquals("starknet_getBlockWithTxHashes", latest.method());
-        assertEquals("latest", latest.params().get(0).path("block_id").asText());
+        assertTrue(latest.params().get(0).isTextual());
+        assertEquals("latest", latest.params().get(0).asText());
 
-        // safe and finalized also map to latest (no safe concept in Starknet)
         RpcRequest safe = protocol.buildBlockByTagRequest("safe");
         assertEquals("starknet_getBlockWithTxHashes", safe.method());
     }
 
     @Test
-    @DisplayName("buildBlockByNumberRequest uses block_number object as block_id")
+    @DisplayName("buildBlockByNumberRequest uses a positional block_number object")
     void blockByNumberRequest() {
         RpcRequest req = protocol.buildBlockByNumberRequest(12345L);
         assertEquals("starknet_getBlockWithTxHashes", req.method());
-        assertEquals(12345L, req.params().get(0).path("block_id").path("block_number").asLong());
+        assertEquals(12345L, req.params().get(0).path("block_number").asLong());
+        assertFalse(req.params().get(0).has("block_id"));
     }
 
     @Test
@@ -163,5 +166,56 @@ class StarknetProtocolTest {
     @DisplayName("httpMethod returns POST")
     void httpMethod() {
         assertEquals("POST", protocol.httpMethod());
+    }
+
+    @Test
+    @DisplayName("buildBlockByTagRequest maps finalized to l1_accepted, other tags to latest")
+    void blockByTagFinality() {
+        assertEquals("l1_accepted",
+                protocol.buildBlockByTagRequest("finalized").params().get(0).asText());
+        assertEquals("latest",
+                protocol.buildBlockByTagRequest("latest").params().get(0).asText());
+        // No Starknet "safe" equivalent — falls back to latest
+        assertEquals("latest",
+                protocol.buildBlockByTagRequest("safe").params().get(0).asText());
+    }
+
+    @Test
+    @DisplayName("buildHealthRequest probes starknet_syncing")
+    void buildHealthRequest() {
+        assertTrue(protocol.buildHealthRequest().isPresent());
+        assertEquals("starknet_syncing", protocol.buildHealthRequest().get().method());
+    }
+
+    @Test
+    @DisplayName("parseHealthSlotsBehind reads sync status")
+    void parseHealthSyncStatus() throws IOException {
+        // false = fully synced
+        assertEquals(0, protocol.parseHealthSlotsBehind(mapper.readTree(
+                "{\"id\":6,\"result\":false}")));
+        // syncing object with integer block numbers
+        assertEquals(500, protocol.parseHealthSlotsBehind(mapper.readTree(
+                "{\"id\":6,\"result\":{\"current_block_num\":599500,\"highest_block_num\":600000}}")));
+        // caught up while still reporting a sync object
+        assertEquals(0, protocol.parseHealthSlotsBehind(mapper.readTree(
+                "{\"id\":6,\"result\":{\"current_block_num\":600000,\"highest_block_num\":600000}}")));
+        // some nodes serve the numbers as hex strings
+        assertEquals(10, protocol.parseHealthSlotsBehind(mapper.readTree(
+                "{\"id\":6,\"result\":{\"current_block_num\":\"0x10\",\"highest_block_num\":\"0x1a\"}}")));
+        // syncing but the margin is unreadable
+        assertEquals(-1, protocol.parseHealthSlotsBehind(mapper.readTree(
+                "{\"id\":6,\"result\":{\"starting_block_num\":1}}")));
+    }
+
+    @Test
+    @DisplayName("parseHealthSlotsBehind treats method-not-found as no info, other errors as unhealthy")
+    void parseHealthErrors() throws IOException {
+        // Public gateways without starknet_syncing must not open a permanent SYNC_LAG
+        assertNull(protocol.parseHealthSlotsBehind(mapper.readTree(
+                "{\"id\":6,\"error\":{\"code\":-32601,\"message\":\"Method not found\"}}")));
+        assertEquals(-1, protocol.parseHealthSlotsBehind(mapper.readTree(
+                "{\"id\":6,\"error\":{\"code\":-32603,\"message\":\"internal error\"}}")));
+        assertNull(protocol.parseHealthSlotsBehind(null));
+        assertNull(protocol.parseHealthSlotsBehind(mapper.readTree("{\"id\":6}")));
     }
 }

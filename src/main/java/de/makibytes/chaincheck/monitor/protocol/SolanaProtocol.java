@@ -162,6 +162,26 @@ public class SolanaProtocol implements ChainProtocol {
         return parseGetBlockResult(result);
     }
 
+    @Override
+    public FetchRetryAction classifyFetchAfterWsEventError(int errorCode, String errorMessage) {
+        // slotSubscribe notifies at *processed* commitment; getBlock serves *confirmed* blocks,
+        // which lag by ~0.5-1.5s — the first fetch attempt routinely races confirmation.
+        if (errorCode == -32004) {
+            return FetchRetryAction.RETRY; // BLOCK_NOT_AVAILABLE — not yet confirmed
+        }
+        if (errorCode == -32007 || errorCode == -32009) {
+            return FetchRetryAction.SKIP; // SLOT_SKIPPED / LONG_TERM_STORAGE_SLOT_SKIPPED
+        }
+        String msg = errorMessage == null ? "" : errorMessage.toLowerCase();
+        if (msg.contains("not available")) {
+            return FetchRetryAction.RETRY;
+        }
+        if (msg.contains("skipped") || msg.contains("purged")) {
+            return FetchRetryAction.SKIP;
+        }
+        return FetchRetryAction.FAIL;
+    }
+
     // ── Capabilities ──────────────────────────────────────────────────────
 
     @Override
@@ -264,9 +284,13 @@ public class SolanaProtocol implements ChainProtocol {
         if (periodSecs <= 0) {
             return null;
         }
-        long numTransactions = sample.path("numTransactions").asLong(0);
+        // Prefer numNonVoteTransactions (solana-core >= 1.15): vote transactions are consensus
+        // overhead (~2/3 of raw throughput) and drown out the user-facing TPS signal.
+        JsonNode nonVote = sample.path("numNonVoteTransactions");
+        long numTransactions = nonVote.isIntegralNumber()
+                ? nonVote.asLong()
+                : sample.path("numTransactions").asLong(0);
         long numSlots = sample.path("numSlots").asLong(0);
-        // Headline network throughput (includes vote transactions, the conventional TPS figure).
         Double tps = numTransactions > 0 ? numTransactions / periodSecs : null;
         // Mean slot time over the window: period / slots produced.
         Double slotTimeMs = numSlots > 0 ? (periodSecs * 1000.0) / numSlots : null;

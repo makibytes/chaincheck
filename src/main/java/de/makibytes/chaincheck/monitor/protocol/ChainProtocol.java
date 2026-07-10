@@ -98,6 +98,28 @@ public interface ChainProtocol {
     /** Parses the response to {@link #buildFetchAfterWsEventRequest}. */
     RpcMonitorService.BlockInfo parseFetchAfterWsEventResponse(JsonNode result) throws IOException;
 
+    /** How a JSON-RPC error from the follow-up fetch after a WS event should be handled. */
+    enum FetchRetryAction {
+        /** Transient — the block is expected to become available shortly; retry the fetch. */
+        RETRY,
+        /** Permanent but benign (e.g. a skipped Solana slot); drop the event silently. */
+        SKIP,
+        /** A real failure; record it against the node (the default). */
+        FAIL
+    }
+
+    /**
+     * Classifies a JSON-RPC error returned by the follow-up fetch after a WS event.
+     * Solana's {@code slotSubscribe} notifies at <em>processed</em> commitment while
+     * {@code getBlock} serves <em>confirmed</em> blocks, so the first fetch attempt commonly
+     * races confirmation ({@code -32004}) and slots may be skipped outright ({@code -32007}).
+     * The default treats every error as a genuine failure, which matches EVM semantics where
+     * a node must be able to serve a block it just announced.
+     */
+    default FetchRetryAction classifyFetchAfterWsEventError(int errorCode, String errorMessage) {
+        return FetchRetryAction.FAIL;
+    }
+
     // ── Capabilities ──────────────────────────────────────────────────────
 
     /** Whether blocks carry a parent-block identifier for chain-linkage (reorg detection). */

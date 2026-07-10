@@ -4,6 +4,9 @@ rpc:
   title: "Starknet Mainnet"
   title-color: "#ec796b"
   get-safe-blocks: false
+  # When enabled, "finalized" maps to the l1_accepted block_id (JSON-RPC spec >= 0.8):
+  # the newest block settled on Ethereum, hours behind L2. Off by default because many
+  # public gateways still run older specs and would reject the tag.
   get-finalized-blocks: false
   scale-change-ms: 1000
   scale-max-ms: 60000
